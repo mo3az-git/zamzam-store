@@ -67,32 +67,30 @@ async function check(name, test) {
   const prefix = makePrefix(name);
   const clients = [];
   const providers = [];
-  const context = {
-    prefix,
-    clients,
-    providers,
-    async openClient() {
-      const client = new Redis(redisUrl, redisOptions);
-      client.on("error", () => {});
-      clients.push(client);
-      await client.connect();
-      return client;
-    },
-    async openProvider(sharedPrefix = prefix) {
-      const client = await this.openClient();
-      const provider = new RedisLockingProvider(
-        { redisClient: client, prefix: sharedPrefix },
-        {
-          waitLockingTimeout: 1,
-          defaultRetryInterval: 10,
-          maximumRetryInterval: 50,
-          backoffFactor: 2,
-        }
-      );
-      providers.push({ provider, client });
-      return { provider, client };
-    },
-  };
+  async function openClient() {
+    const client = new Redis(redisUrl, redisOptions);
+    client.on("error", () => {});
+    clients.push(client);
+    await client.connect();
+    return client;
+  }
+
+  async function openProvider(sharedPrefix = prefix) {
+    const client = await openClient();
+    const provider = new RedisLockingProvider(
+      { redisClient: client, prefix: sharedPrefix },
+      {
+        waitLockingTimeout: 1,
+        defaultRetryInterval: 10,
+        maximumRetryInterval: 50,
+        backoffFactor: 2,
+      }
+    );
+    providers.push({ provider, client });
+    return { provider, client };
+  }
+
+  const context = { prefix, clients, providers, openClient, openProvider };
 
   let failure;
   try {
@@ -169,8 +167,7 @@ await check("same-owner re-entry succeeds with awaitQueue", async ({ openProvide
   );
 });
 
-await check("opposite-order multi-key acquires do not deadlock", async ({ openProvider }) => {
-  const prefix = makePrefix("abba-shared");
+await check("opposite-order multi-key acquires do not deadlock", async ({ prefix, openProvider }) => {
   const first = await openProvider(prefix);
   const second = await openProvider(prefix);
 
