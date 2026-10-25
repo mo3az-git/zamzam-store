@@ -46,7 +46,11 @@ export default defineConfig({
       options: {
         providers: [
           {
-            resolve: "./src/modules/locking-redis",
+            // Medusa resolves provider strings with require.resolve, which does
+            // not discover index.mjs when only the containing directory is given.
+            // Point at the ESM entry explicitly so both migration and runtime
+            // provider loading can resolve the same local adapter.
+            resolve: "./src/modules/locking-redis/index.mjs",
             id: "locking-redis",
             is_default: true,
             options: {
