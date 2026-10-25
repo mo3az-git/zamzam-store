@@ -123,7 +123,7 @@ jobs:
             tsNodeProject: process.env.TS_NODE_PROJECT,
             cliEntry,
             tsconfigPathsEntry,
-            tsconfigPathsVersion: require(path.join(path.dirname(tsconfigPathsEntry), "package.json")).version,
+            tsconfigPathsVersion: require(path.join(path.dirname(tsconfigPathsEntry), "..", "package.json")).version,
             configResult: loaded.resultType,
             configPath: loaded.configFileAbsolutePath,
             absoluteBaseUrl: loaded.absoluteBaseUrl,
