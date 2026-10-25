@@ -32,6 +32,19 @@ In compliance with Engineering Rules 2, 7, and 9 (Claim Discipline), all technic
 | **A-05** | Guest checkout requires Full Name, Egyptian Mobile Number, Governorate, and Street Address. Public access secured via one-time claim codes and phone OTP. | Checkout | `[PROPOSED]` | Normalizes phone to `+201XXXXXXXXX`. Single-use atomic `GETDEL` claim codes prevent URL leakage; OTP provides secure recurring access. Technical idempotency retention is a 14-day operational support policy. |
 | **A-06** | Supplier sourcing invoices may be denominated in foreign currency (SAR/USD) and are converted to EGP at the intake date exchange rate. | Accounting | `[PROPOSED]` / `[OWNER-DECISION]` | Stored in `inventory_batch` (`purchase_currency`, `purchase_price_raw`, `exchange_rate_to_egp`, `unit_cost_purchase`). Exchange rate must be strictly positive with no silent default rate of 1. Rate determination policy (`customs_clearance_date`) requires owner sign-off. |
 
+### Default Assumptions Register (owner may change)
+
+These defaults unblock Phase 0 documentation consistency; they are not legal/accounting advice and may be changed by the owner. Launch-only evidence gates remain open until evidence is recorded.
+
+| ID | Default assumption | Scope / required follow-up |
+|---|---|---|
+| **D-1** | **Payment gateway:** Phase 0 remains provider-agnostic; no vendor is selected. The Phase 1 Spike uses a provider simulator. | Before launch, select against recorded criteria: hosted payment page/redirect, signed webhooks, idempotency support, partial-refund API, void support, fees, settlement time, and account requirements. |
+| **D-2** | **Tax:** Customer-facing prices are tax-inclusive. Refunds use the tax-inclusive amount actually paid after discounts. The MVP does not calculate tax separately. | Accountant must confirm the treatment before launch. This is a default assumption, not a tax determination. |
+| **D-3** | **Refused/unreachable undelivered electronic orders:** No automatic shipping withholding. The system proposes a full items-plus-shipping refund. An admin may set the shipping component to zero only through the existing override, with mandatory reason and approver audit. | No schema change. Qualified legal review may require changing this default before launch. |
+| **D-4** | **Sealed change-of-mind returns:** Accept sealed items for item price only, without shipping; reject opened change-of-mind returns. | Business default confirmed for design; remains subject to applicable Egyptian consumer-protection rules and qualified legal review. |
+| **D-5** | **Arabic legal policies:** Arabic Terms of Service, Privacy Policy, and return/refund policy are launch gates and must be reviewed by a qualified lawyer before publication. | This does not block Phase 0 documentation closure. Egyptian consumer-protection rules may constrain opened-item and shipping rules. |
+| **D-6** | **Launch-only evidence gates:** Gates 1, 2, 3, and 5 block launch only. | Gate 1 requires real-world evidence for Zamzam source/labels and date batches; assume nothing about provenance. Gate 3 rates used in the Spike must be labelled non-production test rates. Gate 5 restore drill must be documented and executed before launch. |
+
 ---
 
 ## 3. Comprehensive Risk Register and Mitigation
