@@ -1,6 +1,6 @@
 # Phase 1 — Technical Compatibility Spike
 
-**Status:** Baseline compatibility workflow passed on Medusa 2.21.2 in attempt 8. Medusa pins are now being advanced to candidate 2.22.1 because the release includes a Redis-lock client shutdown fix; the full CI rerun and lock-provider semantic regression tests remain pending. The prior lockfile applies only to 2.21.2 and must be regenerated/reviewed.  
+**Status:** Baseline compatibility workflow passed on Medusa 2.22.1 in attempt 9. A dedicated real-Redis regression script is now added to test lock semantics; results pending. The candidate lockfile is regenerated per run but not yet reviewed/committed. All 59 TP behavior cases remain unchecked.  
 **Starting commit:** 404bf23275d67cc6274ed567779081c25f676100 (Phase 0 design accepted; runtime unverified).  
 **Scope boundary:** initial monorepo scaffold, package/peer metadata, strict dependency resolution, lint/build, and baseline Medusa migrations against a disposable database; then the documented TP cases. No production feature work is included.
 
@@ -99,7 +99,7 @@ This is a successful **baseline scaffold compatibility run**, not Phase 1 comple
 
 ### Attempt 9 — Upgrade candidate after locking-provider review; runtime blocker remains
 
-The attempt-8 green run validated the 2.21.2 package cohort, not the new 2.22.1 candidate. All direct Medusa package pins in both workspaces are being moved together to 2.22.1; strict metadata/install/lint/migration/build CI must pass again before accepting this cohort. A fresh candidate lockfile is required because the attempt-8 artifact and its SHA-256 apply only to the 2.21.2 resolution.
+The attempt-8 green run validated the 2.21.2 package cohort. The candidate direct Medusa pins were moved together to 2.22.1 and the full baseline CI rerun passed in [run #19](https://github.com/mo3az-git/zamzam-store/actions/runs/40230164420): exact package metadata, registry integrity, strict install, npm ls, lint, disposable PostgreSQL migrations, and both production builds. A fresh candidate lockfile (lockfileVersion 3; 1,471 entries) was generated with SHA-256 `f1dbb85d8b098a83f52aaaaa6af7ddce1540493b290577b0904f95733896f988`; it remains uncommitted and will change again because the targeted test harness adds direct dependencies.
 
 The version change follows Medusa release v2.22.1 and merged PR [#17460](https://github.com/medusajs/medusa/pull/17460), which adds provider shutdown hooks to close the Redis client when a running application shuts down. See also the [v2.22.1 release notes](https://github.com/medusajs/medusa/releases/tag/v2.22.1).
 
@@ -129,15 +129,15 @@ The test registry script is a guardrail only: it asserts the presence of exactly
 | Evidence item | Status | Evidence required |
 |---|---|---|
 | Candidate versions published | Exact metadata, strict install, lint, migrations, and both builds passed on attempt 8; full behavioral compatibility is still unverified | Continue with lockfile review, Redis lock behavior, and TP cases |
-| Exact direct-pin metadata and peer requirements | Passed on attempt 8 for 19 exact direct-pin entries at Medusa 2.21.2; candidate 2.22.1 metadata/peers rerun pending | Successful CI metadata output for every direct pin in the 2.22.1 cohort |
-| Dependency install with strict peer checks | Passed on attempt 8 for 2.21.2 only; the 1,478-entry candidate lockfile and SHA-256 `b875c1c96eace036de9297399e01235514ca45584bfbf65e960a85a7662903ce` are obsolete for the new candidate. The previous install also flagged deprecated dependencies and six scripts outside `allowScripts`. | Run strict install on 2.22.1; inspect the new lockfile and each install script; commit the reviewed current lockfile before relying on `npm ci` |
+| Exact direct-pin metadata and peer requirements | Passed on attempt 9 for the 2.22.1 candidate cohort; no metadata checker failures | Preserve metadata output from run #19 and rerun after test-harness dependency additions |
+| Dependency install with strict peer checks | Passed on attempt 9 for 2.22.1. Candidate lockfile has 1,471 entries and SHA-256 `f1dbb85d8b098a83f52aaaaa6af7ddce1540493b290577b0904f95733896f988`; the install also flagged deprecated transitive dependencies and six scripts outside `allowScripts`. | Review regenerated lockfile and each install script after adding the regression harness, then commit the current lockfile before relying on `npm ci` |
 | npm ls --all dependency tree | Passed on attempt 8 for 2.21.2; current 2.22.1 resolution pending | Preserve and review the new full resolved tree |
 | TP registry markup | Passed on attempt 8 | Exactly 59 unique rows and all remain unchecked; this is registry integrity only, not behavior execution |
 | Backend/storefront lint | Passed on attempt 8 for the old cohort; rerun pending for 2.22.1 | Keep new CI lint evidence with the artifact |
 | Medusa backend build | Passed cleanly on attempt 8 for 2.21.2 with step-scoped `NODE_ENV=production`; rerun pending for 2.22.1 | Clean successful build log from the candidate cohort |
 | Next.js storefront shell build | Passed on attempt 8 for 2.21.2 after removing workflow-wide `NODE_ENV=development`; rerun pending for 2.22.1 | Successful production-build log after candidate update |
 | Baseline migrations | Passed on attempt 8 against disposable PostgreSQL for 2.21.2; rerun pending for 2.22.1 | Preserve new migration log; custom-module migrations still not implemented or tested |
-| Redis connection/locking provider | Migrations passed with locking module configured; explicit lock contention behavior still unverified | Successful lock acquire/release/timeout integration evidence |
+| Redis locking semantic behavior | Blocking risk identified in published 2.22.1 source: concurrent unsorted multi-key acquisition, partial-acquire leakage, same-owner re-entry under `awaitQueue`, and non-atomic `releaseAll` remain possible. A new real-Redis regression script covers basic acquisition/release, partial rollback, re-entry, reverse-order contention, `releaseAll` race, owner scope, and provider shutdown; first CI result pending. Migration-only loader connection cleanup remains a separate lifecycle concern. | Run `spike:locking-redis` against disposable Redis and resolve every failure or explicitly change the provider strategy before the transition gate |
 | Native order correlation, inventory atomicity, checkout recovery, payment/webhook/refund behavior, restore | Pending; all 59 TP statuses remain unchecked | Test logs, exit codes, environment/package metadata, database assertions |
 | Lockfile committed | Pending; attempt-8 lockfile belongs to Medusa 2.21.2 and must not be reused | Review and commit the regenerated 2.22.1 package-lock.json; switch subsequent CI to `npm ci` |
 

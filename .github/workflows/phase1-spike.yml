@@ -119,6 +119,12 @@ jobs:
           set -o pipefail
           npm run build:storefront 2>&1 | tee artifacts/next-build.log
 
+      - name: Exercise Redis locking semantics against disposable Redis
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run spike:locking-redis --workspace @zamzam/backend 2>&1 | tee artifacts/locking-redis-regression.log
+
       - name: Upload Phase 1 evidence and bootstrap lockfile
         if: always()
         uses: actions/upload-artifact@v4

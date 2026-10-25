@@ -7,14 +7,17 @@
     "start": "medusa start",
     "build": "medusa build",
     "db:migrate": "medusa db:migrate",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "spike:locking-redis": "node scripts/check-locking-redis.mjs"
   },
   "dependencies": {
     "@medusajs/admin-sdk": "2.22.1",
     "@medusajs/cli": "2.22.1",
     "@medusajs/draft-order": "2.22.1",
     "@medusajs/framework": "2.22.1",
+    "@medusajs/locking-redis": "2.22.1",
     "@medusajs/medusa": "2.22.1",
+    "ioredis": "5.11.1",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-router-dom": "7.18.2"
