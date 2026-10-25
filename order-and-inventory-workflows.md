@@ -104,7 +104,8 @@ flowchart TD
 | `customer_return` | `pending_receipt` or `pending_inspection` | `rejected` or `cancelled` | Authorized workflow and aggregate quantity/capacity guards. |
 | `undelivered_depot_return` | creation when fulfillment reaches `returned_to_warehouse` | `pending_inspection` | Same authoritative transaction creates the request and item snapshots, sets `received_at_warehouse` from transition timestamp, `return_cause='courier_undelivered'`, and `goods_condition=NULL`. No `pending_receipt` intermediate state. |
 | `undelivered_depot_return` | `pending_inspection` | `completed` | COD requires `collection_failed`; electronic requires exact reconciled refund total or explicit never-captured/no-refund exception. All inspections final; restock approval is not required. |
-| either type | `cancelled` or `rejected` | `pending_receipt` or `pending_inspection` | Authorized audited reactivation after version and aggregate capacity validation; depot returns use `pending_inspection` because receipt already occurred. |
+| `customer_return` | `cancelled` or `rejected` | `pending_receipt` or `pending_inspection` | Authorized audited reactivation after version and aggregate capacity validation. |
+| `undelivered_depot_return` | `cancelled` or `rejected` | `pending_inspection` only | Authorized audited reactivation after version and aggregate capacity validation; physical receipt already occurred. Any other target raises `ILLEGAL_DEPOT_RETURN_REACTIVATION_STATUS`. |
 
 The direct-to-`pending_inspection` depot design preserves event truth: fulfillment status `returned_to_warehouse` establishes physical arrival, so `pending_receipt` would duplicate a completed event and require an artificial second event. The request, return items, and receipt timestamp must be persisted atomically with that transition; the timestamp is not client-supplied.
 
