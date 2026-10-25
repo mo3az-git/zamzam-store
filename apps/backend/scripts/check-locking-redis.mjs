@@ -6,7 +6,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 const require = createRequire(import.meta.url);
 const redisModule = require("ioredis");
 const Redis = redisModule.default ?? redisModule;
-const { RedisLockingProvider } = require("@medusajs/locking-redis/dist/services/redis-lock");
+const { SafeRedisLockingProvider } = await import("../src/modules/locking-redis/index.mjs");
 
 const redisUrl = process.env.LOCKING_REDIS_URL || process.env.REDIS_URL;
 if (!redisUrl) {
@@ -77,7 +77,7 @@ async function check(name, test) {
 
   async function openProvider(sharedPrefix = prefix) {
     const client = await openClient();
-    const provider = new RedisLockingProvider(
+    const provider = new SafeRedisLockingProvider(
       { redisClient: client, prefix: sharedPrefix },
       {
         waitLockingTimeout: 1,
@@ -172,9 +172,9 @@ await check("opposite-order multi-key acquires do not deadlock", async ({ prefix
   const second = await openProvider(prefix);
 
   function delaySecondAcquire(client) {
-    const original = client.acquireLock.bind(client);
+    const original = client.acquireManyLocks.bind(client);
     let calls = 0;
-    client.acquireLock = async (...args) => {
+    client.acquireManyLocks = async (...args) => {
       calls += 1;
       if (calls === 2) await sleep(150);
       return original(...args);
@@ -208,20 +208,14 @@ await check("releaseAll preserves a replacement lock acquired between read and d
   const key = prefix + "release-race";
   await provider.acquire("release-race", { ownerId: "owner-original", expire: 20 });
 
-  const originalPipeline = client.pipeline.bind(client);
+  const originalReleaseLock = client.releaseLock.bind(client);
   let injected = false;
-  client.pipeline = (...args) => {
-    const pipeline = originalPipeline(...args);
-    const originalExec = pipeline.exec.bind(pipeline);
-    pipeline.exec = async (...execArgs) => {
-      const result = await originalExec(...execArgs);
-      if (!injected) {
-        injected = true;
-        await competitor.set(key, "owner-replacement", "EX", 20);
-      }
-      return result;
-    };
-    return pipeline;
+  client.releaseLock = async (releaseKey, ownerId) => {
+    if (releaseKey === key && !injected) {
+      injected = true;
+      await competitor.set(key, "owner-replacement", "EX", 20);
+    }
+    return originalReleaseLock(releaseKey, ownerId);
   };
 
   await provider.releaseAll({ ownerId: "owner-original" });
