@@ -12,9 +12,9 @@ const evidenceRoot = path.join(root, "artifacts", "tp-evidence");
 const customTables = [
   "cart_batch_reservation", "cart_checkout_session", "cart_checkout_attempt",
   "idempotency_key", "inventory_batch", "inventory_movement",
-  "order_batch_allocation", "order_line_item", "shipping_delivery_zone",
+  "order_batch_allocation", "shipping_delivery_zone",
   "guest_order_session", "cod_collection_record", "electronic_payment_attempt",
-  "refund_record", "return_request", "return_item", "refund_attempt",
+  "refund_record", "return_request", "refund_attempt",
   "payment_webhook_event", "cart_checkout_epoch"
 ];
 const groups = {
