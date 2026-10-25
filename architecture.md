@@ -730,7 +730,7 @@ Where:
 ## 9. Payment Provider Abstraction (Electronic Payment + COD)
 
 - **MVP decision:** Electronic payment and Cash on Delivery (COD) are offered side by side. This is a recorded owner decision (Gate 6), not a pending choice.
-- **Provider boundary:** No electronic payment gateway is selected. Treat the gateway as a provider abstraction behind the Medusa Payment Module; do not couple domain workflows to a vendor-specific API or status vocabulary. Gateway selection remains `Owner input required`.
+- **Provider boundary:** No electronic payment gateway is selected. Treat the gateway as a provider abstraction behind the Medusa Payment Module; do not couple domain workflows to a vendor-specific API or status vocabulary. Default assumption D-1 applies: use a provider simulator in the Phase 1 Spike and select a gateway before launch against the criteria in `risk-and-assumptions.md`.
 - **Customer payment UI:** Electronic payment must use the selected provider's hosted payment page or redirect. Card PAN, CVV, and cardholder authentication data must never pass through or be stored by the storefront/backend.
 - **State separation:** Electronic payment state is held in `electronic_payment_attempt` and provider events in `payment_webhook_event`; COD collection/remittance remains in `cod_collection_record`. Payment status does not replace order, fulfillment, or inventory state.
 - **Historical note:** `pp_system_default` and the earlier TP-05 placeholder-provider discussion were prior implementation candidates, not a selected gateway or a reason to treat COD as the only MVP payment method. No provider integration is claimed tested.
