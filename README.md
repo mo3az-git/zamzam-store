@@ -14,7 +14,7 @@ Arabic-first e-commerce for imported packaged Zamzam water and dates in Egypt.
 - Node.js 24.22.1 (see .nvmrc)
 - npm workspaces with strict peer-dependency enforcement
 - Medusa direct-package candidate cohort 2.21.2
-- Next.js 15.5.28 with React / React DOM 19.3.1
+- Next.js 15.5.28 with React / React DOM 18.3.1 (shared across both workspaces to keep the hoisted runtime consistent)
 - PostgreSQL 16.15 and Redis 7.2.16 images pinned by digest in compose.yaml
 
 These pins are candidates, not a compatibility sign-off. The first CI run generates a candidate lockfile as an artifact; review and commit it before relying on npm ci for subsequent runs.

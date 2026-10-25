@@ -14,7 +14,7 @@ The version pins below are candidates from the project design and public package
 
 - Node.js 24.22.1 LTS, published 2026-10-21: https://github.com/nodejs/nodejs.org/blob/main/apps/site/pages/en/blog/release/v24.22.1.md
 - Next.js 15.5.28: https://www.npmjs.com/package/next?activeTab=versions
-- React 19.3.1 and React DOM 19.3.1 for storefront; React 18.3.1 for Medusa backend/admin peers: https://www.npmjs.com/package/react?activeTab=versions and https://www.npmjs.com/package/react-dom?activeTab=versions
+- React 18.3.1 and React DOM 18.3.1 across both workspaces. Attempt 5 exposed a duplicate React runtime during App Router prerender; the unified pin removed that specific duplicate-version setup, but production-build compatibility still requires a clean CI pass: https://www.npmjs.com/package/react?activeTab=versions and https://www.npmjs.com/package/react-dom?activeTab=versions
 - Medusa framework/server/CLI, admin SDK, draft-order plugin, test-utils and JS SDK version 2.21.2: https://www.npmjs.com/package/%40medusajs/framework, https://www.npmjs.com/package/%40medusajs/medusa, https://www.npmjs.com/package/%40medusajs/cli, https://www.npmjs.com/package/%40medusajs/admin-sdk, https://www.npmjs.com/package/%40medusajs/draft-order, https://www.npmjs.com/package/%40medusajs/test-utils, https://www.npmjs.com/package/%40medusajs/js-sdk
 - PostgreSQL 16.15 image digest: https://hub.docker.com/layers/library/postgres/16.15/images/sha256-b0c06b134b08ce49214ebb783d292c7cd9527136f30691408e98d2d40d9a5070?tab=layers
 - Redis 7.2.16 image digest: https://hub.docker.com/layers/library/redis/7.2.16/images/sha256-da115d3817f5c0a2c080ea685836bde82bf550bbecdebb12074577ee43926cde
@@ -62,14 +62,23 @@ The metadata and registry checks, strict dependency install, npm ls --all, works
 
 Medusa build also emitted a tsconfig-paths warning that the base path was undefined even though the backend workspace tsconfig specified it; the current revision adds a minimal root tsconfig with baseUrl set so the CLI can resolve it from either working directory. This warning did not fail the backend build but should be removed or documented before accepting a clean setup.
 
+
+
+### Attempt 6 — App Router status-page prerender failure; environment override removed
+
+Workflow run: https://github.com/mo3az-git/zamzam-store/actions/runs/40228084444  
+Commit under test: 4a5334c271193ed5731ab29913ae245306f80ee2.
+
+Metadata checks, TP registry integrity, strict install, dependency-tree capture, lint, disposable PostgreSQL baseline migrations, and the Medusa backend build passed. The Next.js build still failed while prerendering `/404` with `<Html> should not be imported outside of pages/_document`. The current storefront source uses the App Router root layout and does not import `next/document` or define a Pages Router `pages/` directory. The workflow also explicitly exported `NODE_ENV=development` to every step, including `next build`, which emitted a non-standard-environment warning. The corrective change removes that workflow-wide override so Next.js can use its normal production-build environment; the Medusa config has its own development fallback when `NODE_ENV` is unset. This is a diagnostic hypothesis, not a passing result; the next CI run must establish whether it resolves the failure.
+
 ### Corrective changes in the current revision
 
 - Add baseUrl "." to the backend tsconfig to support the Medusa CLI's tsconfig-paths loader.
 - Make @medusajs/draft-order a direct backend dependency and add the peer packages used by the Medusa 2.21.2 default/admin module cohort, while explicitly keeping the backend React 18 / storefront React 19 split.
 - Align react-router-dom with the 7.18.2 version required by Medusa Dashboard 2.21.2. The install and backend build now pass.
-- Unify React/React DOM at 18.3.1 across backend and storefront to fix the observed prerender renderer mismatch, and add a root tsconfig baseUrl for the Medusa CLI loader. These changes await the next CI run.
+- Unify React/React DOM at 18.3.1 across backend and storefront, and add a root tsconfig baseUrl for the Medusa CLI loader. The duplicate-version correction passed metadata/install/lint/migration/backend-build checks but did not yet resolve the storefront production build; the remaining environment-related hypothesis and workflow correction are recorded in Attempt 6.
 - Configure projectConfig.redisUrl for local session storage and register the documented Redis Locking Module Provider using LOCKING_REDIS_URL, so the spike does not silently fall back to a fake Redis instance.
-- Make the metadata checker robust to string-only npm view responses. These changes remain unaccepted until CI verifies dependency resolution, migrations, and both builds.
+- Make the metadata checker robust to string-only npm view responses, and remove the workflow-wide `NODE_ENV=development` override so Next.js production builds use their expected environment. The new build must still pass in CI before the compatibility cohort is accepted.
 
 ## 4. Evidence workflow
 
@@ -88,7 +97,7 @@ The test registry script is a guardrail only: it asserts the presence of exactly
 | TP registry markup | Passed in attempt 5 | Exactly 59 unique rows and all remain unchecked; no behavior cases executed |
 | Backend/storefront lint | Passed in attempt 5 | Repeat after React alignment |
 | Medusa backend build | Passed in attempt 5, but a tsconfig-paths warning remains to be checked | Zero exit code and clean startup/config loader log |
-| Next.js storefront shell build | Failed in attempt 5 due to React runtime/renderer mismatch; React unified at 18.3.1 in current revision | Zero exit code and CI log |
+| Next.js storefront shell build | Failed in attempt 5 from a React runtime mismatch and again in attempt 6 with an App Router `/404` prerender error while the workflow globally set `NODE_ENV=development`; that override has now been removed and awaits rerun | Successful production build log after this correction |
 | Baseline migrations | Passed in attempt 5 against disposable PostgreSQL | Repeat if config changes affect module initialization |
 | Redis connection/locking provider | Migrations passed with locking module configured; explicit lock contention behavior still unverified | Successful lock acquire/release/timeout integration evidence |
 | Native order correlation, inventory atomicity, checkout recovery, payment/webhook/refund behavior, restore | Pending; all 59 TP statuses remain unchecked | Test logs, exit codes, environment/package metadata, database assertions |
