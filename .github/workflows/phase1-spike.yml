@@ -140,6 +140,12 @@ jobs:
           set -o pipefail
           npm run spike:tp-readiness 2>&1 | tee artifacts/tp-readiness-assessment.log
 
+      - name: Run TP-02a distributed cart lock test
+        shell: bash
+        run: |
+          set -o pipefail
+          node apps/backend/scripts/test-tp02a-distributed-lock.mjs 2>&1 | tee artifacts/tp-02a-distributed-lock.log
+
       - name: Upload Phase 1 evidence and bootstrap lockfile
         if: always()
         uses: actions/upload-artifact@v4

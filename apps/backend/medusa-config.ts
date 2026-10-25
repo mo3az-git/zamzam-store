@@ -42,6 +42,9 @@ export default defineConfig({
   },
   modules: [
     {
+      resolve: "./src/modules/batch-inventory"
+    },
+    {
       resolve: "@medusajs/medusa/locking",
       options: {
         providers: [

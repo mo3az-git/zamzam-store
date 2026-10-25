@@ -201,7 +201,7 @@ This section documents the concrete implementation plan for the first three cano
   - `docs/data-model.md` §2.2 line 110 (`line_item.metadata`) defines `checkout_line_key` as a server-generated UUID string (example: `"d3b07384-d113-494b-9c8e-0b046a782298"`).
   - `docs/data-model.md` §3.1 line 227 (`cart_batch_reservation`) and line 328 (`order_batch_allocation`) define `checkout_line_key` as type `UUID NOT NULL`, uniquely identifying the cart line item across reservations and allocations.
 - **What must be implemented in `apps/backend`:**
-  - A cart/line-item workflow step or subscriber hook in `apps/backend` that generates a valid UUID v4 upon item addition and writes it to `line_item.metadata` under the key `checkout_line_key`.
+  - A cart/line-item workflow step or subscriber hook in `apps/backend` that generates a valid UUID upon item addition and writes it to `line_item.metadata` under the key `checkout_line_key`.
   - Verification that variant configuration `manage_inventory: false` bypasses native Medusa inventory reservation checks without throwing inventory validation errors.
   - Test runner script: `apps/backend/scripts/test-tp01-cart-creation.mjs` (status: to be created).
 - **Fixtures needed:**
@@ -214,7 +214,7 @@ This section documents the concrete implementation plan for the first three cano
     - Product with at least one Product Variant configured explicitly with `manage_inventory: false`.
 - **Evidence collection (read out-of-band and from API/DB):**
   - HTTP status code (`200` or `201`) and response body from `POST /store/carts`.
-  - Database row inspection on `cart_line_item`: verify `metadata->>'checkout_line_key'` is present, non-null, and a valid UUID v4 string matching the value to be referenced later by `cart_batch_reservation`.
+  - Database row inspection on `cart_line_item`: verify `metadata->>'checkout_line_key'` is present, non-null, and a valid UUID string matching the value to be referenced later by `cart_batch_reservation`.
   - Database inspection of native inventory tables: verify 0 inventory reservation rows created in native Medusa tables.
   - Pre- and post-test PostgreSQL snapshots of `cart` and `cart_line_item`.
 - **Evidence directory and artifacts:**
@@ -317,9 +317,9 @@ This section documents the concrete implementation plan for the first three cano
   - State mutations (modifying `cart_checkout_session.epoch`, altering `current_attempt_id`, or creating rows in `cart_batch_reservation` or `order_batch_allocation`) occurring before lock acquisition succeeds.
   - Simulating the timeout with mock timers instead of actual concurrent Redis contention.
 
-### Lifecycle notes and open design questions
-- **Initial creation of `cart_checkout_session` (Open Question):**
-  While `docs/order-and-inventory-workflows.md` §2.1 (Stage 2 line 224) specifies `UPDATE cart_checkout_session SET epoch = epoch + 1, current_attempt_id = :attempt_id`, the design documents do not provide an explicit canonical `INSERT` statement or specify whether `cart_checkout_session` is initially inserted during cart creation (`POST /store/carts`), or upserted (`INSERT ... ON CONFLICT (cart_id) DO UPDATE ...`) upon initiation of checkout Stage 2. For TP-02a and TP-03 harness execution, the test fixture must explicitly provision the initial `cart_checkout_session` row until this lifecycle step is finalized.
+### Lifecycle notes and owner default assumptions
+- **Initial creation of `cart_checkout_session` [DEFAULT-ASSUMPTION, owner may change]:**
+  `cart_checkout_session` is NOT created at cart creation. The first checkout attempt creates it using `INSERT ... ON CONFLICT (cart_id) DO UPDATE`, so the initial insert sets `epoch = 1`, `status = 'in_progress'`, and `current_attempt_id`, while subsequent checkout attempts increment the `epoch`. For TP-02a and TP-03 execution, the first checkout attempt manages this lifecycle transition according to this assumption.
 
 ### Supplementary baseline checks (not TP cases)
 
