@@ -4,7 +4,7 @@
 **Date:** 2026-10-25  
 **Inventory Ledger Task 1.1 Decision:** `DOCUMENTATION CONTRACT RECONCILED; RUNTIME CONCURRENCY VALIDATION PENDING`  
 **Architectural Decision:** **`PHASE 0 DESIGN CLOSURE DEFINED; CROSS-DOCUMENT REVIEW/SIGN-OFF PENDING`**  
-*(Phase 0 closes on design/documentation consistency and recorded owner decisions only. Runtime evidence belongs to the Phase 1 Technical Compatibility Spike. A restricted Spike may run before Phase 0 sign-off; store feature development remains blocked pending evidence review and launch gates.)*
+*(Phase 0 closes on design/documentation consistency and recorded owner decisions and default assumptions (owner may change) only. Runtime evidence belongs to the Phase 1 Technical Compatibility Spike. A restricted Spike may run before Phase 0 sign-off; store feature development remains blocked pending evidence review and launch gates.)*
 
 ---
 
@@ -17,7 +17,7 @@ Revision 19 records the current design state for electronic payment plus COD, re
 **Inventory-ledger Task 1.1 status:** `DOCUMENTATION CONTRACT RECONCILED; RUNTIME CONCURRENCY VALIDATION PENDING`. This is a documentation-level result only. The updated design corrects cleanup replay/state-divergence handling, defines conversion recovery as complete-state validation rather than movement-only replay, supplies an operation-level schema cross-reference, adopts bounded SHA-256 operation keys, and separates database privilege testing from trigger testing. All prototype tests remain unexecuted. The inventory-ledger contract was first revised in Revision 15; Revision 16 retained it as documentation-only (historical), and Revision 19 carries it forward while extending the surrounding checkout, return, refund, payment, version, and acceptance contracts. Cross-document consistency is not a substitute for executable validation; all affected workflows remain `[PROPOSED]` and must be audited against the current files.
 
 However, in strict compliance with the **Anti-Overclaiming, Evidence Discipline, and Honest Technical Reporting Rules**:
-1. **Phase 0 closure is design/documentation based.** All eight Phase 0 acceptance criteria remain explicitly unchecked (`[ ]`); closure requires consistent documents and recorded owner decisions, not runtime evidence.
+1. **Phase 0 closure is design/documentation based.** All eight Phase 0 acceptance criteria remain explicitly unchecked (`[ ]`); closure requires consistent documents and recorded owner decisions and default assumptions (owner may change), not runtime evidence.
 2. **A limited Phase 1 Technical Compatibility Spike may run before Phase 0 sign-off.** It is restricted to compatibility/evidence work and the documented TP scenarios; store feature development remains blocked.
 3. **Spike boundary:** The Spike may scaffold only what is necessary to evaluate package compatibility and execute documented evidence scenarios. It may not implement storefront/catalog/checkout features or broaden into general store development.
 4. **Evidence boundary:** A documented API does not prove integration correctness; theoretical lock analysis does not prove runtime concurrency safety. Install/build/migration/concurrency/restore evidence remains assigned to the Phase 1 Spike and launch gates. No evidence is claimed executed in this revision.
@@ -244,7 +244,7 @@ This Revision 19 current-state addendum supersedes older package-currentness and
 
 ### 7.5 Acceptance
 - The A-I document-level review checks are added to `implementation-plan.md`; none are accepted yet. All TP status markers remain `[ ]`.
-- Phase 0 closes on design/documentation consistency and recorded owner decisions only; cross-document review/sign-off remains pending. Runtime evidence is deferred to the Phase 1 Spike. All criteria and TP markers remain unchecked (`[ ]`).
+- Phase 0 closes on design/documentation consistency and recorded owner decisions and default assumptions (owner may change) only; cross-document review/sign-off remains pending. Runtime evidence is deferred to the Phase 1 Spike. All criteria and TP markers remain unchecked (`[ ]`).
 
 
 ### 7.6 Historical Revision 18 Lock-Order Reconciliation (Carried Forward in Revision 19)

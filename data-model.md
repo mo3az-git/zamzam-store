@@ -3,7 +3,7 @@
 **Document Status:** Revision 19 — Electronic Payments and Phase 0 Design Closure (Design Revision; Runtime Unverified)  
 **Date:** 2026-10-25  
 **Current Review Decision:** `Phase 0 design closure is defined; cross-document review/sign-off is pending. Runtime evidence is deferred to the Phase 1 Technical Compatibility Spike.`  
-*(Phase 0 closes on design/documentation and recorded owner decisions only; a restricted Phase 1 Technical Compatibility Spike may run before Phase 0 sign-off, but store feature development remains blocked until the spike evidence and launch gates are reviewed)*
+*(Phase 0 closes on design/documentation and recorded owner decisions and default assumptions (owner may change) only; a restricted Phase 1 Technical Compatibility Spike may run before Phase 0 sign-off, but store feature development remains blocked until the spike evidence and launch gates are reviewed)*
 
 ---
 
@@ -163,7 +163,7 @@ The authoritative physical lot tracking entity for FEFO dispatch, landed costing
 | `purchase_currency`| VARCHAR(3) | NOT NULL, DEFAULT 'EGP' | Source currency code from invoice (e.g. SAR, USD, EGP) |
 | `purchase_price_raw`| NUMERIC(12, 4)| NOT NULL, CHECK (purchase_price_raw > 0) | Unit price in original invoice currency |
 | `exchange_rate_to_egp`| NUMERIC(12, 4)| NOT NULL | Applied exchange rate to EGP (No default! Strictly verified) |
-| `rate_determination_policy`| VARCHAR(64)| NOT NULL, DEFAULT 'customs_clearance_date' | Policy for foreign exchange rate determination (`[OWNER-DECISION]`) |
+| `rate_determination_policy`| VARCHAR(64)| NOT NULL, DEFAULT 'customs_clearance_date' | Policy for foreign exchange rate determination ([DEFAULT-ASSUMPTION] D-7; owner may change) |
 | `unit_cost_purchase` | NUMERIC(12, 4) | NOT NULL, CHECK (unit_cost_purchase > 0) | Base cost in EGP (`purchase_price_raw * exchange_rate_to_egp`) |
 | `unit_cost_allocated`| NUMERIC(12, 4) | NOT NULL, DEFAULT 0.0000 | Landed cost (freight/customs) per unit in EGP |
 | `unit_cost_final` | NUMERIC(12, 4) | NOT NULL | Total landed unit cost = purchase + allocated (EGP) |

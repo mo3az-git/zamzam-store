@@ -3,7 +3,7 @@
 **Document Status:** Revision 19 — Electronic Payment + COD and Phase 0 Design Closure (Design Revision; Runtime Unverified)  
 **Date:** 2026-10-25  
 **Current Review Decision:** **`PHASE 0 DESIGN CLOSURE DEFINED; CROSS-DOCUMENT REVIEW/SIGN-OFF PENDING`**  
-*(Phase 0 closes on design/documentation consistency and recorded owner decisions only. A restricted Phase 1 Technical Compatibility Spike may run before Phase 0 sign-off for compatibility/evidence work only; store feature development remains blocked pending Spike evidence review and launch gates.)*
+*(Phase 0 closes on design/documentation consistency and recorded owner decisions and default assumptions (owner may change) only. A restricted Phase 1 Technical Compatibility Spike may run before Phase 0 sign-off for compatibility/evidence work only; store feature development remains blocked pending Spike evidence review and launch gates.)*
 
 ---
 
