@@ -9,7 +9,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@medusajs/js-sdk": "2.21.2",
+    "@medusajs/js-sdk": "2.22.1",
     "next": "15.5.28",
     "react": "18.3.1",
     "react-dom": "18.3.1"
