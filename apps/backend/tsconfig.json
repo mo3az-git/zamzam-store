@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2021",
+    "baseUrl": ".",
     "esModuleInterop": true,
     "module": "Node16",
     "moduleResolution": "Node16",

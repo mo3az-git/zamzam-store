@@ -45,6 +45,7 @@ jobs:
       NODE_ENV: development
       DATABASE_URL: postgres://postgres:spike-only-password@127.0.0.1:5432/zamzam_spike
       REDIS_URL: redis://127.0.0.1:6379
+      LOCKING_REDIS_URL: redis://127.0.0.1:6379
       STORE_CORS: http://localhost:8000
       ADMIN_CORS: http://localhost:9000
       AUTH_CORS: http://localhost:8000,http://localhost:9000
