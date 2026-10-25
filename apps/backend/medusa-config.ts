@@ -46,7 +46,7 @@ export default defineConfig({
       options: {
         providers: [
           {
-            resolve: "./src/modules/locking-redis/index.mjs",
+            resolve: "@medusajs/medusa/locking-redis",
             id: "locking-redis",
             is_default: true,
             options: {
