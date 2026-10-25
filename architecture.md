@@ -55,7 +55,7 @@ In Medusa v2, independent commerce modules maintain distinct business logic boun
 
 ### 2.1 Two-Tier Enforcement Architecture (Application vs Database)
 In Medusa v2 default configuration, all modules share a single PostgreSQL database instance and schema (`public`). This creates an architectural distinction that must be managed cleanly:
-- **Tier 1 (Application / Workflow Layer):** Every workflow (`createReturnRequestWorkflow`, `completeCodCartWorkflow`, etc.) respects strict module encapsulation, accessing entities across modules exclusively through public module service methods and Medusa Remote Queries (`query.graph`). Direct SQL joins across module tables are never used in application services.
+- **Tier 1 (Application / Workflow Layer):** Every workflow (`createReturnRequestWorkflow`, `completeCheckoutWorkflow`, etc.) respects strict module encapsulation, accessing entities across modules exclusively through public module service methods and Medusa Remote Queries (`query.graph`). Direct SQL joins across module tables are never used in application services.
 - **Tier 2 (Database Defense-in-Depth Layer):** Critical PostgreSQL triggers (`trg_check_return_quantity`, `trg_check_return_request_reactivation`) execute directly inside PostgreSQL across `order_item`, `order_batch_allocation`, and `return_item`. Because they execute within the shared PostgreSQL instance, they provide physical data integrity guarantees against concurrent race conditions, while remaining classified as database-level defense-in-depth rather than domain application logic.
 
 ---
@@ -122,7 +122,7 @@ type LockCommands = {
 >     return workflows_sdk_1.StepResponse.skip();
 > }
 > ```
-> When `completeCartWorkflow` executes inside `completeCodCartWorkflow` via `.runAsStep()`, `parentStepIdempotencyKey` is present and `executeOnSubWorkflow` is false. Therefore, **`completeCartWorkflow` skips its internal lock acquisition**. The parent checkout workflow `completeCodCartWorkflow` **must acquire the lock on `cart.id`**; otherwise, checkout executes with zero locking protection. `[SOURCE-VERIFIED]`
+> When `completeCartWorkflow` executes inside `completeCheckoutWorkflow` via `.runAsStep()`, `parentStepIdempotencyKey` is present and `executeOnSubWorkflow` is false. Therefore, **`completeCartWorkflow` skips its internal lock acquisition**. The parent checkout workflow `completeCheckoutWorkflow` **must acquire the lock on `cart.id`**; otherwise, checkout executes with zero locking protection. `[SOURCE-VERIFIED]`
 
 ---
 
