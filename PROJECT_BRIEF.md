@@ -1,3 +1,19 @@
+> **Owner Decisions Superseding This Brief (Revision 19)**
+>
+> 1. **Payment methods (Gate 6):** Electronic payment and Cash on Delivery (COD) are offered side by side in the MVP. Any statement in this brief that COD is the only or primary payment method, or that online payment gateways or payment webhooks are out of scope, is superseded.
+> 2. **Refunds (Gate 4):** The system computes the refund amount. An administrator may approve the computed amount or override it; every override requires an audited reason and approver record.
+> 3. **Gateway selection:** No electronic payment gateway has been selected. Gateway choice and refund formula parameters remain `Owner input required`; do not infer or invent them.
+> 4. **Document precedence:** If this brief conflicts with the Revision 19 Phase 0 documents, the Revision 19 Phase 0 documents take precedence.
+>
+> **Affected sections in this brief (listed, not edited):**
+> - Header metadata: **Primary payment method**
+> - **§9.3 — COD behavior**
+> - **§14 — Explicitly Out of Scope for the MVP**
+>
+> The other COD references describe COD-specific states or test cases and remain applicable to the COD branch; they do not make COD the only supported payment method.
+>
+> ---
+>
 # Project Brief: Arabic-First E-Commerce Store for Imported Food Products
 ## MVP Product Requirements, Technical Architecture, and Implementation Plan
 

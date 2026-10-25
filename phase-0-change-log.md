@@ -377,7 +377,7 @@ In strict compliance with prompt Section 3 scope boundaries, the following non-i
 
 ## 6. Deliverable Index
 
-All nine canonical Phase 0 documents are located in `docs/`:
+All nine canonical Phase 0 documents are located in the repository root (`/`):
 
 1. [Architecture & System Design](architecture.md)
 2. [Data Model & Schema Specifications](data-model.md)
@@ -391,6 +391,11 @@ All nine canonical Phase 0 documents are located in `docs/`:
 
 
 ---
+
+## 7. Numbering Note
+
+The historical numbering skips from §6 to §8; no separate §7 content was present in the existing change log. This note records the gap without changing the historical sections.
+
 
 ## 8. Historical Revision 16 — Remaining Architecture Workstreams (Historical Status Only)
 
