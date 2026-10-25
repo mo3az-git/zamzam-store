@@ -36,13 +36,19 @@ export class SafeRedisLockingProvider extends RedisLockingProvider {
 
         local ownerIndex = 2 + additionalCount
         local ownerId = ARGV[ownerIndex]
-        local ttl = tonumber(ARGV[ownerIndex + 1])
+        local awaitQueue = ARGV[ownerIndex + 1] == "true"
+        local ttl = tonumber(ARGV[ownerIndex + 2])
 
+        -- Match the upstream single-key contract:
+        -- awaitQueue waits even if the current ownerId is the same, and "*"
+        -- is a sentinel owner that cannot re-enter an existing lock.
         -- Validate the complete key set before mutating any key.
         for i = 1, #keys do
           local currentOwner = redis.call("GET", keys[i])
-          if currentOwner and currentOwner ~= ownerId then
-            return 0
+          if currentOwner then
+            if awaitQueue or currentOwner == "*" or currentOwner ~= ownerId then
+              return 0
+            end
           end
         end
 
@@ -84,6 +90,7 @@ export class SafeRedisLockingProvider extends RedisLockingProvider {
         additionalKeys.length,
         ...additionalKeys,
         ownerId,
+        awaitQueue ? "true" : "false",
         ttl
       );
 
