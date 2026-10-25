@@ -19,7 +19,6 @@
     "spike:registry": "node scripts/verify-tp-registry.mjs",
     "spike:package-metadata": "node scripts/check-package-metadata.mjs",
     "spike:checks": "npm run spike:registry && npm run spike:package-metadata",
-    "postinstall": "node scripts/patch-medusa-cli-tsconfig-paths.cjs",
     "spike:medusa-loader": "node scripts/check-medusa-cli-tsconfig-paths.cjs",
     "spike:tp-readiness": "node scripts/assess-phase1-tp-readiness.mjs"
   },
@@ -35,6 +34,7 @@
     "typescript": "5.5.4",
     "ajv": "8.20.0",
     "ajv-formats": "2.1.1",
-    "picomatch": "3.0.2"
+    "picomatch": "3.0.2",
+    "tsconfig-paths": "4.2.0"
   }
 }

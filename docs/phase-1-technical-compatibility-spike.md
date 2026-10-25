@@ -175,3 +175,12 @@ The test registry script is a guardrail only: it asserts the presence of exactly
 3. Do not choose a payment gateway. Use a provider simulator for the Spike.
 4. Keep production secrets out of the repository. The .env.example file contains local-only placeholders.
 5. Any peer conflict, install/migration/build failure, Redis connection issue, or unexplained dependency duplication is a compatibility blocker; do not bypass it using --legacy-peer-deps or force flags.
+
+
+### Phase 1 follow-up — tested Medusa cohort and dependency-resolution decision (2026-10-26)
+
+- The Phase 1 Spike's tested Medusa cohort is **2.22.1** for `@medusajs/*`. This version was used during the locking-provider review (including commit `ee781b175394fe4d336eb9617f684bb01868609f`) so the adapter and its observed acquire/release semantics were reviewed against the same upstream source cohort as the Spike.
+- References elsewhere in the historical design/review documents to Medusa **2.21.2** record an earlier candidate cohort. They are historical for the Phase 1 Spike; they do not change the design rules or imply that 2.21.2 is being tested by the current workflow.
+- Root devDependencies pin `tsconfig-paths@4.2.0` because Medusa CLI 2.22.1 calls `register({})` without declaring that package. Root pins `ajv@8.20.0`, `ajv-formats@2.1.1`, and `picomatch@3.0.2` satisfy optional peer ranges in the Medusa admin/dashboard tree and avoid incompatible versions being hoisted to the root. npm should retain incompatible major versions as nested dependencies.
+- The dependency resolution must be reproducible from a committed `package-lock.json` using `npm ci --strict-peer-deps`. No TP behavior case is run or accepted by this dependency decision; all 59 TP statuses stay unchecked.
+

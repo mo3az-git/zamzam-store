@@ -505,3 +505,12 @@ Starting `main` commit: `e60b26f1b9bee52ee6ba5a5b625c7ab0bff362c2`.
 - Clarified that the eight Phase 0 design-acceptance criteria and checks A–I are accepted for documentation only, while all 59 TP runtime statuses remain `[ ]`.
 - Restored the owner sign-off line in `phase-0-review-summary.md` to the requested blank template. The owner’s design acceptance is recorded separately; no signature was invented.
 - No application code, lock-order design, TP rows, TP statuses, or runtime evidence claims were changed.
+
+
+### Phase 1 follow-up — tested Medusa cohort and dependency-resolution decision (2026-10-26)
+
+- The Phase 1 Spike's tested Medusa cohort is **2.22.1** for `@medusajs/*`. This version was used during the locking-provider review (including commit `ee781b175394fe4d336eb9617f684bb01868609f`) so the adapter and its observed acquire/release semantics were reviewed against the same upstream source cohort as the Spike.
+- References elsewhere in the historical design/review documents to Medusa **2.21.2** record an earlier candidate cohort. They are historical for the Phase 1 Spike; they do not change the design rules or imply that 2.21.2 is being tested by the current workflow.
+- Root devDependencies pin `tsconfig-paths@4.2.0` because Medusa CLI 2.22.1 calls `register({})` without declaring that package. Root pins `ajv@8.20.0`, `ajv-formats@2.1.1`, and `picomatch@3.0.2` satisfy optional peer ranges in the Medusa admin/dashboard tree and avoid incompatible versions being hoisted to the root. npm should retain incompatible major versions as nested dependencies.
+- The dependency resolution must be reproducible from a committed `package-lock.json` using `npm ci --strict-peer-deps`. No TP behavior case is run or accepted by this dependency decision; all 59 TP statuses stay unchecked.
+

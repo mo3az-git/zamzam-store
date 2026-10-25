@@ -23,17 +23,21 @@ The first strict clean-install attempt completed `npm ci`, but the following `np
 
 The root development manifest now pins compatible peer versions (`ajv@8.20.0`, `ajv-formats@2.1.1`, `picomatch@3.0.2`). Dependencies that require older AJV or picomatch ranges should remain nested at compatible versions. This is a dependency-tree correction, not a suppression of the `npm ls` error; the clean-install workflow must pass again before the correction is accepted.
 
-## Guarded correction
+## Root cause and dependency resolution
 
-The root `postinstall` hook runs `scripts/patch-medusa-cli-tsconfig-paths.cjs`. It only proceeds for Medusa CLI `2.22.1` and only if it finds the expected `register({})` call; it changes it to `register()`. Unexpected CLI versions or source shapes fail the install rather than silently applying an unreviewed edit.
+`@medusajs/cli@2.22.1` calls `tsconfig-paths.register({})` but does **not** declare `tsconfig-paths` as its own dependency. The CLI therefore resolves whichever compatible-looking package Node finds through normal ancestor lookup and npm hoisting. In the observed dependency tree, an unrelated package in the lint/tooling dependency graph caused `tsconfig-paths@3.15.0` to be hoisted at the repository root. That version throws `TypeError: The "path" argument must be of type string. Received undefined` for the CLI's empty options object.
 
-The CI diagnostic step now checks:
-1. Expected Medusa CLI and `tsconfig-paths` versions.
-2. Installed CLI source uses `register()` with no empty options object.
-3. Backend `tsconfig.json` loads and resolves its base URL.
-4. Calling `register()` succeeds without a trace preload.
+The backend `tsconfig.json` itself loaded successfully in the independent configuration probe. The failure was a package-resolution/version interaction, not a missing project config.
 
-The migration step no longer sets `NODE_OPTIONS` or prints a repeated call stack. The diagnostic result is preserved at `artifacts/medusa-loader-diagnostic.log`, and the install log records whether the guarded patch was applied.
+## Dependency fix — no installed-file mutation
+
+The repository root pins `tsconfig-paths@4.2.0` as an exact `devDependency`. Because the CLI does not declare the package, its `require("tsconfig-paths")` resolves this root copy under normal Node resolution. Packages that require incompatible `tsconfig-paths@3.x` keep a nested copy installed by npm; the fix does not override or rewrite their own dependency graph.
+
+The old `postinstall` hook and `scripts/patch-medusa-cli-tsconfig-paths.cjs` are removed. No script writes into `node_modules`. The read-only `scripts/check-medusa-cli-tsconfig-paths.cjs` checks only the version the CLI resolves (must be 4.x) and verifies `register({})` succeeds while the working directory is `apps/backend`. CI preserves this command's output in `artifacts/medusa-loader-diagnostic.log`.
+
+## Root devDependency peer pins
+
+The root also pins `ajv@8.20.0`, `ajv-formats@2.1.1`, and `picomatch@3.0.2` to satisfy optional peer ranges exposed by the Medusa dashboard/admin dependency graph. Keeping these versions explicit prevents an incompatible older version from being selected at the workspace root; packages that require older major versions remain nested in the npm tree. The clean `npm ls --all` check must pass rather than suppressing peer or tree errors.
 
 ## Limitations and next gate
 
