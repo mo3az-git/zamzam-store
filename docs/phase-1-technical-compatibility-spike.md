@@ -197,9 +197,12 @@ This section documents the concrete implementation plan for the first three cano
   - **Setup & Inputs:** `Variant with `manage_inventory: false`.`
   - **Concurrent Interleaving / Injection:** `Standard `POST /store/carts` with line items.`
   - **Expected Observable Result & DB State:** `Cart created; native Medusa inventory checks skipped; line has `checkout_line_key` in metadata.`
+- **Design document citations:**
+  - `docs/data-model.md` §2.2 line 110 (`line_item.metadata`) defines `checkout_line_key` as a server-generated UUID string (example: `"d3b07384-d113-494b-9c8e-0b046a782298"`).
+  - `docs/data-model.md` §3.1 line 227 (`cart_batch_reservation`) and line 328 (`order_batch_allocation`) define `checkout_line_key` as type `UUID NOT NULL`, uniquely identifying the cart line item across reservations and allocations.
 - **What must be implemented in `apps/backend`:**
-  - A cart/line-item workflow step or subscriber hook in `apps/backend` that computes and injects `checkout_line_key` into line item `metadata` (format: `<variant_id>:<batch_id>` or a deterministic hash) upon item addition.
-  - Verification that variant configuration `manage_inventory: false` bypasses native Medusa inventory reservation checks without throwing inventory errors.
+  - A cart/line-item workflow step or subscriber hook in `apps/backend` that generates a valid UUID v4 upon item addition and writes it to `line_item.metadata` under the key `checkout_line_key`.
+  - Verification that variant configuration `manage_inventory: false` bypasses native Medusa inventory reservation checks without throwing inventory validation errors.
   - Test runner script: `apps/backend/scripts/test-tp01-cart-creation.mjs` (status: to be created).
 - **Fixtures needed:**
   - Disposable PostgreSQL container (`postgres:16.15-alpine`) with baseline schema.
@@ -211,7 +214,7 @@ This section documents the concrete implementation plan for the first three cano
     - Product with at least one Product Variant configured explicitly with `manage_inventory: false`.
 - **Evidence collection (read out-of-band and from API/DB):**
   - HTTP status code (`200` or `201`) and response body from `POST /store/carts`.
-  - Database row inspection on `cart_line_item`: verify `metadata->>'checkout_line_key'` is present and populated with the expected value.
+  - Database row inspection on `cart_line_item`: verify `metadata->>'checkout_line_key'` is present, non-null, and a valid UUID v4 string matching the value to be referenced later by `cart_batch_reservation`.
   - Database inspection of native inventory tables: verify 0 inventory reservation rows created in native Medusa tables.
   - Pre- and post-test PostgreSQL snapshots of `cart` and `cart_line_item`.
 - **Evidence directory and artifacts:**
@@ -220,10 +223,10 @@ This section documents the concrete implementation plan for the first three cano
     - `result.json`: TP ID, status (`passed`, `failed`, or `blocked`), UTC start/end timestamps, exact commit SHA, Node/npm versions, package-lock SHA-256, DB/Redis image versions, test command, process exit code, failure summary.
     - `stdout.log` & `stderr.log`: raw terminal output.
     - `db-before.sql` & `db-after.sql`: pre- and post-execution database query snapshots.
-    - `assertions.json`: machine-readable assertion results (HTTP 200/201, `checkout_line_key` in metadata, zero native inventory reservations).
+    - `assertions.json`: machine-readable assertion results (HTTP 200/201, `checkout_line_key` present as valid UUID in metadata, zero native inventory reservations).
 - **Blocking conditions (marked blocked instead of passed):**
   - Store API prerequisites (publishable key, sales channel, region, product variant) missing from the database.
-  - Line-item metadata hook missing in `apps/backend`, resulting in carts created without `checkout_line_key`.
+  - Line-item metadata hook missing in `apps/backend`, resulting in carts created without `checkout_line_key` or with a non-UUID format.
   - Mocking API responses or database state instead of executing against the running Medusa application.
 
 ### Canonical TP-02a: Distributed Cart Lock Acquisition
@@ -233,6 +236,9 @@ This section documents the concrete implementation plan for the first three cano
   - **Setup & Inputs:** `Active cart ID `$CART_ID`.`
   - **Concurrent Interleaving / Injection:** `Call `acquireLockStep({ key: "cart:" + cart.id, ttl: 120, timeout: 5, ownerId: workerId })`.`
   - **Expected Observable Result & DB State:** `Lock acquired in Redis (`SET cart:... worker:... NX EX 120`); verifies nested workflow lock skip behavior.`
+- **Design document citations:**
+  - `docs/data-model.md` §3.1 lines 181-193 defines `cart_checkout_session` (columns: `cart_id` PK, `current_attempt_id` UUID, `epoch` BIGINT DEFAULT 1, `status` VARCHAR(32) DEFAULT 'in_progress').
+  - `docs/order-and-inventory-workflows.md` §2.1 lines 217-224 (Stage 2) defines `acquireLockStep(key="cart:" + cart.id, timeout=5, ttl=120, ownerId=executionId)` prior to session/attempt mutations.
 - **What must be implemented in `apps/backend`:**
   - Reusable Medusa workflow step `acquireLockStep` (in `apps/backend/src/workflows/steps/acquire-lock.ts` — status: to be created) that invokes the configured Redis locking provider (`@medusajs/locking-redis`).
   - Nested workflow lock skip behavior: workflow logic that inspects current execution context so that nested steps called by the same owner/worker re-use the held lock without attempting redundant lock acquisition or failing.
@@ -241,27 +247,28 @@ This section documents the concrete implementation plan for the first three cano
   - Disposable PostgreSQL container (`postgres:16.15-alpine`).
   - Disposable Redis container (`redis:7.2.16-alpine`) reachable via `REDIS_URL` / `LOCKING_REDIS_URL`.
   - Active Cart record in PostgreSQL with ID `$CART_ID`.
+  - Authoritative `cart_checkout_session` record in PostgreSQL (with initial `epoch = 1`, `status = 'in_progress'`, and `current_attempt_id`).
   - Unique worker identifier (`workerId`, e.g. UUID).
 - **Evidence collection (read out-of-band and from API/DB):**
   - Direct Redis inspection via independent client (`ioredis`):
     - Verify key `cart:$CART_ID` exists in Redis.
     - Verify key value matches `workerId`.
-    - Verify `TTL cart:$CART_ID` is $> 110$s and <= 120s.
+    - Verify `TTL cart:$CART_ID` is a TTL greater than 110 seconds and at most 120 seconds.
   - Step execution outcome: verify successful return from `acquireLockStep`.
   - Nested invocation verification: execute a nested lock call within the same worker context and assert lock skip without errors.
-  - Database before/after snapshots of any session/lock tracking tables.
+  - Database before/after snapshots of `cart_checkout_session` and any session/lock tracking tables.
 - **Evidence directory and artifacts:**
   - Directory: `artifacts/tp-evidence/TP-02a/` (as specified in `docs/phase1-tp-execution-register.md`)
   - Artifacts:
     - `result.json`: metadata, status, commit SHA, exit code.
     - `stdout.log` & `stderr.log`: raw terminal output.
     - `db-before.sql` & `db-after.sql`: database state snapshots.
-    - `assertions.json`: assertions for key presence, matching ownerId, valid TTL window, and nested lock skip pass.
+    - `assertions.json`: assertions for key presence, matching ownerId, TTL greater than 110 seconds and at most 120 seconds, and nested lock skip pass.
 - **Blocking conditions (marked blocked instead of passed):**
   - Redis connection failure or unconfigured `LOCKING_REDIS_URL`.
   - `acquireLockStep` step not implemented in `apps/backend`.
   - Redis locking provider failing to execute atomic `SET NX EX`.
-  - Active cart record missing in PostgreSQL.
+  - Active cart record or associated `cart_checkout_session` record missing in PostgreSQL.
   - Mocking the Redis provider rather than verifying out-of-band Redis state.
 
 ### Canonical TP-03: Concurrent Cart Lock Rejection
@@ -271,36 +278,48 @@ This section documents the concrete implementation plan for the first three cano
   - **Setup & Inputs:** `Lock key `cart:$CART_ID` held by Worker A.`
   - **Concurrent Interleaving / Injection:** `Worker B initiates checkout on same cart with timeout 5s.`
   - **Expected Observable Result & DB State:** `Worker B times out after 5s; throws `LockTimeoutError` mapped to 409 Conflict without reserving stock or altering epoch.`
+- **Design document citations:**
+  - `docs/data-model.md` §3.1 lines 181-193 defines `cart_checkout_session` as the authoritative table for checkout epoch (`cart_checkout_session.epoch`) and `current_attempt_id`.
+  - `docs/data-model.md` §3.1 lines 220-239 defines `cart_batch_reservation` (pre-order reservations created during checkout).
+  - `docs/data-model.md` §3.1 lines 320-334 defines `order_batch_allocation` (permanent batch allocations created upon order conversion).
+  - `docs/order-and-inventory-workflows.md` §2.1 Stage 2 lines 218-222 specifies that on Redis lock timeout (>5s), the workflow catches `LockTimeoutError`, deletes any pending idempotency lease via CAS, and returns HTTP 409 Conflict without mutating session epoch or reserving stock.
 - **What must be implemented in `apps/backend`:**
   - Checkout workflow entrypoint or endpoint route in `apps/backend` (e.g. `POST /store/carts/:id/complete` or custom checkout workflow) that calls `acquireLockStep` with a 5-second timeout.
   - Exception mapping: error handler that intercepts `LockTimeoutError` and maps it to HTTP 409 Conflict with an explanatory error payload.
-  - Cart integrity guard: ensuring that on lock timeout, no stock reservations are written, no inventory allocation rows are inserted, and cart `epoch` remains completely unaltered.
+  - Cart integrity guard: ensuring that on lock timeout, no reservation rows are inserted into `cart_batch_reservation`, no allocation rows are inserted into `order_batch_allocation`, and `cart_checkout_session.epoch` and `current_attempt_id` remain completely unaltered in PostgreSQL.
   - Concurrency harness script: `apps/backend/scripts/test-tp03-concurrent-lock-rejection.mjs` (status: to be created) coordinating Worker A (lock holder) and Worker B (competing requester).
 - **Fixtures needed:**
   - Disposable PostgreSQL container (`postgres:16.15-alpine`).
   - Disposable Redis container (`redis:7.2.16-alpine`).
-  - Active Cart record in PostgreSQL with known initial `epoch` (e.g. `epoch = 1`).
-  - Worker A pre-acquiring `cart:$CART_ID` with TTL >= 30s.
+  - Active Cart record in PostgreSQL with ID `$CART_ID`.
+  - Pre-existing `cart_checkout_session` row in PostgreSQL with known initial values (`epoch = 1`, `status = 'in_progress'`, and initial `current_attempt_id`).
+  - Worker A pre-acquiring `cart:$CART_ID` in Redis with TTL >= 30 seconds.
 - **Evidence collection (read out-of-band and from API/DB):**
-  - Wall-clock execution timer: assert Worker B's attempt blocks for ~5.0 seconds ($\pm 500$ ms) before rejecting.
+  - Wall-clock execution timer: assert Worker B's attempt blocks for 5.0 seconds plus or minus 0.5 seconds before rejecting.
   - HTTP status / Error class: assert HTTP `409 Conflict` (or `LockTimeoutError` when calling workflow directly).
   - PostgreSQL database before/after state diff:
-    - Cart row `epoch` is unchanged (`db-before.sql` matches `db-after.sql`).
-    - Allocation and reservation tables remain empty (0 rows created).
+    - Assert `cart_checkout_session.epoch and current_attempt_id are unchanged before/after` (verifying `db-before.sql` matches `db-after.sql` for `cart_checkout_session`).
+    - Assert exactly 0 new rows in `cart_batch_reservation` for the cart under test.
+    - Assert exactly 0 new rows in `order_batch_allocation` for the cart under test.
+    - Assert exactly 0 new reservation rows in Medusa native inventory/reservation tables (e.g. `reservation_item`), verifying native inventory checks remain bypassed.
   - Redis out-of-band key inspection: assert `cart:$CART_ID` remains owned by Worker A and was not overwritten or released by Worker B.
 - **Evidence directory and artifacts:**
   - Directory: `artifacts/tp-evidence/TP-03/` (as specified in `docs/phase1-tp-execution-register.md`)
   - Artifacts:
     - `result.json`: metadata, status, commit SHA, exit code.
     - `stdout.log` & `stderr.log`: raw terminal output.
-    - `db-before.sql` & `db-after.sql`: pre- and post-execution database query snapshots showing untouched epoch and 0 allocations.
-    - `assertions.json`: assertions on timeout duration, 409 Conflict mapping, unchanged epoch, and preserved Worker A lock.
+    - `db-before.sql` & `db-after.sql`: pre- and post-execution database query snapshots showing untouched `cart_checkout_session.epoch`, untouched `current_attempt_id`, and zero rows in `cart_batch_reservation`, `order_batch_allocation`, and native reservation tables.
+    - `assertions.json`: assertions on timeout duration, 409 Conflict mapping, `cart_checkout_session.epoch and current_attempt_id are unchanged before/after`, zero reservations/allocations across custom and native tables, and preserved Worker A lock.
 - **Blocking conditions (marked blocked instead of passed):**
   - Checkout workflow or route not implemented in `apps/backend`.
   - `LockTimeoutError` unhandled or returned as 500 Internal Server Error instead of 409 Conflict.
   - Worker B bypassing the lock or Worker A's lock being improperly overwritten.
-  - State mutations (epoch change, stock reservation) occurring before lock acquisition succeeds.
+  - State mutations (modifying `cart_checkout_session.epoch`, altering `current_attempt_id`, or creating rows in `cart_batch_reservation` or `order_batch_allocation`) occurring before lock acquisition succeeds.
   - Simulating the timeout with mock timers instead of actual concurrent Redis contention.
+
+### Lifecycle notes and open design questions
+- **Initial creation of `cart_checkout_session` (Open Question):**
+  While `docs/order-and-inventory-workflows.md` §2.1 (Stage 2 line 224) specifies `UPDATE cart_checkout_session SET epoch = epoch + 1, current_attempt_id = :attempt_id`, the design documents do not provide an explicit canonical `INSERT` statement or specify whether `cart_checkout_session` is initially inserted during cart creation (`POST /store/carts`), or upserted (`INSERT ... ON CONFLICT (cart_id) DO UPDATE ...`) upon initiation of checkout Stage 2. For TP-02a and TP-03 harness execution, the test fixture must explicitly provision the initial `cart_checkout_session` row until this lifecycle step is finalized.
 
 ### Supplementary baseline checks (not TP cases)
 
