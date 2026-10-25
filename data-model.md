@@ -493,7 +493,7 @@ Header entity for customer returns and depot delivery failures.
 - `CONSTRAINT chk_return_shipping_refund_reason CHECK (shipping_refund_reason IS NULL OR shipping_refund_reason IN ('merchant_fault','customer_change_of_mind','undelivered_electronic_order','not_applicable'))`
 - Formula-breakdown invariant: before approval, the system persists `computed_items_total`, `shipping_refund_amount`, `shipping_refund_reason`, and `computed_refund_amount` together; the computed total equals the item total plus the shipping component under the formula rules. The breakdown is frozen with the approved amount and its approval audit fields.
 - Override audit invariant: if `approved_refund_amount` differs from `computed_refund_amount`, both `refund_override_reason` and `refund_override_by` must be nonempty/non-null; these fields and the approved amount/approver/timestamp become immutable once approval is recorded.
-- `CONSTRAINT chk_completed_return_has_amount CHECK (return_status <> 'completed' OR return_type <> 'customer_return' OR approved_refund_amount IS NOT NULL)`
+- `CONSTRAINT chk_completed_return_has_amount CHECK (return_status <> 'completed' OR (return_type = 'customer_return' AND approved_refund_amount IS NOT NULL) OR (return_type = 'undelivered_depot_return' AND (approved_refund_amount IS NOT NULL OR (refund_amount_approved_by IS NULL AND refund_amount_approved_at IS NULL))))`
 - `order_id` and `order_version` are immutable after insert.
 - Once set, `approved_refund_amount`, `refund_amount_approved_by`, and `refund_amount_approved_at` are immutable. Any amount correction requires a formally recorded cancellation/reopen path before refund intents exist; direct overwrite is prohibited.
 - Creation must capture the order version used by the batch allocations; it must not blindly copy the latest version if the allocations belong to an earlier version.
@@ -510,7 +510,7 @@ Granular line item inspection for returned food products.
 | `quantity` | INTEGER | NOT NULL, CHECK (quantity > 0) | Quantity returned |
 | `customer_reason` | VARCHAR(100) | NOT NULL | Free-text reason stated by the customer; retained independently of the structured cause |
 | `return_cause` | VARCHAR(50) | NOT NULL | Structured cause: `merchant_fault`, `customer_change_of_mind`, `courier_undelivered` (for undelivered depot returns); set when the return is recorded and editable only before the parent request is approved |
-| `goods_condition` | VARCHAR(50) | NULL | Structured inspection category: `sealed`, `opened`, `damaged_on_receipt`, `expired`; set during inspection |
+| `goods_condition` | VARCHAR(50) | NULL | Structured inspection category: `sealed`, `opened`, `damaged_on_receipt`, `expired`; required before refund computation except for `return_cause = 'courier_undelivered'`, where it is not applicable and remains NULL |
 | `inspection_status`| VARCHAR(50) | NOT NULL, DEFAULT 'pending_inspection' | `pending_inspection`, `approved_restock`, `rejected_damaged`, `rejected_expired` |
 | `inspection_notes` | TEXT | NULL | Seal integrity, storage condition notes |
 | `inspected_by` | VARCHAR(255) | NULL | Supervisor user ID |
@@ -518,10 +518,10 @@ Granular line item inspection for returned food products.
 | `created_at` | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | UTC timestamp |
 
 **Constraints on `return_item`:**
-- `CONSTRAINT chk_return_item_goods_condition CHECK (goods_condition IS NULL OR goods_condition IN ('sealed','opened','damaged_on_receipt','expired'))`
+- `CONSTRAINT chk_return_item_goods_condition CHECK ((return_cause = 'courier_undelivered' AND goods_condition IS NULL) OR (return_cause <> 'courier_undelivered' AND goods_condition IS NOT NULL AND goods_condition IN ('sealed','opened','damaged_on_receipt','expired')))`
 - `CONSTRAINT chk_return_item_cause CHECK (return_cause IN ('merchant_fault','customer_change_of_mind','courier_undelivered'))`
 - `return_cause` is set when the return item is recorded and may be edited only while the parent request has no frozen `approved_refund_amount`; it is immutable once the request is approved.
-- `goods_condition` is set during inspection and may be changed only while inspection remains open and the parent request is not terminal; it must be populated before refund computation.
+- `goods_condition` is set during inspection and may be changed only while inspection remains open and the parent request is not terminal. It must be populated before refund computation when `return_cause <> 'courier_undelivered'`; for `courier_undelivered`, it is not applicable and must remain NULL. This conditional requirement is enforced by `chk_return_item_goods_condition`.
 - `return_request_id`, `line_item_id`, `batch_id`, and `quantity` are immutable after insertion. `customer_reason` remains free text. Inspection fields may change only while the parent request is not terminal; any attempt to rewrite the identity/quantity of a recorded return item is rejected.
 
 #### `refund_record`
@@ -557,7 +557,7 @@ Dedicated ledger tracking customer refunds under a 4-stage preventive dual-contr
 - `CONSTRAINT chk_refund_completed_actors CHECK (status <> 'completed' OR (requested_by IS NOT NULL AND approved_by IS NOT NULL AND disbursed_by IS NOT NULL AND reconciled_by IS NOT NULL AND requested_by <> approved_by AND requested_by <> disbursed_by AND requested_by <> reconciled_by AND approved_by <> disbursed_by AND approved_by <> reconciled_by AND disbursed_by <> reconciled_by AND reconciled_at IS NOT NULL))`
 - The four actor IDs, once assigned, must represent four distinct people. `chk_refund_completed_actors` makes all four actors and reconciliation timestamp mandatory for `completed`; `chk_refund_disbursement_actor` requires an approver and disburser before a submitted payout can be recorded. Database `CHECK` constraints cannot enforce role authorization by themselves; the workflow must additionally validate the relevant role and actor identity.
 - Refund amount capacity checks must reserve the amount while status is any of `pending_approval`, `approved`, `disbursement_initiated`, `disbursement_unknown`, `disbursement_submitted`, or `completed`. A disbursement with an unknown external outcome continues to reserve capacity until reconciliation proves the transfer did not happen or confirms it did.
-- A new refund intent requires a frozen positive `return_request.approved_refund_amount` and a matching order/return identity. The system computes `computed_items_total`, `shipping_refund_amount`, `shipping_refund_reason`, and `computed_refund_amount` using the snapshotted per-unit paid-after-discount amount, structured `return_cause` and `goods_condition`, and the decision table in `order-and-inventory-workflows.md` §2.4. Only tax treatment, possible shipping withholding for refused/unreachable undelivered electronic orders, and legal review/approval of Arabic policy text remain `Owner input required`. An authorized admin may approve the computed amount or override it with a mandatory reason and approver audit. The breakdown, approved amount, and approval metadata are immutable after approval. Client-supplied amounts are never trusted.
+- A new refund intent requires a frozen positive `return_request.approved_refund_amount` and a matching order/return identity. It is permitted for a `customer_return` in `pending_inspection`, and for an `undelivered_depot_return` only when `order_operational_state.payment_method = 'electronic'` and its frozen amount has been approved. The system computes `computed_items_total`, `shipping_refund_amount`, `shipping_refund_reason`, and `computed_refund_amount` using the snapshotted per-unit paid-after-discount amount, structured `return_cause` and conditional `goods_condition`, and the decision table in `order-and-inventory-workflows.md` §2.4. Only tax treatment, possible shipping withholding for refused/unreachable undelivered electronic orders, and legal review/approval of Arabic policy text remain `Owner input required`. An authorized admin may approve the computed amount or override it with a mandatory reason and approver audit. The breakdown, approved amount, and approval metadata are immutable after approval. Client-supplied amounts are never trusted.
 
 #### `refund_disbursement_attempt`
 Durable record for each external payout attempt. This is required because a bank/Vodafone Cash transfer can succeed while the application loses the response before updating `refund_record`.
@@ -926,17 +926,22 @@ BEGIN
     END IF;
 
     IF TG_OP = 'UPDATE' AND OLD.approved_refund_amount IS NULL AND NEW.approved_refund_amount IS NOT NULL THEN
-        IF NEW.return_type <> 'customer_return' OR NEW.return_status <> 'pending_inspection' OR
-           NEW.refund_amount_approved_by IS NULL OR NEW.refund_amount_approved_at IS NULL THEN
-            RAISE EXCEPTION 'RETURN_REFUND_AMOUNT_APPROVAL_INVALID: only an authorized, timestamped customer-return approval may freeze an amount';
+        IF NOT (
+               (NEW.return_type = 'customer_return' AND NEW.return_status = 'pending_inspection') OR
+               (NEW.return_type = 'undelivered_depot_return' AND NEW.return_status = 'pending_inspection' AND
+                EXISTS (SELECT 1 FROM order_operational_state oop
+                         WHERE oop.order_id = NEW.order_id AND oop.payment_method = 'electronic'))
+           ) OR NEW.refund_amount_approved_by IS NULL OR NEW.refund_amount_approved_at IS NULL THEN
+            RAISE EXCEPTION 'RETURN_REFUND_AMOUNT_APPROVAL_INVALID: only an authorized, timestamped customer-return or electronic undelivered-depot-return approval may freeze an amount';
         END IF;
         SELECT COUNT(*),
                COUNT(*) FILTER (WHERE inspection_status = 'pending_inspection'),
                COUNT(*) FILTER (WHERE inspection_status = 'approved_restock')
           INTO v_item_count, v_pending_inspection_count, v_approved_item_count
           FROM return_item WHERE return_request_id = NEW.id;
-        IF v_item_count = 0 OR v_pending_inspection_count > 0 OR v_approved_item_count = 0 THEN
-            RAISE EXCEPTION 'RETURN_REFUND_AMOUNT_APPROVAL_REQUIRES_FINAL_INSPECTION: all inspections must be final and at least one item approved';
+        IF v_item_count = 0 OR v_pending_inspection_count > 0 OR
+           (NEW.return_type = 'customer_return' AND v_approved_item_count = 0) THEN
+            RAISE EXCEPTION 'RETURN_REFUND_AMOUNT_APPROVAL_REQUIRES_FINAL_INSPECTION: all inspections must be final; customer returns also require at least one approved item';
         END IF;
     END IF;
 
@@ -976,8 +981,26 @@ BEGIN
                 SELECT status INTO v_electronic_payment_status
                   FROM electronic_payment_attempt WHERE order_id = NEW.order_id
                  ORDER BY updated_at DESC LIMIT 1;
-                IF v_electronic_payment_status NOT IN ('failed', 'voided', 'refunded') THEN
-                    RAISE EXCEPTION 'DEPOT_RETURN_PAYMENT_NOT_RECONCILED: electronic payment must be failed, voided, or refunded before depot return completion';
+                IF NEW.approved_refund_amount IS NOT NULL THEN
+                    IF NEW.refund_amount_approved_by IS NULL OR NEW.refund_amount_approved_at IS NULL THEN
+                        RAISE EXCEPTION 'DEPOT_RETURN_ELECTRONIC_APPROVAL_MISSING: frozen approved amount requires approver and timestamp';
+                    END IF;
+                    SELECT COUNT(*), COALESCE(SUM(rf.amount), 0)
+                      INTO v_completed_refund_count, v_completed_refund_amount
+                      FROM refund_record rf
+                     WHERE rf.return_request_id = NEW.id AND rf.status = 'completed';
+                    IF v_completed_refund_count = 0 OR v_completed_refund_amount <> NEW.approved_refund_amount THEN
+                        RAISE EXCEPTION 'DEPOT_RETURN_ELECTRONIC_REFUND_MISMATCH: completed/reconciled refunds must exactly equal the frozen approved amount';
+                    END IF;
+                    IF v_electronic_payment_status NOT IN ('refunded', 'partially_refunded') THEN
+                        RAISE EXCEPTION 'DEPOT_RETURN_ELECTRONIC_REFUND_NOT_RECONCILED: approved refund must be fully reconciled before completion';
+                    END IF;
+                ELSE
+                    SELECT COUNT(*) INTO v_completed_refund_count
+                      FROM refund_record rf WHERE rf.return_request_id = NEW.id;
+                    IF v_completed_refund_count <> 0 OR v_electronic_payment_status NOT IN ('voided', 'failed') THEN
+                        RAISE EXCEPTION 'DEPOT_RETURN_ELECTRONIC_SETTLEMENT_MISSING: completion without a refund is allowed only when payment is voided/failed before capture and no refund_record exists';
+                    END IF;
                 END IF;
             ELSE
                 RAISE EXCEPTION 'DEPOT_RETURN_PAYMENT_METHOD_UNKNOWN: cannot complete without a known payment method';
@@ -1051,13 +1074,13 @@ FOR EACH ROW EXECUTE FUNCTION check_return_request_state();
 ### 4.4 Required transition contract
 
 - A return request may not be inserted directly in `completed`.
-- A customer-return request may enter `completed` only after every item inspection is finalized, at least one item is approved, an authorized supervisor has frozen `approved_refund_amount` with actor/timestamp evidence, and the sum of completed/reconciled refunds for that request exactly equals that amount. The amount is system-computed from the snapshotted per-unit paid-after-discount amounts, `return_cause`, `goods_condition`, and the shipping decision table in `order-and-inventory-workflows.md` §2.4. Tax treatment remains `Owner input required`; the refused/unreachable undelivered-electronic-order shipping exception remains `Owner input required`. If the approved amount differs from `computed_refund_amount`, a nonempty override reason and `refund_override_by` are mandatory.
+- A customer-return request may enter `completed` only after every item inspection is finalized, at least one item is approved, an authorized supervisor has frozen `approved_refund_amount` with actor/timestamp evidence, and the sum of completed/reconciled refunds for that request exactly equals that amount. An `undelivered_depot_return` with electronic payment may enter `completed` only after all return-item rows are finalized, the frozen approved amount plus approver/timestamp and any required override audit exist, and the sum of completed/reconciled `refund_record` amounts exactly equals the approved amount. The only no-refund exception for an electronic undelivered return is explicit: no `refund_record` exists and the payment status is `voided` or `failed` before capture. The amount is system-computed from the snapshotted per-unit paid-after-discount amounts, `return_cause`, conditional `goods_condition`, and the shipping decision table in `order-and-inventory-workflows.md` §2.4. Tax treatment remains `Owner input required`; the refused/unreachable undelivered-electronic-order shipping exception remains `Owner input required`. If the approved amount differs from `computed_refund_amount`, a nonempty override reason and `refund_override_by` are mandatory.
 - For a COD order, an undelivered depot return may enter `completed` only when COD status is `collection_failed`; no cash refund is issued for cash never collected. For an electronically paid order returned undelivered by the courier, compute a full refund of items plus shipping and route it through the normal admin approval/override flow with an audited reason; the refusal/unreachable shipping-withholding exception remains `Owner input required`. The applicable electronic refund must be reconciled before the undelivered return can be considered financially settled.
 - If every item is rejected, the request must transition to `rejected`, not `completed`.
 - `completed` rows are immutable in every column, not merely terminal with respect to `return_status`.
 - Requests in `cancelled` or `rejected` can reactivate only to `pending_receipt` or `pending_inspection`, after aggregation and capacity validation.
 - Every cumulative-return query excludes `cancelled` and `rejected` requests and filters by the saved order version.
-- After all inspections are final, an authorized supervisor must freeze `approved_refund_amount`, `refund_amount_approved_by`, and `refund_amount_approved_at`. The system computes and persists `computed_items_total`, `shipping_refund_amount`, `shipping_refund_reason`, and `computed_refund_amount` from the snapshotted per-unit paid-after-discount amounts, structured return cause, goods condition, and the decision table in `order-and-inventory-workflows.md` §2.4. Tax treatment remains `Owner input required`; whether shipping may be withheld for refused/unreachable undelivered electronic orders remains `Owner input required`. Arabic Terms of Service, Privacy Policy, and return/refund policy text require legal review/approval before launch. An admin may approve or override with a mandatory reason and approver audit. Once approved, the breakdown, approved amount, actor/timestamp, and override audit are immutable. Refund intent creation reserves applicable settled-payment capacity (electronic paid amount or COD collected/remitted capacity) and the individual return's approved amount.
+- After all applicable inspections are final, an authorized supervisor must freeze `approved_refund_amount`, `refund_amount_approved_by`, and `refund_amount_approved_at` for customer returns and electronically paid undelivered depot returns. The system computes and persists `computed_items_total`, `shipping_refund_amount`, `shipping_refund_reason`, and `computed_refund_amount` from the snapshotted per-unit paid-after-discount amounts, structured return cause, conditional goods condition, and the decision table in `order-and-inventory-workflows.md` §2.4. Tax treatment remains `Owner input required`; whether shipping may be withheld for refused/unreachable undelivered electronic orders remains `Owner input required`. Arabic Terms of Service, Privacy Policy, and return/refund policy text require legal review/approval before launch. An admin may approve or override with a mandatory reason and approver audit. Once approved, the breakdown, approved amount, actor/timestamp, and override audit are immutable. Refund intent creation reserves applicable settled-payment capacity (electronic paid amount or COD collected/remitted capacity) and the individual return's approved amount. The voided/never-captured electronic exception requires no `refund_record` and payment status `voided` or `failed`.
 - These rules are `[PROPOSED]` until migration and TP-23a through TP-23f execution provide evidence.
 
 ---
