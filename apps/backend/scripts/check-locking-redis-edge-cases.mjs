@@ -24,13 +24,13 @@ const clients = [];
 const providers = [];
 const results = [];
 
-async function openProvider() {
+async function openProvider(providerPrefix = prefix) {
   const client = new Redis(redisUrl, redisOptions);
   client.on("error", () => {});
   clients.push(client);
   await client.connect();
   const provider = new SafeRedisLockingProvider(
-    { redisClient: client, prefix },
+    { redisClient: client, prefix: providerPrefix },
     {
       waitLockingTimeout: 1,
       defaultRetryInterval: 10,
@@ -122,9 +122,10 @@ try {
   });
 
   await check("releaseAll on an empty namespace is safe", async () => {
-    const { provider, client } = await openProvider();
+    const emptyPrefix = prefix + "empty:";
+    const { provider, client } = await openProvider(emptyPrefix);
     await provider.releaseAll({ ownerId: "owner-empty" });
-    assert.equal(await client.scan("0", "MATCH", prefix + "*", "COUNT", 100).then((r) => r[1].length), 0);
+    assert.equal(await client.scan("0", "MATCH", emptyPrefix + "*", "COUNT", 100).then((r) => r[1].length), 0);
   });
 } finally {
   for (const { provider, client } of providers) {
