@@ -17,12 +17,12 @@ graph TD
     Admin["Operations / Warehouse Staff"] -->|HTTPS / Arabic Admin| NextAdmin["Medusa Admin Dashboard (React 19)"]
     
     subgraph CoreBackend ["Medusa Commerce Engine (Node.js 24.22.1 / 22.x LTS)"]
-        MedusaServer["@medusajs/medusa@2.21.2 candidate baseline"]
+        MedusaServer["@medusajs/medusa@2.22.1 spike candidate"]
         CoreFlows["Medusa core workflows (version resolved by pinned framework cohort)"]
         CustomModules["Custom Domain Modules (DML)"]
     end
     
-    NextStorefront -->|Medusa JS SDK v2.21.2 candidate baseline| MedusaServer
+    NextStorefront -->|Medusa JS SDK v2.22.1 spike candidate| MedusaServer
     NextStorefront -->|Checkout / payment session| MedusaServer
     NextAdmin -->|REST / Admin API| MedusaServer
     MedusaServer -->|Hosted payment URL / redirect| PaymentGateway["Electronic Payment Gateway (provider abstraction; not selected)"]
@@ -62,16 +62,16 @@ In Medusa v2 default configuration, all modules share a single PostgreSQL databa
 
 ## 3. Pinned Technology Version Matrix
 
-**Revision 19 current candidate-cohort rule (package-selection history began in Revision 16):** Use an exact, published common stable Medusa cohort rather than assuming every package with a `2.22.x` label is published and compatible at the same time. Public npm pages observed on 2026-10-25 showed staggered `2.22.0`/`2.22.1` publishing across framework, server, CLI, and SDK packages. The selected **candidate cohort** below deliberately uses the same stable `2.21.2` versions for directly pinned Medusa packages. This is a reproducible candidate, **not a claim that the app was installed or built**.
+**Phase 1 spike candidate-cohort update (2026-10-25):** Phase 0 originally selected a common stable `2.21.2` cohort. The Phase 1 branch now exercises exact direct Medusa pins at `2.22.1`; exact metadata, strict install, lint, disposable PostgreSQL migrations, and both builds passed in baseline CI. This makes `2.22.1` the current **spike candidate**, not a final compatibility sign-off. The real-Redis regression then failed 4 of 7 checks; see `docs/phase-1-technical-compatibility-spike.md`. The locking provider remains a blocker and store feature development remains prohibited.
 
 | Component | Candidate pin / support stream | Rationale and evidence status |
 |---|---|---|
 | Backend runtime | Node.js `24.22.1` LTS | Official Node release published 2026-10-21. Runtime actually used by this project has not been confirmed in the present editing environment. `[VERIFIED-DOCS]`; application compatibility `[PROPOSED]`. |
-| Medusa framework | `@medusajs/framework@2.21.2` | Exact version listed on npm on 2026-10-25. Chosen as common stable cohort pending lockfile/peer-resolution and build checks. `[SOURCE-VERIFIED: package exists]`; integration `[PROPOSED]`. |
-| Medusa server | `@medusajs/medusa@2.21.2` | Exact version listed on npm on 2026-10-25. Must be resolved with framework as a compatible pair. `[SOURCE-VERIFIED: package exists]`; integration `[PROPOSED]`. |
-| Medusa CLI | `@medusajs/cli@2.21.2` | Exact version listed on npm on 2026-10-25; retain only if compatible with the selected framework/server peer requirements. `[SOURCE-VERIFIED: package exists]`; integration `[PROPOSED]`. |
-| Medusa Store SDK | `@medusajs/js-sdk@2.21.2` | Exact version listed on npm on 2026-10-25, selected to match the candidate server cohort. `[SOURCE-VERIFIED: package exists]`; storefront integration `[PROPOSED]`. |
-| Medusa internal workflow/locking modules | Resolved through the selected Medusa packages and lockfile; do not independently pin undocumented internal packages unless directly imported and published as standalone dependencies | The previous blanket assertion that every Medusa package was `2.22.1` has been withdrawn. Validate actual dependency tree and import paths during the compatibility spike. `[PROPOSED]`. |
+| Medusa framework | `@medusajs/framework@2.22.1` | Exact version listed on npm on 2026-10-25. Chosen as common stable cohort pending lockfile/peer-resolution and build checks. `[SOURCE-VERIFIED: package exists]`; integration `[PROPOSED]`. |
+| Medusa server | `@medusajs/medusa@2.22.1` | Exact version listed on npm on 2026-10-25. Must be resolved with framework as a compatible pair. `[SOURCE-VERIFIED: package exists]`; integration `[PROPOSED]`. |
+| Medusa CLI | `@medusajs/cli@2.22.1` | Exact version listed on npm on 2026-10-25; retain only if compatible with the selected framework/server peer requirements. `[SOURCE-VERIFIED: package exists]`; integration `[PROPOSED]`. |
+| Medusa Store SDK | `@medusajs/js-sdk@2.22.1` | Exact version listed on npm on 2026-10-25, selected to match the candidate server cohort. `[SOURCE-VERIFIED: package exists]`; storefront integration `[PROPOSED]`. |
+| Medusa internal workflow/locking modules | Resolved through the selected Medusa packages and lockfile; do not independently pin undocumented internal packages unless directly imported and published as standalone dependencies | Use the exact `2.22.1` direct pins present in the current spike branch; validate transitive resolution, import paths, and runtime behavior from the generated lockfile and CI artifacts. `[PROPOSED]`. |
 | Storefront framework | Next.js `15.5.28` | Exact patched 15.5-line candidate. Verify compatibility with the React versions resolved in the lockfile and execute the production build. `[SOURCE-VERIFIED: package exists]`; build `[PROPOSED]`. |
 | UI runtime | `react@19.3.1` and `react-dom@19.3.1` | Current stable versions listed on npm on 2026-10-25; prefer this patched pair over `19.0.0`. Next.js peer compatibility and application build remain untested. `[SOURCE-VERIFIED: package exists]`; integration `[PROPOSED]`. |
 | Database | PostgreSQL `16.15` target | Current PostgreSQL 16 minor release listed in official version policy on 2026-10-25. Pin image/package digest in deployment configuration before acceptance. `[VERIFIED-DOCS]`; migrations/tests `[PROPOSED]`. |
@@ -90,9 +90,9 @@ In Medusa v2 default configuration, all modules share a single PostgreSQL databa
 
 ### 4.1 Locking Step Types & Nested Sub-Workflow Behavior
 
-In Medusa v2, distributed locking is provided through the configured locking provider and exported core workflow steps. The current Revision 19 candidate cohort uses `@medusajs/framework@2.21.2`, `@medusajs/medusa@2.21.2`, and `@medusajs/cli@2.21.2`; the exact resolved lock-step implementation must be re-inspected in those installed packages before relying on implementation-specific behavior.
+In Medusa v2, distributed locking is provided through the configured locking provider and exported core workflow steps. The current Revision 19 candidate cohort uses `@medusajs/framework@2.22.1`, `@medusajs/medusa@2.22.1`, and `@medusajs/cli@2.22.1`; the exact resolved lock-step implementation must be re-inspected in those installed packages before relying on implementation-specific behavior.
 
-**API shape reference (must be revalidated against the candidate `2.21.2` installed source before implementation):**
+**API shape reference (must be revalidated against the candidate `2.22.1` installed source before implementation):**
 
 ```typescript
 // @medusajs/core-flows/dist/locking/steps/acquire-lock.d.ts:
@@ -115,7 +115,7 @@ type LockCommands = {
 ```
 
 > **Sub-Workflow Lock Skip Semantics:**  
-> The previously inspected `2.22.1` source had the following behavior; the candidate `2.21.2` cohort must be inspected and TP-02a/TP-02b must verify the same behavior before this becomes an implementation claim:
+> The `2.22.1` source and real-Redis regression are now under test. Current regression failures affect partial-acquire cleanup, same-owner re-entry, reverse-order multi-key acquisition, and owner-safe `releaseAll`; these behaviors are not accepted until resolved with reproducible evidence:
 > ```javascript
 > const isSubWorkflow = !!parentStepIdempotencyKey;
 > if (isSubWorkflow && !data.executeOnSubWorkflow) {

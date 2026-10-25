@@ -79,7 +79,7 @@ Phase 0 acceptance is a **design/documentation decision**, not a statement that 
 ## 3. Phase 1 — Foundation, Scaffolding & Technical Compatibility Spike
 
 ### Objective
-Establish the repository structure, initialize Next.js 15.5.28 and the Medusa v2.21.2 candidate cohort, connect to PostgreSQL 16.15, configure environment variables, and execute a **Technical Compatibility Spike** covering dependency compatibility, cart/order correlation, inventory reservations, electronic-payment/COD branches, webhook handling, refund idempotency, and recovery before broader feature development.
+Establish the repository structure, initialize Next.js 15.5.28 and the Medusa v2.22.1 spike candidate cohort, connect to PostgreSQL 16.15, configure environment variables, and execute a **Technical Compatibility Spike** covering dependency compatibility, cart/order correlation, inventory reservations, electronic-payment/COD branches, webhook handling, refund idempotency, and recovery before broader feature development.
 
 > **Phase Transition & Scaffolding Policy:**  
 > Authorization is granted **EXCLUSIVELY** for initial monorepo scaffolding and executing the 59 listed Technical Prototype test rows (TP-01 through TP-25d, including lettered subcases). Store feature development remains **STRICTLY BLOCKED** until Phase 0 design sign-off and all 59 enumerated prototype test rows (including explicitly listed lettered subcases) pass with logged terminal evidence. Gates 1, 2, 3, and 5 block production launch only, not feature development. The provider-specific electronic-payment integration and final refund-formula activation remain blocked until the open Gate 6/Gate 4 parameters are supplied. The Spike may use a provider simulator; it must not select a gateway on the owner’s behalf.
@@ -90,13 +90,13 @@ Establish the repository structure, initialize Next.js 15.5.28 and the Medusa v2
    website/
      apps/
        storefront/        # Next.js 15.5.28 App Router (React/react-dom 19.3.1 candidate)
-       backend/           # Medusa framework/server/CLI 2.21.2 candidate cohort (Node.js 24.22.1 LTS)
+       backend/           # Medusa framework/server/CLI 2.22.1 spike candidate cohort (Node.js 24.22.1 LTS)
      docs/                # Approved architecture and specs
      package.json
      .env.example
    ```
 2. Scaffold **Next.js 15.5.28** with React/react-dom 19.3.1 candidate, TypeScript 5.5.4, Tailwind CSS 3.4.17, and RTL plugins.
-3. Scaffold **Medusa framework/server/CLI v2.21.2 candidate cohort**; use exact versions defined in `architecture.md` and verify peer dependencies before acceptance.
+3. Use the **Medusa framework/server/CLI v2.22.1 spike candidate cohort** currently exercised by the Phase 1 branch. This supersedes the original 2.21.2 design candidate for spike experiments only; inspect `architecture.md` and the Phase 1 evidence log. Do not accept the cohort until Redis locking risks and all remaining TP cases are resolved.
 4. Establish the PostgreSQL 16.15 target database connection pool (or an explicitly owner-approved patched 16.x minor), pin the immutable service/image digest, and run baseline Medusa core migrations via MikroORM. The migration and connection path remains unverified until executed against the selected candidate dependency set.
 5. Set up `.env.example` with sanitized placeholders.
 6. Configure ESLint, Prettier, and TypeScript strict mode across both apps.

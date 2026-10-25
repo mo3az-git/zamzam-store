@@ -1,6 +1,6 @@
 # Phase 1 — Technical Compatibility Spike
 
-**Status:** Baseline compatibility workflow passed on Medusa 2.22.1 in attempt 9. A dedicated real-Redis regression script is now added to test lock semantics; results pending. The candidate lockfile is regenerated per run but not yet reviewed/committed. All 59 TP behavior cases remain unchecked.  
+**Status:** Baseline compatibility checks passed on Medusa 2.22.1, but the first real-Redis regression failed **4 of 7 checks** in attempt 10. Redis locking is a blocking risk. The candidate lockfile is generated as a CI artifact but not reviewed/committed. All 59 TP behavior cases remain unchecked.  
 **Starting commit:** 404bf23275d67cc6274ed567779081c25f676100 (Phase 0 design accepted; runtime unverified).  
 **Scope boundary:** initial monorepo scaffold, package/peer metadata, strict dependency resolution, lint/build, and baseline Medusa migrations against a disposable database; then the documented TP cases. No production feature work is included.
 
@@ -118,6 +118,33 @@ Required targeted checks before transition review: (1) reverse-order concurrent 
 - Configure projectConfig.redisUrl for local session storage and register the documented Redis Locking Module Provider using LOCKING_REDIS_URL, so the spike does not silently fall back to a fake Redis instance.
 - Make the metadata checker robust to string-only npm view responses, remove the workflow-wide `NODE_ENV=development` override, and set `NODE_ENV=production` only for the Medusa build. Attempt 8 verifies the Next.js and Medusa builds both pass without the earlier framework/config-loader errors.
 
+
+### Attempt 10 — Baseline compatibility passes; real-Redis locking regression fails
+
+Workflow run (push): https://github.com/mo3az-git/zamzam-store/actions/runs/40231225995  
+Workflow run (pull request): https://github.com/mo3az-git/zamzam-store/actions/runs/40231231384  
+Commit under test: `53e59e83e5a94f3161109589819f5eaf165820e9`.
+
+The exact package metadata check, TP registry integrity check, strict peer-dependency install, `npm ls --all`, workspace lint, baseline Medusa migrations against disposable PostgreSQL, Medusa production build, and Next.js production build all passed in this run.
+
+The real-Redis regression completed 7 checks: **3 passed, 4 failed**.
+
+| Check | Result | Evidence / implication |
+|---|---|---|
+| Basic acquire and owner-checked release | PASS | Basic single-key acquire/release works in this harness. |
+| Failed multi-key acquire rolls back keys already acquired | FAIL | The first key remained held after a later key failed; partial acquisition cleanup is not safe. |
+| Same-owner re-entry with `awaitQueue` | FAIL | Re-entry did not resolve within the 900 ms bound. |
+| Opposite-order multi-key acquisition | FAIL | Concurrent callers acquiring `[key-a, key-b]` and `[key-b, key-a]` did not finish within 2.5 seconds. |
+| `releaseAll` preserves a replacement lock acquired between read and delete | FAIL | A replacement lock owned by another caller was deleted in the injected race. |
+| `releaseAll` preserves a different owner's lock in the non-racing case | PASS | The ordinary non-racing owner-scope check passed. |
+| Provider shutdown closes its Redis client | PASS | The client emitted its terminal `end` event after provider shutdown. |
+
+These are observed failures in the current test harness against the selected `@medusajs/locking-redis@2.22.1` candidate. Do not mask them or mark the Redis check as passing. First determine whether each failure reflects the provider implementation or a defect in the harness through focused source inspection and a minimal reproduction; preserve the failing tests as regression cases. If confirmed as provider defects, choose and validate a safe locking strategy before any production checkout or inventory work. The PostgreSQL locking provider is not an automatic fallback and requires equivalent regression checks.
+
+The migration log also includes repeated PostgreSQL warnings that `SET LOCAL` was issued outside transaction blocks. The migration command exited successfully, but these warnings should be investigated before treating migration behavior as clean.
+
+This attempt does **not** pass any of the 59 application TP behavior cases. The TP registry remains unchanged and every TP status must remain `[ ]`.
+
 ## 4. Evidence workflow
 
 The workflow at .github/workflows/phase1-spike.yml runs on pushes to main and phase-1 branches, pull requests to main, and manual dispatch. On a bootstrap run it creates a candidate package-lock.json and uploads the file and logs as an artifact. Review the dependency tree and commit the lockfile before treating later npm ci runs as the reproducible path.
@@ -128,16 +155,16 @@ The test registry script is a guardrail only: it asserts the presence of exactly
 
 | Evidence item | Status | Evidence required |
 |---|---|---|
-| Candidate versions published | Exact metadata, strict install, lint, migrations, and both builds passed on attempt 8; full behavioral compatibility is still unverified | Continue with lockfile review, Redis lock behavior, and TP cases |
-| Exact direct-pin metadata and peer requirements | Passed on attempt 9 for the 2.22.1 candidate cohort; no metadata checker failures | Preserve metadata output from run #19 and rerun after test-harness dependency additions |
+| Candidate versions published | Exact metadata, strict install, lint, migrations, and both builds passed on attempt 10 for the 2.22.1 candidate; full behavioral compatibility is still unverified and Redis regression is blocked | Continue with lockfile review, Redis locking resolution, and TP cases |
+| Exact direct-pin metadata and peer requirements | Passed on attempt 10 for the 2.22.1 candidate cohort; no metadata checker failures | Preserve metadata output from attempt 10 and rerun after dependency changes |
 | Dependency install with strict peer checks | Passed on attempt 9 for 2.22.1. Candidate lockfile has 1,471 entries and SHA-256 `f1dbb85d8b098a83f52aaaaa6af7ddce1540493b290577b0904f95733896f988`; the install also flagged deprecated transitive dependencies and six scripts outside `allowScripts`. | Review regenerated lockfile and each install script after adding the regression harness, then commit the current lockfile before relying on `npm ci` |
-| npm ls --all dependency tree | Passed on attempt 8 for 2.21.2; current 2.22.1 resolution pending | Preserve and review the new full resolved tree |
+| npm ls --all dependency tree | Passed on attempt 10 for 2.22.1 | Preserve and review the latest full resolved tree |
 | TP registry markup | Passed on attempt 8 | Exactly 59 unique rows and all remain unchecked; this is registry integrity only, not behavior execution |
-| Backend/storefront lint | Passed on attempt 8 for the old cohort; rerun pending for 2.22.1 | Keep new CI lint evidence with the artifact |
-| Medusa backend build | Passed cleanly on attempt 8 for 2.21.2 with step-scoped `NODE_ENV=production`; rerun pending for 2.22.1 | Clean successful build log from the candidate cohort |
-| Next.js storefront shell build | Passed on attempt 8 for 2.21.2 after removing workflow-wide `NODE_ENV=development`; rerun pending for 2.22.1 | Successful production-build log after candidate update |
-| Baseline migrations | Passed on attempt 8 against disposable PostgreSQL for 2.21.2; rerun pending for 2.22.1 | Preserve new migration log; custom-module migrations still not implemented or tested |
-| Redis locking semantic behavior | Blocking risk identified in published 2.22.1 source: concurrent unsorted multi-key acquisition, partial-acquire leakage, same-owner re-entry under `awaitQueue`, and non-atomic `releaseAll` remain possible. A new real-Redis regression script covers basic acquisition/release, partial rollback, re-entry, reverse-order contention, `releaseAll` race, owner scope, and provider shutdown; first CI result pending. Migration-only loader connection cleanup remains a separate lifecycle concern. | Run `spike:locking-redis` against disposable Redis and resolve every failure or explicitly change the provider strategy before the transition gate |
+| Backend/storefront lint | Passed on attempt 10 for 2.22.1 | Keep the CI lint evidence with the artifact |
+| Medusa backend build | Passed on attempt 10 for 2.22.1 | Preserve the successful build log; investigate `SET LOCAL` warnings from migration step separately |
+| Next.js storefront shell build | Passed on attempt 10 for 2.22.1 | Preserve successful production-build log |
+| Baseline migrations | Command passed on attempt 10 against disposable PostgreSQL for 2.22.1, but repeated `SET LOCAL`-outside-transaction warnings require investigation | Preserve migration log and diagnose warning; custom-module migrations remain unimplemented/unverified |
+| Redis locking semantic behavior | **BLOCKED:** attempt 10 ran 7 real-Redis checks; 3 passed and 4 failed (partial-acquire rollback, same-owner re-entry, reverse-order multi-key contention, owner-safe `releaseAll` race). Migration-only loader connection cleanup remains a separate lifecycle concern. | Investigate harness validity and provider source; retain failing regressions. Resolve all four failures or replace the provider strategy and pass equivalent tests before transition review |
 | Native order correlation, inventory atomicity, checkout recovery, payment/webhook/refund behavior, restore | Pending; all 59 TP statuses remain unchecked | Test logs, exit codes, environment/package metadata, database assertions |
 | Lockfile committed | Pending; attempt-8 lockfile belongs to Medusa 2.21.2 and must not be reused | Review and commit the regenerated 2.22.1 package-lock.json; switch subsequent CI to `npm ci` |
 
