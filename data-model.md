@@ -1009,6 +1009,9 @@ BEGIN
         END IF;
     END IF;
 
+    -- Reactivation preserves the recorded physical-receipt event:
+    -- depot returns already reached returned_to_warehouse, so only
+    -- pending_inspection is valid; customer returns may still await receipt.
     IF TG_OP = 'UPDATE' AND OLD.return_status IN ('cancelled', 'rejected')
        AND NEW.return_status NOT IN ('cancelled', 'rejected') THEN
         IF NEW.return_type = 'undelivered_depot_return' THEN
