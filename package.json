@@ -19,7 +19,9 @@
     "spike:registry": "node scripts/verify-tp-registry.mjs",
     "spike:package-metadata": "node scripts/check-package-metadata.mjs",
     "spike:checks": "npm run spike:registry && npm run spike:package-metadata",
-    "postinstall": "node scripts/patch-medusa-cli-tsconfig-paths.cjs"
+    "postinstall": "node scripts/patch-medusa-cli-tsconfig-paths.cjs",
+    "spike:medusa-loader": "node scripts/check-medusa-cli-tsconfig-paths.cjs",
+    "spike:tp-readiness": "node scripts/assess-phase1-tp-readiness.mjs"
   },
   "devDependencies": {
     "@swc/core": "^1.7.28",

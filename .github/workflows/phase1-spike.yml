@@ -56,6 +56,8 @@ jobs:
       COOKIE_SECRET: ci-only-cookie-secret-not-for-any-other-environment-654321
       NEXT_PUBLIC_MEDUSA_BACKEND_URL: http://localhost:9000
       NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: ""
+      PHASE1_POSTGRES_IMAGE_REF: postgres:16.15@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+      PHASE1_REDIS_IMAGE_REF: redis:7.2.16@sha256:1009f15ccd9ed271996d1c65745a1ab1dadedea188feb3f1ab938602a32e50a3
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -80,16 +82,15 @@ jobs:
           set -o pipefail
           npm run spike:registry 2>&1 | tee artifacts/tp-registry-integrity.log
 
-      - name: Install dependencies with strict peer checks
+      - name: Resolve candidate lockfile then clean-install with npm ci
         shell: bash
         run: |
           set -o pipefail
-          if [ -f package-lock.json ]; then
-            npm ci --strict-peer-deps --no-audit --no-fund 2>&1 | tee artifacts/npm-install.log
-          else
-            echo "Bootstrap run: generating a candidate lockfile; it is not yet committed." | tee artifacts/npm-install.log
-            npm install --strict-peer-deps --no-audit --no-fund 2>&1 | tee -a artifacts/npm-install.log
+          if [ ! -f package-lock.json ]; then
+            echo "No committed package-lock.json: resolving a candidate lockfile before the clean install." | tee artifacts/npm-lock-bootstrap.log
+            npm install --package-lock-only --ignore-scripts --strict-peer-deps --no-audit --no-fund 2>&1 | tee -a artifacts/npm-lock-bootstrap.log
           fi
+          npm ci --strict-peer-deps --no-audit --no-fund 2>&1 | tee artifacts/npm-install.log
 
       - name: Capture resolved dependency tree
         shell: bash
@@ -103,43 +104,16 @@ jobs:
           set -o pipefail
           npm run lint 2>&1 | tee artifacts/lint.log
 
-      - name: Diagnose Medusa TypeScript loader resolution
-        working-directory: apps/backend
+      - name: Verify Medusa CLI TypeScript loader compatibility
         shell: bash
-        env:
-          TS_NODE_PROJECT: ${{ github.workspace }}/apps/backend/tsconfig.json
         run: |
           set -o pipefail
-          node <<'NODE' 2>&1 | tee ../../artifacts/medusa-loader-diagnostic.log
-          const { createRequire } = require("node:module")
-          const path = require("node:path")
-          const cliEntry = require.resolve("@medusajs/cli")
-          const cliRequire = createRequire(cliEntry)
-          const tsconfigPathsEntry = cliRequire.resolve("tsconfig-paths")
-          const tsconfigPaths = cliRequire("tsconfig-paths")
-          const loaded = tsconfigPaths.loadConfig(process.cwd())
-          const result = {
-            cwd: process.cwd(),
-            tsNodeProject: process.env.TS_NODE_PROJECT,
-            cliEntry,
-            tsconfigPathsEntry,
-            tsconfigPathsVersion: require(path.join(path.dirname(tsconfigPathsEntry), "..", "package.json")).version,
-            configResult: loaded.resultType,
-            configPath: loaded.configFileAbsolutePath,
-            absoluteBaseUrl: loaded.absoluteBaseUrl,
-            error: loaded.message
-          }
-          console.log(JSON.stringify(result, null, 2))
-          if (loaded.resultType !== "success" || !loaded.absoluteBaseUrl) {
-            process.exitCode = 1
-          }
-          NODE
+          npm run spike:medusa-loader 2>&1 | tee artifacts/medusa-loader-diagnostic.log
 
       - name: Apply baseline Medusa migrations to disposable PostgreSQL
         shell: bash
         env:
           TS_NODE_PROJECT: ${{ github.workspace }}/apps/backend/tsconfig.json
-          NODE_OPTIONS: --require=${{ github.workspace }}/scripts/trace-tsconfig-paths.cjs
         run: |
           set -o pipefail
           npm run db:migrate 2>&1 | tee artifacts/medusa-db-migrate.log
@@ -163,6 +137,12 @@ jobs:
         run: |
           set -o pipefail
           npm run spike:locking-redis --workspace @zamzam/backend 2>&1 | tee artifacts/locking-redis-regression.log
+
+      - name: Assess Phase 1 TP prerequisites and write per-case evidence
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run spike:tp-readiness 2>&1 | tee artifacts/tp-readiness-assessment.log
 
       - name: Upload Phase 1 evidence and bootstrap lockfile
         if: always()

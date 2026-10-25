@@ -32,11 +32,13 @@ A TP is accepted only after an independent review verifies the test exercises th
 
 ## Current execution ledger
 
-- TP specifications: 59.
-- Behaviorally accepted: 0.
-- Redis adapter regression checks: 12/12 passed, but these are adapter-level checks and do not substitute for TP cases.
-- CI migration/build status: supporting compatibility evidence only.
-- Remaining diagnostic: the Medusa CLI's `tsconfig-paths.register` call has been instrumented to record its actual arguments and caller stack in the next workflow run. The root cause is not yet established.
+- TP specifications: 59; implementation-plan statuses remain unchecked.
+- Behaviorally accepted: 0. No TP row may be marked passed by the readiness scan.
+- Redis adapter regression checks: 12/12 passed on the disposable Redis service; these remain adapter-level evidence and do not substitute for TP cases.
+- Medusa CLI loader root cause: confirmed. In Medusa CLI 2.22.1, `cli.js` called `tsconfig-paths.register({})` while the installed `tsconfig-paths` was 3.15.0. The empty explicit options object caused `baseUrl` to reach `path.isAbsolute` as `undefined`. The guarded postinstall compatibility patch changes this call to `register()`; CI logs confirm the no-argument call, clean migrations, and no recurrence of the original TypeError.
+- Clean-install gate: CI now resolves a candidate lockfile when no committed lockfile exists, then performs a clean `npm ci --strict-peer-deps`. The candidate lockfile remains an artifact and still requires review/commit before the reproducibility gate can be considered fully closed.
+- Group A and B–G readiness: CI writes per-case evidence for all 59 rows. If implementation/fixtures are absent, each case is explicitly `blocked` with source inventory and read-only database schema evidence; no behavior is mocked or reported as passed.
+- Store application domain implementation is not present yet beyond the Redis locking adapter. The first readiness run is expected to expose missing custom cart/checkout workflow, inventory ledger/migrations, order correlation/recovery, shipping/guest, returns/refunds, and payment/webhook components. These need implementation before corresponding behavior can be executed.
 
 ## Phase transition
 
