@@ -245,8 +245,16 @@ await check("releaseAll does not remove a different owner's lock in the non-raci
 await check("provider shutdown closes its Redis client", async ({ openProvider }) => {
   const { provider, client } = await openProvider();
   await provider.acquire("shutdown", { ownerId: "owner-shutdown", expire: 20 });
+
+  // Observe the actual ioredis lifecycle event. disconnect() initiates the
+  // close asynchronously; checking status on the very next line can race
+  // the event even if the provider correctly requests shutdown.
+  const ended = new Promise((resolve) => client.once("end", resolve));
   await provider.shutdown();
-  assert.equal(client.status, "end", "Redis client remained active after provider.shutdown().");
+  const outcome = await settleWithin(ended, 1000);
+
+  assert.equal(outcome.kind, "resolved", "Redis client did not emit its end event after provider.shutdown().");
+  assert.equal(client.status, "end", "Redis client did not reach the terminal end state.");
 });
 
 const failed = checks.filter((item) => !item.ok);
