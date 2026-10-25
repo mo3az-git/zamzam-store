@@ -2,7 +2,7 @@
 >
 > 1. **Payment methods (Gate 6):** Electronic payment and Cash on Delivery (COD) are offered side by side in the MVP. Any statement in this brief that COD is the only or primary payment method, or that online payment gateways or payment webhooks are out of scope, is superseded.
 > 2. **Refunds (Gate 4):** The system computes the refund amount. An administrator may approve the computed amount or override it; every override requires an audited reason and approver record.
-> 3. **Gateway selection:** No electronic payment gateway has been selected. Gateway choice and refund formula parameters remain `Owner input required`; do not infer or invent them.
+> 3. **Gateway selection:** No electronic payment gateway has been selected. Default assumptions D-1 through D-5 are recorded in `risk-and-assumptions.md` and may be changed by the owner. No gateway vendor is selected in Phase 0; select before launch using D-1 criteria.
 > 4. **Document precedence:** If this brief conflicts with the Revision 19 Phase 0 documents, the Revision 19 Phase 0 documents take precedence.
 >
 > **Affected sections in this brief (listed, not edited):**
