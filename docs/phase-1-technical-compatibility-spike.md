@@ -21,7 +21,7 @@ The version pins below are candidates from the project design and public package
 
 The CI workflow captures exact direct-package metadata (version, peerDependencies, engines), installs with strict peer checks, records the resolved tree, runs lint/build, and applies baseline migrations to disposable PostgreSQL. Package compatibility is not accepted until those steps pass and their logs are inspected.
 
-React 18 is pinned for the Medusa backend workspace and React 19 for the Next.js storefront workspace to respect the current peer requirements. The metadata guard explicitly permits this workspace-only split, but flags conflicting direct pins for other package names.
+React and React DOM 18.3.1 are pinned in both workspaces. Next.js 15.5.28 accepts this version in its declared peer range, and the Medusa default/admin module cohort also expects React 18. This avoids a hoisted Next.js runtime resolving a different React copy from the storefront JSX runtime. The metadata guard rejects conflicting exact pins across all workspaces.
 
 ## 3. CI attempts and corrective actions
 
@@ -53,11 +53,21 @@ Commit under test: d9005073e004e03926978125b816560a87cac251.
 
 The metadata and TP-registry checks passed. Strict installation correctly rejected the requested React Router versions: the backend manifest pinned react-router-dom 7.0.0, while Medusa Dashboard 2.21.2 resolves react-router-dom 7.18.2, which requires react-router 7.18.2. The install failed before lint, migration or build. The pin is aligned to 7.18.2 in this revision; strict peer checks remain enabled.
 
+### Attempt 5 — Base runtime checks pass; Next.js React renderer mismatch
+
+Workflow run: https://github.com/mo3az-git/zamzam-store/actions/runs/40227622445  
+Commit under test: b1208c7a585e8e42326bee66a2d519a2e0c00347.
+
+The metadata and registry checks, strict dependency install, npm ls --all, workspace lint, PostgreSQL migrations, and Medusa backend build all passed. The Next.js production build failed during prerender of the default /404 page with a React element/renderer mismatch. The uploaded package-lock showed Next.js hoisted at repository root (where React 18.3.1 was installed) while the storefront workspace had React 19.3.1 installed separately. We are aligning both workspaces on React/React DOM 18.3.1, within Next.js 15's declared peer range and the Medusa UI peer requirements, so the hoisted Next.js runtime and JSX runtime resolve to the same React copy.
+
+Medusa build also emitted a tsconfig-paths warning that the base path was undefined even though the backend workspace tsconfig specified it; the current revision adds a minimal root tsconfig with baseUrl set so the CLI can resolve it from either working directory. This warning did not fail the backend build but should be removed or documented before accepting a clean setup.
+
 ### Corrective changes in the current revision
 
 - Add baseUrl "." to the backend tsconfig to support the Medusa CLI's tsconfig-paths loader.
 - Make @medusajs/draft-order a direct backend dependency and add the peer packages used by the Medusa 2.21.2 default/admin module cohort, while explicitly keeping the backend React 18 / storefront React 19 split.
-- Align react-router-dom with the 7.18.2 version required by Medusa Dashboard 2.21.2. The next CI run must confirm npm's peer tree is now coherent.
+- Align react-router-dom with the 7.18.2 version required by Medusa Dashboard 2.21.2. The install and backend build now pass.
+- Unify React/React DOM at 18.3.1 across backend and storefront to fix the observed prerender renderer mismatch, and add a root tsconfig baseUrl for the Medusa CLI loader. These changes await the next CI run.
 - Configure projectConfig.redisUrl for local session storage and register the documented Redis Locking Module Provider using LOCKING_REDIS_URL, so the spike does not silently fall back to a fake Redis instance.
 - Make the metadata checker robust to string-only npm view responses. These changes remain unaccepted until CI verifies dependency resolution, migrations, and both builds.
 
@@ -72,15 +82,15 @@ The test registry script is a guardrail only: it asserts the presence of exactly
 | Evidence item | Status | Evidence required |
 |---|---|---|
 | Candidate versions published | Source-listed; cohort compatibility unverified | npm metadata captured by CI for exact direct pins |
-| Exact direct-pin metadata and peer requirements | Passed in attempts 1–2; later runs exposed and corrected a validator-shape bug | Metadata JSON from successful rerun |
-| Dependency install with strict peer checks | Passed in attempts 1–2; attempt 4 exposed a real React Router conflict, now aligned | Clean install log and reviewed lockfile |
-| npm ls --all dependency tree | Passed in attempts 1–2 | Full resolved dependency log; inspect after current package changes |
-| TP registry markup | Passed in attempts 1–2 and attempt 4 | Exactly 59 unique rows and all remain unchecked; no behavior cases executed |
-| Backend/storefront lint | Passed in attempts 1–2 | Repeat after package/config changes |
-| Medusa backend build | Pending; skipped after migration failures | Zero exit code and CI log |
-| Next.js storefront shell build | Pending; skipped after migration failures | Zero exit code and CI log |
-| Baseline migrations | Failed in both migration attempts; later attempts stopped before migration | Successful rerun against disposable PostgreSQL and log |
-| Redis connection/locking provider | Configured in current revision; pending runtime verification | Successful provider connection and locking evidence |
+| Exact direct-pin metadata and peer requirements | Passed again in attempt 5; attempt 3 validator-shape bug corrected | Metadata JSON from successful rerun |
+| Dependency install with strict peer checks | Passed in attempt 5 after aligning React Router to 7.18.2 | Clean install log and reviewed lockfile |
+| npm ls --all dependency tree | Passed in attempt 5 | Full resolved dependency log; inspect after current package changes |
+| TP registry markup | Passed in attempt 5 | Exactly 59 unique rows and all remain unchecked; no behavior cases executed |
+| Backend/storefront lint | Passed in attempt 5 | Repeat after React alignment |
+| Medusa backend build | Passed in attempt 5, but a tsconfig-paths warning remains to be checked | Zero exit code and clean startup/config loader log |
+| Next.js storefront shell build | Failed in attempt 5 due to React runtime/renderer mismatch; React unified at 18.3.1 in current revision | Zero exit code and CI log |
+| Baseline migrations | Passed in attempt 5 against disposable PostgreSQL | Repeat if config changes affect module initialization |
+| Redis connection/locking provider | Migrations passed with locking module configured; explicit lock contention behavior still unverified | Successful lock acquire/release/timeout integration evidence |
 | Native order correlation, inventory atomicity, checkout recovery, payment/webhook/refund behavior, restore | Pending; all 59 TP statuses remain unchecked | Test logs, exit codes, environment/package metadata, database assertions |
 | Lockfile committed | Pending candidate resolution/review | Reviewed package-lock.json committed; use npm ci thereafter |
 

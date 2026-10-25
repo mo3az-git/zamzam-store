@@ -8,7 +8,6 @@ const manifestPaths = [
   "apps/storefront/package.json"
 ]
 const exactVersion = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
-const intentionalWorkspaceSplits = new Set(["react", "react-dom"])
 const pinsByName = new Map()
 const failures = []
 const results = []
@@ -27,7 +26,7 @@ for (const relativePath of manifestPaths) {
 }
 
 for (const [name, byVersion] of pinsByName.entries()) {
-  if (byVersion.size > 1 && !intentionalWorkspaceSplits.has(name)) {
+  if (byVersion.size > 1) {
     failures.push(name + " has conflicting exact direct pins: " +
       [...byVersion.entries()].map(([version, manifests]) => version + " in " + manifests.join(", ")).join("; ") + ".")
   }
