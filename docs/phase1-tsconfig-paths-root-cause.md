@@ -14,6 +14,15 @@ The original migration log showed this path through the installed code:
 
 The same workflow's independent config probe loaded `apps/backend/tsconfig.json` successfully and resolved its absolute base URL to `apps/backend`. This separated the issue from a malformed/missing tsconfig.
 
+## Clean-install dependency-tree finding
+
+The first strict clean-install attempt completed `npm ci`, but the following `npm ls --all` detected three incompatible hoisted optional-peer resolutions:
+
+- `@hookform/resolvers@5.5.7` advertises optional peers `ajv@^8.12.0` and `ajv-formats@^2.1.1`, while the hoisted tree resolved `ajv@6.15.0` and `ajv-formats@3.0.1`.
+- `@medusajs/admin-vite-plugin` depends on `fdir@6.1.1`, whose optional `picomatch` peer requires `3.x`, while the hoisted tree resolved `2.3.2`.
+
+The root development manifest now pins compatible peer versions (`ajv@8.20.0`, `ajv-formats@2.1.1`, `picomatch@3.0.2`). Dependencies that require older AJV or picomatch ranges should remain nested at compatible versions. This is a dependency-tree correction, not a suppression of the `npm ls` error; the clean-install workflow must pass again before the correction is accepted.
+
 ## Guarded correction
 
 The root `postinstall` hook runs `scripts/patch-medusa-cli-tsconfig-paths.cjs`. It only proceeds for Medusa CLI `2.22.1` and only if it finds the expected `register({})` call; it changes it to `register()`. Unexpected CLI versions or source shapes fail the install rather than silently applying an unreviewed edit.
