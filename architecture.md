@@ -306,7 +306,7 @@ The workflow return shape, `cart_id` query behavior, invocation status observati
 
 **Critical atomicity rule:** allocation rows, informational `allocation_conversion` ledger rows, reservation transitions to `converted`, and attempt/session finalization are one transaction. A committed conversion is recovered by validating the complete committed state; the workflow never treats an existing movement row by itself as proof that conversion completed.
 
-```sql
+```text
 BEGIN;
 
 -- The order is already created/correlated. The caller obtained :order_id by a
