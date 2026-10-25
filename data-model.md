@@ -935,7 +935,7 @@ BEGIN
             RAISE EXCEPTION 'RETURN_REFUND_AMOUNT_APPROVAL_INVALID: only an authorized, timestamped customer-return or electronic undelivered-depot-return approval may freeze an amount';
         END IF;
         SELECT COUNT(*),
-               COUNT(*) FILTER (WHERE inspection_status = 'pending_inspection'),
+               COUNT(*) FILTER (WHERE inspection_status = 'pending_inspection')
           INTO v_item_count, v_pending_inspection_count
           FROM return_item WHERE return_request_id = NEW.id;
         IF v_item_count = 0 OR v_pending_inspection_count > 0 THEN
@@ -945,9 +945,8 @@ BEGIN
 
     IF TG_OP = 'UPDATE' AND NEW.return_status = 'completed' AND OLD.return_status <> 'completed' THEN
         SELECT COUNT(*),
-               COUNT(*) FILTER (WHERE inspection_status = 'pending_inspection'),
-               COUNT(*) FILTER (WHERE inspection_status = 'approved_restock')
-          INTO v_item_count, v_pending_inspection_count, v_approved_item_count
+               COUNT(*) FILTER (WHERE inspection_status = 'pending_inspection')
+          INTO v_item_count, v_pending_inspection_count
           FROM return_item WHERE return_request_id = NEW.id;
         IF v_item_count = 0 OR v_pending_inspection_count > 0 THEN
             RAISE EXCEPTION 'RETURN_COMPLETION_INCOMPLETE_INSPECTION: at least one item and all inspections finalized are required';
