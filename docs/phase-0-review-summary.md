@@ -20,7 +20,7 @@ The system is designed on:
 - **PostgreSQL 16.15 target** and **Redis 7.2.16 target**; database migrations and lock behavior remain untested.
 
 In strict adherence to the Anti-Overclaiming, Evidence Discipline, and Honest Reporting rules:
-- **Phase 0 closure basis:** Design/documentation consistency and recorded owner decisions and default assumptions (owner may change) only. All eight acceptance criteria remain explicitly unchecked (`[ ]`); this summary does not tick any box or claim runtime evidence.
+- **Phase 0 closure basis:** Design/documentation consistency and recorded owner decisions and default assumptions (owner may change) only. All eight design-acceptance criteria have been reviewed and accepted by the owner (`[x]`); this records design acceptance only and does not claim runtime verification.
 - **Pre-sign-off Spike boundary:** Limited scaffolding and compatibility/evidence work for the documented TP suite is permitted before Phase 0 sign-off. Store feature development is not permitted; installs, builds, migrations, and tests remain unexecuted until actually run and evidenced.
 - **Validation Taxonomy Enforced:** Zero claims are marked `[VALIDATED-TEST]` in Phase 0. All untested custom mechanisms are accurately labeled `[PROPOSED]`.
 
@@ -52,7 +52,7 @@ In strict adherence to the Anti-Overclaiming, Evidence Discipline, and Honest Re
 - TP-24c separates application-role permission checks (including TRUNCATE) from trigger checks for UPDATE/DELETE.
 - The implementation plan contains 59 listed test rows; all remain unchecked. No `[VALIDATED-TEST]` evidence was created by this document revision.
 
-See `phase-0-change-log.md` §4.5 for the operation-level SQL-to-schema audit. Phase 0 design closure is defined by documentation consistency and recorded owner decisions and default assumptions (owner may change); formal cross-document review/sign-off remains pending.
+See `phase-0-change-log.md` §4.5 for the operation-level SQL-to-schema audit. Phase 0 design has been accepted by the owner and the documentation consistency review is complete. Runtime evidence remains deferred to the Phase 1 Technical Compatibility Spike.
 
 ---
 
@@ -110,7 +110,7 @@ Production sales must remain disabled until the Business Owner formally signs of
 | **4. Sagas & Crash Recovery** | Orchestrated checkout with compensation, deterministic mapping via `checkout_line_key`, crash recovery across 7 checkpoints, 4-stage Preventive Dual-Control Refund Protocol with complete actor separation. | `[x] Accepted by Owner (Design Only)` |
 | **5. Security & Deployment Specification** | Atomic single-use claim code via Redis `GETDEL`, session cookie (`Path=/`), phone OTP, decoupled 14-day idempotency retention, trusted reverse-proxy IP handling, sanitized audit logging. | `[x] Accepted by Owner (Design Only)` |
 | **6. Risk & Taxonomy Register** | Strict adherence to `[VERIFIED-DOCS]`, `[SOURCE-VERIFIED]`, `[PROPOSED]`, and `[OWNER-DECISION]`. Zero `[VALIDATED-TEST]` in Phase 0. | `[x] Accepted by Owner (Design Only)` |
-| **7. Acceptance Test Plan** | Explicit criteria for Tests A through I, TP-01 through TP-24c, and new payment-related rows TP-25a through TP-25d; 59 listed test rows in total. All remain unchecked. | `[x] Accepted by Owner (Design Only)` |
+| **7. Acceptance Test Plan** | Explicit criteria for Tests A through I, TP-01 through TP-24c, and new payment-related rows TP-25a through TP-25d; 59 listed test rows in total. All runtime-test statuses remain unchecked `[ ]`. | `[x] Accepted by Owner (Design Only)` |
 | **8. Owner Decisions & Launch Gates** | Documentation is consistent; Defaults D-1 through D-7 are recorded as [DEFAULT-ASSUMPTION] entries that the owner may change; see the Default Assumptions Register. Gates 1, 2, 3, and 5 block launch only. | `[x] Accepted by Owner (Design Only)` |
 
 ---
@@ -138,7 +138,7 @@ The following updates address the remaining documentation workstreams but do not
 - **Return correctness:** save `order_version` in allocations and return requests, define explicit customer/depot return status transitions, create depot requests directly in `pending_inspection` when fulfillment reaches `returned_to_warehouse`, reject direct/invalid completion, freeze completed request rows, and forbid return-item identity/quantity rewrites. Financial completion is independent of restock approval once inspections and exact refund settlement are final. `[PROPOSED]`.
 - **Refund safety:** durable `refund_disbursement_attempt`, unknown-outcome status, no automatic resend under uncertainty, distinct requester/approver/disburser/reconciler, fail-closed intent idempotency. `[PROPOSED]`.
 - **Version and response contracts:** exact candidate direct pins, pending peer/lockfile/build checks, and intentional distinction between initial transient claim-code response and sanitized idempotent replay. `[PROPOSED]`.
-- **Tests A-I:** documented in `implementation-plan.md` as document-level review checks, separate from TP runtime scenarios. All remain unchecked.
+- **Checks A-I:** the document-level design-review checks in `implementation-plan.md` have been reviewed and accepted (`[x]`). They are separate from TP runtime scenarios; all 59 TP runtime statuses remain unchecked (`[ ]`).
 
 **Current decision:** Phase 0 design accepted by owner; runtime evidence deferred to Phase 1 Technical Compatibility Spike. All eight Phase 0 design acceptance criteria and checks A–I are accepted (`[x]`); all 59 TP runtime statuses remain unchecked (`[ ]`); no runtime test is claimed passed.
 
@@ -151,7 +151,7 @@ The return/inventory lock-order specification has been revised to separate retur
 
 - **Review Date:** 2026-10-25 (Africa/Cairo)
 - **Starting commit hash:** `00d8c84ce34a10b07a5d75d61b068b5e7f1bbb00`
-- **Reviewed commit hash:** `00d8c84ce34a10b07a5d75d61b068b5e7f1bbb00`
+- **Reviewed commit hash for the original acceptance review:** `00d8c84ce34a10b07a5d75d61b068b5e7f1bbb00`
 - **Phase 0 Acceptance Criteria Results (1–8):**
   - Criterion 1 (Architecture & Compatibility): ACCEPTED [x] (design only)
   - Criterion 2 (Authoritative Inventory Strategy): ACCEPTED [x]
@@ -203,5 +203,15 @@ The return/inventory lock-order specification has been revised to separate retur
   - Legal review of Arabic policies (Gate 4 / [DEFAULT-ASSUMPTION] D-5) is a launch-only requirement.
   - Payment vendor selection follows [DEFAULT-ASSUMPTION] D-1 (provider simulator in Spike; gateway selected before launch).
 - **Owner Sign-off:**
+  - The owner confirmed design acceptance in the conversation; the signature fields below are intentionally left blank for manual completion.
 
-Owner sign-off: name moaaz date 2026-10-25 reviewed commit 00d8c84ce34a10b07a5d75d61b068b5e7f1bbb00
+Owner sign-off: name ____ date ____ reviewed commit ____
+
+
+### Documentation Consistency Follow-up — 2026-10-25
+
+- Starting `main` commit for this follow-up: `e60b26f1b9bee52ee6ba5a5b625c7ab0bff362c2`.
+- Corrected stale statements that incorrectly described the eight design-acceptance criteria or A–I checks as unchecked, and aligned the roadmap and current review status with the owner-accepted design state.
+- Clarified that all 59 TP runtime statuses remain unchecked and runtime evidence is still deferred to Phase 1.
+- Restored the owner sign-off line to the requested blank template. Design acceptance was confirmed by the owner in the conversation; no signature is fabricated or inferred.
+- Documentation-only change. No application code, lock-order rules, TP rows, TP statuses, or runtime evidence claims were changed.

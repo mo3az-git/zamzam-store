@@ -10,7 +10,7 @@
 
 ## 1. Executive Decision and Honest Technical Summary
 
-### 1.1 Current Decision: `PHASE 0 DESIGN CLOSURE DEFINED; CROSS-DOCUMENT REVIEW/SIGN-OFF PENDING`
+### 1.1 Current Decision: `PHASE 0 DESIGN ACCEPTED BY OWNER; DOCUMENTATION REVIEW COMPLETED; RUNTIME EVIDENCE DEFERRED TO PHASE 1 SPIKE`
 
 Revision 19 records the current design state for electronic payment plus COD, refund approval/override controls, Phase 0 design closure, and the inventory-ledger/checkout/return/version-replay contracts carried forward from Revision 18. The changes address identified design defects on paper, but no local compatibility build, database migration, concurrent transaction test, or external payout test has been executed as part of this revision. The candidate package cohort remains provisional, and all current custom mechanisms remain `[PROPOSED]` until the required evidence is produced.
 
@@ -94,7 +94,7 @@ All framework claims in Revision 12 were verified against live npm package regis
 | **Deterministic 10-Branch Idempotency Semantics** | N/A | Aligned | Aligned | Aligned | Aligned | Aligned | Aligned | Aligned | Aligned | `CONSISTENT` |
 | **Candidate Medusa direct-package cohort (`2.21.2`)** | Aligned | N/A | N/A | Aligned | N/A | Aligned | Aligned | Aligned | Aligned | `PROPOSED — INSTALL/BUILD REQUIRED` |
 | **Launch Gates 1 through 6** | N/A | Aligned | N/A | N/A | Aligned | Aligned | Aligned | Aligned | Aligned | `OWNER-DECISION` |
-| **Review Decision: NOT READY** | Aligned | Aligned | Aligned | Aligned | Aligned | Aligned | Aligned | Aligned | Aligned | `CONSISTENT` |
+| **Review Decision: Design Accepted (Runtime Unverified)** | Aligned | Aligned | Aligned | Aligned | Aligned | Aligned | Aligned | Aligned | Aligned | `CONSISTENT` |
 
 ---
 

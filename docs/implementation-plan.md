@@ -14,7 +14,7 @@ The project adheres to an incremental delivery model. Progression to any subsequ
 
 ```mermaid
 flowchart LR
-    P0["Phase 0\nDiscovery & Technical Design\n(Under Review)"] --> P1["Phase 1\nFoundation, Scaffolding\n& Technical Prototype Spike"]
+    P0["Phase 0\nDiscovery & Technical Design\n(Design Accepted; Runtime Unverified)"] --> P1["Phase 1\nFoundation, Scaffolding\n& Technical Prototype Spike"]
     P1 --> P2["Phase 2\nCatalog & Arabic Storefront"]
     P2 --> P3["Phase 3\nCustom Batch & FEFO Module"]
     P3 --> P4["Phase 4\nGuest Checkout (Electronic Payment + COD) & Sagas"]
@@ -30,7 +30,7 @@ flowchart LR
 Deliver a comprehensive, unified technical architecture, data model, state workflow, security policy, and risk assessment that resolves all Medusa v2 cross-module boundaries, inventory sources of truth, cart locking coordination, and failure recovery mechanisms.
 
 ### Phase 0 Acceptance Gate (Design Closure; No Runtime Evidence Required)
-Phase 0 closes when the architecture and supporting documents are complete and mutually consistent, and all required owner decisions are recorded. Phase 0 does **not** claim package compatibility, successful migrations, concurrency safety, or restore readiness. All checkboxes below intentionally remain unchecked until a reviewer records the corresponding design-review result; do not use this list to imply runtime verification.
+Phase 0 closes when the architecture and supporting documents are complete and mutually consistent, and all required owner decisions and changeable default assumptions are recorded. Phase 0 does **not** claim package compatibility, successful migrations, concurrency safety, or restore readiness. The eight design-acceptance criteria below have been reviewed and accepted by the owner; their `[x]` marks record design/documentation acceptance only and do not imply runtime verification.
 
 - [x] **1. Architecture & Compatibility (design only):** Candidate versions and module boundaries are explicitly documented, including Medusa Module Links rather than unsupported cross-module foreign keys. Actual dependency resolution, install, build, and migration evidence belongs to the Phase 1 Spike list below.
 - [x] **2. Authoritative Inventory Strategy:** `batch_inventory` is documented as the sole authority for batch-managed food stock, with tri-state balances (`on_hand`, `reserved`, `quarantined`), two-phase cart reservations, canonical `checkout_attempt_id` and server-generated `checkout_line_key`, epoch fencing (`cart_checkout_session`), immutable attempt history, and atomic ledger-mutation contracts.

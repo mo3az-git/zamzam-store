@@ -495,3 +495,13 @@ Starting `main` commit: `00d8c84ce34a10b07a5d75d61b068b5e7f1bbb00`.
 - Updated `Phase 0 Final Review Record` in `phase-0-review-summary.md` with review date 2026-10-25 (Africa/Cairo), reviewed commit `00d8c84ce34a10b07a5d75d61b068b5e7f1bbb00`, checks performed, explicit runtime-unverified boundary, open launch gates, and owner sign-off.
 - Aligned review decision status in headers across canonical documents to reflect owner design acceptance while preserving the runtime evidence boundary.
 - TP registry strictly preserved at exactly 59 rows with every runtime status remaining `[ ]`. Lock-order design remains unchanged. No application code, package installation, build, migration, or runtime test was executed.
+
+
+### Revision 19 follow-up — Acceptance wording reconciliation (documentation only)
+
+Starting `main` commit: `e60b26f1b9bee52ee6ba5a5b625c7ab0bff362c2`.
+
+- Reconciled stale acceptance wording in `implementation-plan.md`, `phase-0-review-summary.md`, and `phase-0-review-report.md` with the owner-accepted design state; updated the roadmap status and the current cross-document review row.
+- Clarified that the eight Phase 0 design-acceptance criteria and checks A–I are accepted for documentation only, while all 59 TP runtime statuses remain `[ ]`.
+- Restored the owner sign-off line in `phase-0-review-summary.md` to the requested blank template. The owner’s design acceptance is recorded separately; no signature was invented.
+- No application code, lock-order design, TP rows, TP statuses, or runtime evidence claims were changed.
