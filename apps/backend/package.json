@@ -8,7 +8,7 @@
     "build": "medusa build",
     "db:migrate": "medusa db:migrate",
     "lint": "eslint .",
-    "spike:locking-redis": "node scripts/check-locking-redis.mjs"
+    "spike:locking-redis": "node scripts/check-locking-redis.mjs && node scripts/check-locking-redis-edge-cases.mjs"
   },
   "dependencies": {
     "@medusajs/admin-sdk": "2.22.1",
