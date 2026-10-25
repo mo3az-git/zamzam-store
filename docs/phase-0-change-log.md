@@ -377,7 +377,7 @@ In strict compliance with prompt Section 3 scope boundaries, the following non-i
 
 ## 6. Deliverable Index
 
-All nine canonical Phase 0 documents are located in the repository root (`/`):
+All nine canonical Phase 0 documents are located in `docs/`:
 
 1. [Architecture & System Design](architecture.md)
 2. [Data Model & Schema Specifications](data-model.md)
@@ -485,3 +485,4 @@ Starting `main` commit: `60c41a1a0b2b345b6e6bb1f0fae55bdb08922e82`.
 - Formulated default assumption D-7 in `risk-and-assumptions.md` for `rate_determination_policy = 'customs_clearance_date'`, affecting batch cost accounting only without blocking Phase 0; replaced `[OWNER-DECISION]` tag on `inventory_batch.rate_determination_policy` in `data-model.md` and aligned `A-06`.
 - Added "Phase 0 Final Review Record" to `phase-0-review-summary.md` detailing all static checks performed, unverified runtime aspects, open launch gates (1, 2, 3, 5 and lawyer review), and a blank owner signature block.
 - No application code, migrations, builds, or runtime tests were run. TP registry remains exactly 59 rows with all statuses unchecked `[ ]`. Lock-order design remains unchanged.
+- Documents moved into `docs/` (commit `35327678e6fee57af2fcb7e4463509d02d59e6a7`), stray empty file `docs` removed, and repository renamed to `zamzam-store`. Content unchanged (documentation only); no checkbox changed, TP registry remains 59 rows all `[ ]`, and lock-order design unchanged.
