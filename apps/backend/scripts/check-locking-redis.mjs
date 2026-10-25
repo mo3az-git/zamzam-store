@@ -153,10 +153,12 @@ await check("failed multi-key acquire rolls back keys already acquired", async (
 await check("same-owner re-entry succeeds with awaitQueue", async ({ openProvider }) => {
   const { provider } = await openProvider();
   await provider.acquire("reentrant", { ownerId: "owner-reentry", expire: 20 });
+  // The upstream contract permits same-owner re-entry when awaitQueue is
+  // false; awaitQueue=true means wait for another owner to release the key.
   const pending = provider.acquire("reentrant", {
     ownerId: "owner-reentry",
     expire: 20,
-    awaitQueue: true,
+    awaitQueue: false,
   });
   pending.catch(() => {});
   const outcome = await settleWithin(pending, 900);
@@ -164,6 +166,11 @@ await check("same-owner re-entry succeeds with awaitQueue", async ({ openProvide
     outcome.kind,
     "resolved",
     "Re-entering a lock already held by the same owner did not resolve (" + outcome.kind + ")."
+  );
+  assert.equal(
+    await provider.release("reentrant", { ownerId: "owner-reentry" }),
+    true,
+    "The re-entered lock should still be owned by the same owner."
   );
 });
 
