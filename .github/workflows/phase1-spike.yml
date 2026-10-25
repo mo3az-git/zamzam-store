@@ -139,6 +139,7 @@ jobs:
         shell: bash
         env:
           TS_NODE_PROJECT: ${{ github.workspace }}/apps/backend/tsconfig.json
+          NODE_OPTIONS: --require=${{ github.workspace }}/scripts/trace-tsconfig-paths.cjs
         run: |
           set -o pipefail
           npm run db:migrate 2>&1 | tee artifacts/medusa-db-migrate.log
