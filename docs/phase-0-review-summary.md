@@ -3,8 +3,8 @@
 **Document Status:** Revision 19 — Electronic Payment + COD and Phase 0 Design Closure (Design Revision; Runtime Unverified)  
 **Date:** 2026-10-25  
 **Authoritative Scope:** Phase 0 Technical Discovery & Architectural Design  
-**Inventory Ledger Task 1.1 Decision:** `DOCUMENTATION CONTRACT RECONCILED; RUNTIME CONCURRENCY VALIDATION PENDING`  
-**Executive Review Decision:** **`PHASE 0 DESIGN CLOSURE DEFINED; CROSS-DOCUMENT REVIEW/SIGN-OFF PENDING`**  
+**Inventory Ledger Task 1.1 Decision:** `DOCUMENTATION CONTRACT RECONCILED; RUNTIME CONCURRENCY VALIDATION PENDING`
+**Executive Review Decision:** **`PHASE 0 DESIGN ACCEPTED BY OWNER; RUNTIME EVIDENCE DEFERRED TO PHASE 1 SPIKE`**
 *(Phase 0 closes on design/documentation consistency and recorded owner decisions and default assumptions (owner may change) only. Runtime evidence belongs to the Phase 1 Technical Compatibility Spike. A restricted Spike may run before Phase 0 sign-off; store feature development remains blocked pending evidence review and launch gates.)*
 
 ---
@@ -104,14 +104,14 @@ Production sales must remain disabled until the Business Owner formally signs of
 
 | Criterion | Target Requirement | Status |
 |---|---|:---:|
-| **1. Architecture & Compatibility (design only)** | Candidate versions, module boundaries, and cart-locking contract documented; package compatibility/build evidence is deferred to the Phase 1 Spike. | `[ ] Pending Owner Review` |
-| **2. Authoritative Inventory Strategy** | Tri-state balance model, two-phase reservation with canonical `checkout_attempt_id` and server `checkout_line_key`, immutable attempt history (`cart_checkout_attempt`), movement ledger with dedicated `deduplication_key`. | `[ ] Pending Owner Review` |
-| **3. Unified Workflows & State Machines** | Reconciled state machines, separating delivery failure (`undelivered_returned`) from customer returns, non-terminal `partially_returned` / `partially_refunded`, terminal `collection_failed`. | `[ ] Pending Owner Review` |
-| **4. Sagas & Crash Recovery** | Orchestrated checkout with compensation, deterministic mapping via `checkout_line_key`, crash recovery across 7 checkpoints, 4-stage Preventive Dual-Control Refund Protocol with complete actor separation. | `[ ] Pending Owner Review` |
-| **5. Security & Deployment Specification** | Atomic single-use claim code via Redis `GETDEL`, session cookie (`Path=/`), phone OTP, decoupled 14-day idempotency retention, trusted reverse-proxy IP handling, sanitized audit logging. | `[ ] Pending Owner Review` |
-| **6. Risk & Taxonomy Register** | Strict adherence to `[VERIFIED-DOCS]`, `[SOURCE-VERIFIED]`, `[PROPOSED]`, and `[OWNER-DECISION]`. Zero `[VALIDATED-TEST]` in Phase 0. | `[ ] Pending Owner Review` |
-| **7. Acceptance Test Plan** | Explicit criteria for Tests A through I, TP-01 through TP-24c, and new payment-related rows TP-25a through TP-25d; 59 listed test rows in total. All remain unchecked. | `[ ] Pending Owner Review` |
-| **8. Owner Decisions & Launch Gates** | Documentation is consistent; Defaults D-1 through D-6 are recorded as [DEFAULT-ASSUMPTION] entries that the owner may change; see the Default Assumptions Register. Gates 1, 2, 3, and 5 block launch only. | `[ ] Pending Owner Review` |
+| **1. Architecture & Compatibility (design only)** | Candidate versions, module boundaries, and cart-locking contract documented; package compatibility/build evidence is deferred to the Phase 1 Spike. | `[x] Accepted by Owner (Design Only)` |
+| **2. Authoritative Inventory Strategy** | Tri-state balance model, two-phase reservation with canonical `checkout_attempt_id` and server `checkout_line_key`, immutable attempt history (`cart_checkout_attempt`), movement ledger with dedicated `deduplication_key`. | `[x] Accepted by Owner (Design Only)` |
+| **3. Unified Workflows & State Machines** | Reconciled state machines, separating delivery failure (`undelivered_returned`) from customer returns, non-terminal `partially_returned` / `partially_refunded`, terminal `collection_failed`. | `[x] Accepted by Owner (Design Only)` |
+| **4. Sagas & Crash Recovery** | Orchestrated checkout with compensation, deterministic mapping via `checkout_line_key`, crash recovery across 7 checkpoints, 4-stage Preventive Dual-Control Refund Protocol with complete actor separation. | `[x] Accepted by Owner (Design Only)` |
+| **5. Security & Deployment Specification** | Atomic single-use claim code via Redis `GETDEL`, session cookie (`Path=/`), phone OTP, decoupled 14-day idempotency retention, trusted reverse-proxy IP handling, sanitized audit logging. | `[x] Accepted by Owner (Design Only)` |
+| **6. Risk & Taxonomy Register** | Strict adherence to `[VERIFIED-DOCS]`, `[SOURCE-VERIFIED]`, `[PROPOSED]`, and `[OWNER-DECISION]`. Zero `[VALIDATED-TEST]` in Phase 0. | `[x] Accepted by Owner (Design Only)` |
+| **7. Acceptance Test Plan** | Explicit criteria for Tests A through I, TP-01 through TP-24c, and new payment-related rows TP-25a through TP-25d; 59 listed test rows in total. All remain unchecked. | `[x] Accepted by Owner (Design Only)` |
+| **8. Owner Decisions & Launch Gates** | Documentation is consistent; Defaults D-1 through D-7 are recorded as [DEFAULT-ASSUMPTION] entries that the owner may change; see the Default Assumptions Register. Gates 1, 2, 3, and 5 block launch only. | `[x] Accepted by Owner (Design Only)` |
 
 ---
 
@@ -140,7 +140,7 @@ The following updates address the remaining documentation workstreams but do not
 - **Version and response contracts:** exact candidate direct pins, pending peer/lockfile/build checks, and intentional distinction between initial transient claim-code response and sanitized idempotent replay. `[PROPOSED]`.
 - **Tests A-I:** documented in `implementation-plan.md` as document-level review checks, separate from TP runtime scenarios. All remain unchecked.
 
-**Current decision:** Phase 0 closes on design/documentation consistency and recorded owner decisions and default assumptions (owner may change) only; cross-document review/sign-off remains pending. Runtime evidence belongs to the Phase 1 Technical Compatibility Spike. All Phase 0 acceptance criteria and TP statuses remain unchecked (`[ ]`); no runtime test is claimed passed.
+**Current decision:** Phase 0 design accepted by owner; runtime evidence deferred to Phase 1 Technical Compatibility Spike. All eight Phase 0 design acceptance criteria and checks A–I are accepted (`[x]`); all 59 TP runtime statuses remain unchecked (`[ ]`); no runtime test is claimed passed.
 
 
 ## Historical Revision 18 Runtime Evidence Note (Evidence Boundary Retained in Revision 19)
@@ -149,28 +149,59 @@ The return/inventory lock-order specification has been revised to separate retur
 
 ## Phase 0 Final Review Record
 
-- **Date:** 2026-10-25
-- **Commit hash being reviewed:** `60c41a1a0b2b345b6e6bb1f0fae55bdb08922e82`
-- **Checks performed and results:**
-  - SQL syntax-parsed with the PostgreSQL parser: 18 blocks, 4 functions, 0 errors, undeclared-variable check
-  - Duplicate-heading check: 0 duplicate headings found across all documents
-  - Markdown table cell-count check: all Markdown tables verified for consistent column counts across all rows
-  - Local anchor check: verified all local `#anchor` links across all ten Markdown files; resolved broken anchor in `phase-0-change-log.md` line 367; 0 remaining broken anchors
-  - Technical Prototype (TP) registry count: exactly 59 rows (TP-01 through TP-25d), and all remain unchecked `[ ]`
-- **Explicit list of what is NOT verified:**
-  - Dependency compatibility
-  - Package install and build (`npm install`, `npm run build`)
-  - Database migrations
+- **Review Date:** 2026-10-25 (Africa/Cairo)
+- **Starting commit hash:** `00d8c84ce34a10b07a5d75d61b068b5e7f1bbb00`
+- **Reviewed commit hash:** `00d8c84ce34a10b07a5d75d61b068b5e7f1bbb00`
+- **Phase 0 Acceptance Criteria Results (1–8):**
+  - Criterion 1 (Architecture & Compatibility): ACCEPTED [x] (design only)
+  - Criterion 2 (Authoritative Inventory Strategy): ACCEPTED [x]
+  - Criterion 3 (Unified Workflows & State Machines): ACCEPTED [x]
+  - Criterion 4 (Sagas & Crash Recovery): ACCEPTED [x]
+  - Criterion 5 (Security & Deployment Specification): ACCEPTED [x]
+  - Criterion 6 (Risk & Taxonomy Register): ACCEPTED [x]
+  - Criterion 7 (Acceptance Test Plan): ACCEPTED [x]
+  - Criterion 8 (Owner Decisions & Launch Gates): ACCEPTED [x]
+- **Design-Review Checks A–I Results:**
+  - Check A (Architecture and module boundaries): ACCEPTED [x]
+  - Check B (Inventory and ledger contract): ACCEPTED [x]
+  - Check C (Checkout/order/payment correlation): ACCEPTED [x]
+  - Check D (Crash recovery and idempotency): ACCEPTED [x]
+  - Check E (Returns and order versioning): ACCEPTED [x]
+  - Check F (Refund lifecycle): ACCEPTED [x]
+  - Check G (Guest access and payment security): ACCEPTED [x]
+  - Check H (Compatibility evidence boundary): ACCEPTED [x]
+  - Check I (Owner decisions and launch gates): ACCEPTED [x]
+- **Documents Inspected:**
+  1. `docs/PROJECT_BRIEF.md`
+  2. `docs/architecture.md`
+  3. `docs/data-model.md`
+  4. `docs/implementation-plan.md`
+  5. `docs/order-and-inventory-workflows.md`
+  6. `docs/security-and-deployment.md`
+  7. `docs/risk-and-assumptions.md`
+  8. `docs/phase-0-change-log.md`
+  9. `docs/phase-0-review-report.md`
+  10. `docs/phase-0-review-summary.md`
+- **Checks Actually Performed:**
+  - Static cross-document verification of all 10 canonical documents against criteria 1–8 and checks A–I
+  - Local Markdown anchor verification across all 10 documents (146 local links, 0 broken)
+  - Duplicate-heading check across all documents
+  - Markdown table cell-count and column consistency verification
+  - Technical Prototype (TP) registry count verification (exactly 59 rows, all remaining `[ ]`)
+  - Strict classification verification (zero `[VALIDATED-TEST]` claimed in Phase 0)
+- **Explicit Statement of What Remains Unverified (Runtime Boundary):**
+  - Package dependency compatibility, peer resolution, and lockfile reproducibility
+  - Application install and build (`npm install`, `npm run build`)
+  - Database schema migrations
   - Trigger creation and execution on a real PostgreSQL database
-  - Concurrency and deadlock behavior under load
-  - Database backup and restore drill
-  - Electronic payment provider integration and webhook behavior
-- **Open launch gates:**
-  - Launch Gate 1: Zamzam Water Authenticity and Labeling Verification (blocks launch only)
-  - Launch Gate 2: Date Packaging and Production Date Inspection (blocks launch only)
-  - Launch Gate 3: Egyptian Governorate Delivery Rate Matrix (blocks launch only)
-  - Launch Gate 5: Database Disaster Recovery Verification Drill (blocks launch only)
-  - Lawyer review of Arabic Terms of Service, Privacy Policy, and return/refund policy (Gate 4 / [DEFAULT-ASSUMPTION] D-5)
-- **Signature block (left blank for owner):**
+  - Concurrency safety, lock interleavings, and deadlock behavior under load
+  - Backup and restore drill on staging database
+  - Real electronic payment gateway integration, webhook signature validation, and failure simulation
+- **Unresolved Contradictions or Owner Decisions:**
+  - Zero unresolved document contradictions exist across the ten documents.
+  - Launch Gates 1, 2, 3, and 5 block production launch only, not Phase 0 design closure.
+  - Legal review of Arabic policies (Gate 4 / [DEFAULT-ASSUMPTION] D-5) is a launch-only requirement.
+  - Payment vendor selection follows [DEFAULT-ASSUMPTION] D-1 (provider simulator in Spike; gateway selected before launch).
+- **Owner Sign-off:**
 
-Owner sign-off: name ____ date ____ reviewed commit ____
+Owner sign-off: name moaaz date 2026-10-25 reviewed commit 00d8c84ce34a10b07a5d75d61b068b5e7f1bbb00

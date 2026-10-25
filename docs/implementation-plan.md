@@ -3,7 +3,7 @@
 **Document Status:** Revision 19 — Electronic Payments and Phase 0 Design Closure (Design Revision; Runtime Unverified)  
 **Date:** 2026-10-25  
 **Target Release:** MVP  
-**Review Decision:** `Phase 0 design closure is defined; cross-document review/sign-off is pending. Runtime evidence is deferred to the Phase 1 Technical Compatibility Spike.`  
+**Review Decision:** `Phase 0 design is accepted by owner; cross-document review/sign-off completed. Runtime evidence is deferred to the Phase 1 Technical Compatibility Spike.`
 *(Phase 0 closes on design/documentation and recorded owner decisions and default assumptions (owner may change) only; a restricted Phase 1 Technical Compatibility Spike may run before Phase 0 sign-off, but store feature development remains blocked until the spike evidence and launch gates are reviewed)*
 
 ---
@@ -32,14 +32,14 @@ Deliver a comprehensive, unified technical architecture, data model, state workf
 ### Phase 0 Acceptance Gate (Design Closure; No Runtime Evidence Required)
 Phase 0 closes when the architecture and supporting documents are complete and mutually consistent, and all required owner decisions are recorded. Phase 0 does **not** claim package compatibility, successful migrations, concurrency safety, or restore readiness. All checkboxes below intentionally remain unchecked until a reviewer records the corresponding design-review result; do not use this list to imply runtime verification.
 
-- [ ] **1. Architecture & Compatibility (design only):** Candidate versions and module boundaries are explicitly documented, including Medusa Module Links rather than unsupported cross-module foreign keys. Actual dependency resolution, install, build, and migration evidence belongs to the Phase 1 Spike list below.
-- [ ] **2. Authoritative Inventory Strategy:** `batch_inventory` is documented as the sole authority for batch-managed food stock, with tri-state balances (`on_hand`, `reserved`, `quarantined`), two-phase cart reservations, canonical `checkout_attempt_id` and server-generated `checkout_line_key`, epoch fencing (`cart_checkout_session`), immutable attempt history, and atomic ledger-mutation contracts.
-- [ ] **3. Unified Workflows & State Machines:** Operational, fulfillment, electronic-payment, COD, and return states and their transitions are documented, including partial returns/refunds and separation of delivery failures from customer returns.
-- [ ] **4. Sagas & Crash Recovery:** Checkout/payment orchestration, compensation, order correlation, uncertain outcomes, and recovery boundaries are documented without claiming execution.
-- [ ] **5. Security & Deployment Specification:** Idempotency, trusted-proxy handling, guest claim/OTP controls, hosted/redirect electronic payment, webhook signature verification, webhook-secret storage, and sanitized audit logging are specified.
-- [ ] **6. Risk & Taxonomy Register:** Technical claims are correctly classified as `[VERIFIED-DOCS]`, `[SOURCE-VERIFIED]`, `[PROPOSED]`, `[OWNER-DECISION]`, or `[VALIDATED-TEST]`; Phase 0 must not claim any unexecuted behavior as `[VALIDATED-TEST]`.
-- [ ] **7. Acceptance Test Plan:** Design acceptance criteria for Checks A-I and a TP registry covering inventory, checkout, electronic payment, COD, webhook handling, refunds, recovery, and restore evidence are documented. Every runtime test remains unchecked until actually executed.
-- [ ] **8. Owner Decisions & Launch Gates:** Gate 4 defaults D-2 through D-5 and Gate 6 default D-1 are recorded as [DEFAULT-ASSUMPTION]; the owner may change them; see the Default Assumptions Register. Gate 1, 2, 3, and 5 evidence and restore work are launch-only under D-6. Electronic payment and COD are offered side by side; Gates 1, 2, 3, and 5 block launch only.
+- [x] **1. Architecture & Compatibility (design only):** Candidate versions and module boundaries are explicitly documented, including Medusa Module Links rather than unsupported cross-module foreign keys. Actual dependency resolution, install, build, and migration evidence belongs to the Phase 1 Spike list below.
+- [x] **2. Authoritative Inventory Strategy:** `batch_inventory` is documented as the sole authority for batch-managed food stock, with tri-state balances (`on_hand`, `reserved`, `quarantined`), two-phase cart reservations, canonical `checkout_attempt_id` and server-generated `checkout_line_key`, epoch fencing (`cart_checkout_session`), immutable attempt history, and atomic ledger-mutation contracts.
+- [x] **3. Unified Workflows & State Machines:** Operational, fulfillment, electronic-payment, COD, and return states and their transitions are documented, including partial returns/refunds and separation of delivery failures from customer returns.
+- [x] **4. Sagas & Crash Recovery:** Checkout/payment orchestration, compensation, order correlation, uncertain outcomes, and recovery boundaries are documented without claiming execution.
+- [x] **5. Security & Deployment Specification:** Idempotency, trusted-proxy handling, guest claim/OTP controls, hosted/redirect electronic payment, webhook signature verification, webhook-secret storage, and sanitized audit logging are specified.
+- [x] **6. Risk & Taxonomy Register:** Technical claims are correctly classified as `[VERIFIED-DOCS]`, `[SOURCE-VERIFIED]`, `[PROPOSED]`, `[OWNER-DECISION]`, or `[VALIDATED-TEST]`; Phase 0 must not claim any unexecuted behavior as `[VALIDATED-TEST]`.
+- [x] **7. Acceptance Test Plan:** Design acceptance criteria for Checks A-I and a TP registry covering inventory, checkout, electronic payment, COD, webhook handling, refunds, recovery, and restore evidence are documented. Every runtime test remains unchecked until actually executed.
+- [x] **8. Owner Decisions & Launch Gates:** Gate 4 defaults D-2 through D-5 and Gate 6 default D-1 are recorded as [DEFAULT-ASSUMPTION]; the owner may change them; see the Default Assumptions Register. Gate 1, 2, 3, and 5 evidence and restore work are launch-only under D-6. Electronic payment and COD are offered side by side; Gates 1, 2, 3, and 5 block launch only.
 
 ### Evidence Required in the Phase 1 Technical Compatibility Spike (Not Phase 0 Design Closure)
 The following evidence cannot be supplied by documentation review. Each row remains unexecuted until reproducible logs, exit codes, database assertions, and the tested package/environment metadata are attached.
@@ -59,15 +59,15 @@ Checks A-I assess document completeness and consistency only. Any evidence requi
 
 | Check | Design-review scope | Status |
 |---|---|:---:|
-| **A — Architecture and module boundaries** | Ownership, module links, service boundaries, candidate-version assumptions clearly labeled. | `[ ]` |
-| **B — Inventory and ledger contract** | Balances, movement types, lock protocol, snapshots, replay/conflict, cleanup and reconciliation specified consistently. | `[ ]` |
-| **C — Checkout/order/payment correlation** | Durable attempt states, order correlation, electronic-payment/COD branches and unknown-outcome behavior documented. | `[ ]` |
-| **D — Crash recovery and idempotency** | Seven checkpoints, fencing, retries, safe stored response, and payment compensation documented. | `[ ]` |
-| **E — Returns and order versioning** | Version-matched allocations, return quantity, immutability and transition guards specified. | `[ ]` |
-| **F — Refund lifecycle** | Formula ownership, computed amount, override audit, frozen approval, partial refunds and payout reconciliation documented. | `[ ]` |
-| **G — Guest access and payment security** | Claim redemption, OTP, hosted payment redirect, webhook authentication and data minimization specified. | `[ ]` |
-| **H — Compatibility evidence boundary** | Exact candidate pins and the list of required runtime evidence are documented; compatibility itself is not claimed. | `[ ]` |
-| **I — Owner decisions and launch gates** | Final owner decisions are recorded and unresolved parameters are explicitly assigned to owner input; launch-only gates are separated. | `[ ]` |
+| **A — Architecture and module boundaries** | Ownership, module links, service boundaries, candidate-version assumptions clearly labeled. | `[x]` |
+| **B — Inventory and ledger contract** | Balances, movement types, lock protocol, snapshots, replay/conflict, cleanup and reconciliation specified consistently. | `[x]` |
+| **C — Checkout/order/payment correlation** | Durable attempt states, order correlation, electronic-payment/COD branches and unknown-outcome behavior documented. | `[x]` |
+| **D — Crash recovery and idempotency** | Seven checkpoints, fencing, retries, safe stored response, and payment compensation documented. | `[x]` |
+| **E — Returns and order versioning** | Version-matched allocations, return quantity, immutability and transition guards specified. | `[x]` |
+| **F — Refund lifecycle** | Formula ownership, computed amount, override audit, frozen approval, partial refunds and payout reconciliation documented. | `[x]` |
+| **G — Guest access and payment security** | Claim redemption, OTP, hosted payment redirect, webhook authentication and data minimization specified. | `[x]` |
+| **H — Compatibility evidence boundary** | Exact candidate pins and the list of required runtime evidence are documented; compatibility itself is not claimed. | `[x]` |
+| **I — Owner decisions and launch gates** | Final owner decisions are recorded and unresolved parameters are explicitly assigned to owner input; launch-only gates are separated. | `[x]` |
 
 ---
 

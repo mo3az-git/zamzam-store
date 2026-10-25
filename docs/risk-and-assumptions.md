@@ -2,7 +2,7 @@
 ## Project: Arabic-First E-Commerce Store for Imported Food Products (Egypt)
 **Document Status:** Revision 19 — Electronic Payments and Phase 0 Design Closure (Design Revision; Runtime Unverified)  
 **Date:** 2026-10-25  
-**Current Review Decision:** `Phase 0 design closure is defined; cross-document review/sign-off is pending. Runtime evidence is deferred to the Phase 1 Technical Compatibility Spike.`  
+**Current Review Decision:** `Phase 0 design is accepted by owner; cross-document review/sign-off completed. Runtime evidence is deferred to the Phase 1 Technical Compatibility Spike.`
 *(Phase 0 closes on design/documentation and recorded owner decisions and default assumptions (owner may change) only; a restricted Phase 1 Technical Compatibility Spike may run before Phase 0 sign-off, but store feature development remains blocked until the spike evidence and launch gates are reviewed)*
 
 ---
@@ -18,7 +18,7 @@ In compliance with Engineering Rules 2, 7, and 9 (Claim Discipline), all technic
 | **`[VALIDATED-TEST]`** | Proven via an executed test command or verified prototype in this environment with reproducible terminal output. | *None in Phase 0 (will be populated during Phase 1 technical prototype execution and Phase 3 automated test executions).* |
 | **`[PROPOSED]`** | Proposed architectural design; sound in theory and aligned with framework principles, but not yet executed in this repository. | Persistent PostgreSQL idempotency lease with 7-checkpoint recovery; immutable attempt tracking (`cart_checkout_attempt`); real checkout epoch fencing; canonical Cairo timezone FEFO query; pre-dispatch revalidation gate; atomic `GETDEL` claim exchange (`Path=/`); 4-stage Preventive Dual-Control Refund Protocol with complete actor separation; custom calculated fulfillment provider in major EGP units; cross-row return quantity & reactivation triggers. |
 | **`[OWNER-DECISION]`** | Requires explicit business, commercial, operational, or legal owner approval. | Recorded decisions are distinguished from [DEFAULT-ASSUMPTION] entries; Gates 1, 2, 3, and 5 are launch-only evidence/approval gates. |
-| **`[DEFAULT-ASSUMPTION]`** | A working default selected to proceed; it is not owner-approved and the owner may change it. | D-1 through D-6 below; launch evidence remains outstanding where required. |
+| **`[DEFAULT-ASSUMPTION]`** | A working default selected to proceed; it is not owner-approved and the owner may change it. | D-1 through D-7 below; launch evidence remains outstanding where required. |
 
 ---
 

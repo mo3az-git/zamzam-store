@@ -2,7 +2,7 @@
 ## Project: Arabic-First E-Commerce Store for Imported Food Products (Egypt)
 **Document Status:** Revision 19 — Electronic Payments and Phase 0 Design Closure (Design Revision; Runtime Unverified)  
 **Date:** 2026-10-25  
-**Current Review Decision:** `Phase 0 design closure is defined; cross-document review/sign-off is pending. Runtime evidence is deferred to the Phase 1 Technical Compatibility Spike.`  
+**Current Review Decision:** `Phase 0 design is accepted by owner; cross-document review/sign-off completed. Runtime evidence is deferred to the Phase 1 Technical Compatibility Spike.`
 *(Phase 0 closes on design/documentation and recorded owner decisions and default assumptions (owner may change) only; a restricted Phase 1 Technical Compatibility Spike may run before Phase 0 sign-off, but store feature development remains blocked until the spike evidence and launch gates are reviewed)*
 
 ---
