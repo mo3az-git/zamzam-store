@@ -82,14 +82,10 @@ jobs:
           set -o pipefail
           npm run spike:registry 2>&1 | tee artifacts/tp-registry-integrity.log
 
-      - name: Resolve candidate lockfile then clean-install with npm ci
+      - name: Clean install dependencies with npm ci
         shell: bash
         run: |
           set -o pipefail
-          if [ ! -f package-lock.json ]; then
-            echo "No committed package-lock.json: resolving a candidate lockfile before the clean install." | tee artifacts/npm-lock-bootstrap.log
-            npm install --package-lock-only --ignore-scripts --strict-peer-deps --no-audit --no-fund 2>&1 | tee -a artifacts/npm-lock-bootstrap.log
-          fi
           npm ci --strict-peer-deps --no-audit --no-fund 2>&1 | tee artifacts/npm-install.log
 
       - name: Capture resolved dependency tree

@@ -1,6 +1,6 @@
 # Phase 1 — Technical Compatibility Spike
 
-**Status:** Baseline compatibility checks passed on Medusa 2.22.1, but the first real-Redis regression failed **4 of 7 checks** in attempt 10. Redis locking is a blocking risk. The candidate lockfile is generated as a CI artifact but not reviewed/committed. All 59 TP behavior cases remain unchecked.  
+**Status:** Baseline compatibility checks passed on Medusa 2.22.1, but the first real-Redis regression failed **4 of 7 checks** in attempt 10. Redis locking is a blocking risk. The package-lock.json is committed and enforced via `npm ci --strict-peer-deps` in CI. All 59 TP behavior cases remain unchecked.  
 **Starting commit:** 404bf23275d67cc6274ed567779081c25f676100 (Phase 0 design accepted; runtime unverified).  
 **Scope boundary:** initial monorepo scaffold, package/peer metadata, strict dependency resolution, lint/build, and baseline Medusa migrations against a disposable database; then the documented TP cases. No production feature work is included.
 
@@ -166,7 +166,7 @@ The test registry script is a guardrail only: it asserts the presence of exactly
 | Baseline migrations | Command passed on attempt 10 against disposable PostgreSQL for 2.22.1, but repeated `SET LOCAL`-outside-transaction warnings require investigation | Preserve migration log and diagnose warning; custom-module migrations remain unimplemented/unverified |
 | Redis locking semantic behavior | **BLOCKED:** attempt 10 ran 7 real-Redis checks; 3 passed and 4 failed (partial-acquire rollback, same-owner re-entry, reverse-order multi-key contention, owner-safe `releaseAll` race). Migration-only loader connection cleanup remains a separate lifecycle concern. | Investigate harness validity and provider source; retain failing regressions. Resolve all four failures or replace the provider strategy and pass equivalent tests before transition review |
 | Native order correlation, inventory atomicity, checkout recovery, payment/webhook/refund behavior, restore | Pending; all 59 TP statuses remain unchecked | Test logs, exit codes, environment/package metadata, database assertions |
-| Lockfile committed | Pending; attempt-8 lockfile belongs to Medusa 2.21.2 and must not be reused | Review and commit the regenerated 2.22.1 package-lock.json; switch subsequent CI to `npm ci` |
+| Lockfile committed | Committed for Medusa 2.22.1 cohort (SHA-256 `c3de50651eccf1a8c6843b5c0e536de375d05b91a2bf7818fd94fdfa7c6b291f`). Enforced in CI via `npm ci --strict-peer-deps`. | Retain exact lockfile; verify clean `npm ci` on every change |
 
 ## 6. Guardrails
 
@@ -179,8 +179,48 @@ The test registry script is a guardrail only: it asserts the presence of exactly
 
 ### Phase 1 follow-up — tested Medusa cohort and dependency-resolution decision (2026-10-26)
 
-- The Phase 1 Spike's tested Medusa cohort is **2.22.1** for `@medusajs/*`. This version was used during the locking-provider review (including commit `ee781b175394fe4d336eb9617f684bb01868609f`) so the adapter and its observed acquire/release semantics were reviewed against the same upstream source cohort as the Spike.
+- The Phase 1 Spike's tested Medusa cohort is **2.22.1** for `@medusajs/*`. This version was validated in CI run #74 and pinned in `package.json` and `package-lock.json`. It resolved clean-install peer dependencies and incorporated provider shutdown fixes.
 - References elsewhere in the historical design/review documents to Medusa **2.21.2** record an earlier candidate cohort. They are historical for the Phase 1 Spike; they do not change the design rules or imply that 2.21.2 is being tested by the current workflow.
-- Root devDependencies pin `tsconfig-paths@4.2.0` because Medusa CLI 2.22.1 calls `register({})` without declaring that package. Root pins `ajv@8.20.0`, `ajv-formats@2.1.1`, and `picomatch@3.0.2` satisfy optional peer ranges in the Medusa admin/dashboard tree and avoid incompatible versions being hoisted to the root. npm should retain incompatible major versions as nested dependencies.
-- The dependency resolution must be reproducible from a committed `package-lock.json` using `npm ci --strict-peer-deps`. No TP behavior case is run or accepted by this dependency decision; all 59 TP statuses stay unchecked.
+- Root devDependencies pin `tsconfig-paths@4.2.0` because Medusa CLI 2.22.1 calls `register({})` without declaring that package. Root pins `ajv@8.20.0`, `ajv-formats@2.1.1`, and `picomatch@3.0.2` satisfy optional peer ranges in the Medusa admin/dashboard tree and avoid incompatible versions being hoisted to the root. npm retains incompatible major versions as nested dependencies, allowing `npm ci --strict-peer-deps` to pass cleanly.
+- `package-lock.json` is committed with SHA-256 `c3de50651eccf1a8c6843b5c0e536de375d05b91a2bf7818fd94fdfa7c6b291f`, matching the CI run #74 artifact byte-for-byte. The CI workflow enforces `npm ci --strict-peer-deps` with zero on-the-fly lockfile generation.
+- No TP behavior case is run or accepted by this dependency decision; all 59 TP statuses stay unchecked `[ ]`.
+
+## 7. Implementation plan for initial compatibility tests (TP-01, TP-02a, TP-03)
+
+This section documents the concrete implementation plan for the first three compatibility tests.  
+**Execution notice:** These tests are planned here, but **NOT** yet implemented or executed. All 59 TP rows in `docs/implementation-plan.md` remain strictly unchecked `[ ]`.
+
+### TP-01: Framework boot and module resolution
+- **Objective:** Verify that Medusa v2 framework boots cleanly, resolves core modules, and loads application configuration without TypeScript/loader errors.
+- **What to build:** A minimal standalone Node/TypeScript test harness (`packages/backend/src/scripts/test-tp01-boot.ts` or standalone spike test runner) that initializes `@medusajs/framework`, instantiates the Medusa container, and asserts that core framework services and configured modules resolve without throwing runtime exceptions.
+- **Fixtures needed:**
+  - Valid `medusa-config.ts` with test environment variables (`JWT_SECRET`, `COOKIE_SECRET`, database connection URL).
+  - Disposable PostgreSQL container (`postgres:16.15-alpine`) accessible during the boot sequence.
+- **Expected evidence artifacts:**
+  - `artifacts/tp-01-framework-boot.log`: Terminal output capturing clean container startup, module registration list, exit code 0, and runtime elapsed time.
+
+### TP-02a: Redis distributed lock acquire, TTL expiry, release
+- **Objective:** Verify distributed locking semantics using the Medusa Redis locking provider against a real Redis instance, covering lock acquisition, time-to-live (TTL) expiration, and explicit owner-checked release.
+- **What to build:** A targeted concurrency test script (`packages/backend/src/scripts/test-tp02a-redis-lock.ts`) that executes three distinct operational scenarios:
+  1. *Basic Acquire and Release:* Acquire a named key (`cart:$CART_ID`) with TTL 120s; assert key exists in Redis with proper TTL; release lock with matching ownerId; assert key is deleted.
+  2. *TTL Expiry:* Acquire lock with a short TTL (e.g., 1000ms); assert key exists; sleep past expiration; assert key is automatically evicted by Redis.
+  3. *Contention / Nested Skip:* Attempt re-acquisition under conflicting owner vs same owner, validating the Medusa locking provider's behavior against documented expectations.
+- **Fixtures needed:**
+  - Real disposable Redis service (`redis:7.2.16-alpine`) reachable via `REDIS_URL` / `LOCKING_REDIS_URL`.
+  - Redis client helper for independent out-of-band state inspection (`ioredis` or raw TCP commands) to verify key existence and TTL independently of the locking provider wrapper.
+- **Expected evidence artifacts:**
+  - `artifacts/tp-02a-redis-locking.log`: Timestamped log of acquire, TTL verification, expiration wait, release assertions, and Redis server INFO.
+
+### TP-03: Custom data models in Medusa v2 (DML define, migrate, CRUD)
+- **Objective:** Verify that custom business domain entities defined with Medusa v2 Data Modeling Language (DML `model.define`) generate valid database schemas, execute migrations cleanly against PostgreSQL, and support core CRUD operations through the Medusa container.
+- **What to build:**
+  - A test module schema definition using Medusa v2 DML (`model.define("spike_test_entity", { ... })`).
+  - Migration script executing `medusa db:migrate` or custom module migration runner to generate and apply PostgreSQL DDL.
+  - A verification script performing programmatic Create, Read, Update, and Delete operations using the resolved module service, verifying field persistence, types, and primary key generation.
+- **Fixtures needed:**
+  - Disposable PostgreSQL instance (`postgres:16.15-alpine`).
+  - Isolated test module definition registered in `medusa-config.ts`.
+- **Expected evidence artifacts:**
+  - `artifacts/tp-03-dml-migration.log`: DDL generation output, migration status output, and table structure validation from `information_schema.tables`.
+  - `artifacts/tp-03-crud-verification.log`: Execution log proving successful entity creation, query, field update, and deletion with zero ORM/mapping errors.
 
