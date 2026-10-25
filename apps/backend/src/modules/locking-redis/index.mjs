@@ -2,7 +2,10 @@ import { createRequire } from "node:module";
 import { setTimeout as delay } from "node:timers/promises";
 
 const require = createRequire(import.meta.url);
-const { MedusaError } = require("@medusajs/framework/utils");
+const { MedusaError, ModuleProvider, Modules } = require("@medusajs/framework/utils");
+const { asValue } = require("@medusajs/framework/awilix");
+const RedisModule = require("ioredis");
+const Redis = RedisModule.default ?? RedisModule;
 const { RedisLockingProvider } = require("@medusajs/locking-redis/dist/services/redis-lock");
 
 /**
@@ -21,16 +24,23 @@ export class SafeRedisLockingProvider extends RedisLockingProvider {
     super(dependencies, options);
 
     this.redisClient.defineCommand("acquireManyLocks", {
-      numberOfKeys: 0,
+      // Keep one real Redis key in KEYS and pass any additional keys in ARGV.
+      // This avoids depending on ioredis' dynamic-key-count convention.
+      numberOfKeys: 1,
       lua: `
-        local ownerId = ARGV[1]
-        local ttl = tonumber(ARGV[2])
-        local count = #KEYS
+        local additionalCount = tonumber(ARGV[1]) or 0
+        local keys = { KEYS[1] }
+        for i = 1, additionalCount do
+          table.insert(keys, ARGV[1 + i])
+        end
+
+        local ownerIndex = 2 + additionalCount
+        local ownerId = ARGV[ownerIndex]
+        local ttl = tonumber(ARGV[ownerIndex + 1])
 
         -- Validate the complete key set before mutating any key.
-        for i = 1, count do
-          local key = KEYS[i]
-          local currentOwner = redis.call("GET", key)
+        for i = 1, #keys do
+          local currentOwner = redis.call("GET", keys[i])
           if currentOwner and currentOwner ~= ownerId then
             return 0
           end
@@ -38,12 +48,11 @@ export class SafeRedisLockingProvider extends RedisLockingProvider {
 
         -- Redis executes the script atomically, so no caller can observe a
         -- partially acquired multi-key set.
-        for i = 1, count do
-          local key = KEYS[i]
+        for i = 1, #keys do
           if ttl and ttl > 0 then
-            redis.call("SET", key, ownerId, "EX", ttl)
+            redis.call("SET", keys[i], ownerId, "EX", ttl)
           else
-            redis.call("SET", key, ownerId)
+            redis.call("SET", keys[i], ownerId)
           end
         end
 
@@ -69,11 +78,11 @@ export class SafeRedisLockingProvider extends RedisLockingProvider {
       }
 
       const redisKeys = logicalKeys.map((key) => `${this.keyNamePrefix}${key}`);
-      // ioredis treats the first argument as the dynamic KEYS count when
-      // numberOfKeys is 0; remaining arguments are KEYS first, then ARGV.
+      const [firstKey, ...additionalKeys] = redisKeys;
       const result = await this.redisClient.acquireManyLocks(
-        redisKeys.length,
-        ...redisKeys,
+        firstKey,
+        additionalKeys.length,
+        ...additionalKeys,
         ownerId,
         ttl
       );
@@ -122,4 +131,37 @@ export class SafeRedisLockingProvider extends RedisLockingProvider {
   }
 }
 
-export default SafeRedisLockingProvider;
+
+/**
+ * Medusa provider loader. Mirrors the upstream Redis provider's dependency
+ * registration while keeping the tested compatibility service as the service.
+ */
+async function LockingRedisLoader({ container, logger, options }) {
+  const { redisUrl, redisOptions, namespace } = options ?? {};
+  if (!redisUrl) {
+    throw new Error('No "redisUrl" provided for the Phase 1 locking-redis provider.');
+  }
+
+  const connection = new Redis(redisUrl, {
+    lazyConnect: true,
+    ...(redisOptions ?? {}),
+  });
+
+  try {
+    await connection.connect();
+    logger?.info('Connection to Redis in "locking-redis" provider established');
+  } catch (error) {
+    logger?.error('An error occurred while connecting to Redis in "locking-redis" provider: ' + error);
+    throw error;
+  }
+
+  container.register({
+    redisClient: asValue(connection),
+    prefix: asValue(namespace ?? "medusa_lock:"),
+  });
+}
+
+export default ModuleProvider(Modules.LOCKING, {
+  services: [SafeRedisLockingProvider],
+  loaders: [LockingRedisLoader],
+});
