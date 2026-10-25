@@ -1011,8 +1011,16 @@ BEGIN
 
     IF TG_OP = 'UPDATE' AND OLD.return_status IN ('cancelled', 'rejected')
        AND NEW.return_status NOT IN ('cancelled', 'rejected') THEN
-        IF NEW.return_status NOT IN ('pending_receipt', 'pending_inspection') THEN
-            RAISE EXCEPTION 'ILLEGAL_REACTIVATION_STATUS: only pending_receipt or pending_inspection is allowed';
+        IF NEW.return_type = 'undelivered_depot_return' THEN
+            IF NEW.return_status <> 'pending_inspection' THEN
+                RAISE EXCEPTION 'ILLEGAL_DEPOT_RETURN_REACTIVATION_STATUS: undelivered depot returns may reactivate only to pending_inspection';
+            END IF;
+        ELSIF NEW.return_type = 'customer_return' THEN
+            IF NEW.return_status NOT IN ('pending_receipt', 'pending_inspection') THEN
+                RAISE EXCEPTION 'ILLEGAL_CUSTOMER_RETURN_REACTIVATION_STATUS: customer returns may reactivate only to pending_receipt or pending_inspection';
+            END IF;
+        ELSE
+            RAISE EXCEPTION 'ILLEGAL_REACTIVATION_RETURN_TYPE: unsupported return type %', NEW.return_type;
         END IF;
         -- Caller already holds the order lock. Aggregate all request rows by
         -- line/batch; then verify saved order_version and allocation version.
