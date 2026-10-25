@@ -1,0 +1,22 @@
+{
+  "name": "@zamzam/storefront",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 8000",
+    "start": "next start --port 8000",
+    "build": "next build",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@medusajs/js-sdk": "2.21.2",
+    "next": "15.5.28",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "autoprefixer": "10.4.21",
+    "postcss": "8.5.6",
+    "tailwindcss": "3.4.17"
+  }
+}

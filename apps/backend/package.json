@@ -1,0 +1,20 @@
+{
+  "name": "@zamzam/backend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "medusa develop",
+    "start": "medusa start",
+    "build": "medusa build",
+    "db:migrate": "medusa db:migrate",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@medusajs/cli": "2.21.2",
+    "@medusajs/framework": "2.21.2",
+    "@medusajs/medusa": "2.21.2"
+  },
+  "devDependencies": {
+    "typescript": "5.5.4"
+  }
+}
