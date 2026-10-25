@@ -25,11 +25,11 @@ export class SafeRedisLockingProvider extends RedisLockingProvider {
       lua: `
         local ownerId = ARGV[1]
         local ttl = tonumber(ARGV[2])
-        local count = tonumber(ARGV[3])
+        local count = #KEYS
 
         -- Validate the complete key set before mutating any key.
         for i = 1, count do
-          local key = ARGV[3 + i]
+          local key = KEYS[i]
           local currentOwner = redis.call("GET", key)
           if currentOwner and currentOwner ~= ownerId then
             return 0
@@ -39,7 +39,7 @@ export class SafeRedisLockingProvider extends RedisLockingProvider {
         -- Redis executes the script atomically, so no caller can observe a
         -- partially acquired multi-key set.
         for i = 1, count do
-          local key = ARGV[3 + i]
+          local key = KEYS[i]
           if ttl and ttl > 0 then
             redis.call("SET", key, ownerId, "EX", ttl)
           else
@@ -69,11 +69,13 @@ export class SafeRedisLockingProvider extends RedisLockingProvider {
       }
 
       const redisKeys = logicalKeys.map((key) => `${this.keyNamePrefix}${key}`);
+      // ioredis treats the first argument as the dynamic KEYS count when
+      // numberOfKeys is 0; remaining arguments are KEYS first, then ARGV.
       const result = await this.redisClient.acquireManyLocks(
-        ownerId,
-        ttl,
         redisKeys.length,
-        ...redisKeys
+        ...redisKeys,
+        ownerId,
+        ttl
       );
 
       if (result === 1) {
