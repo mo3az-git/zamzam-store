@@ -712,7 +712,7 @@ Historical movement records in `inventory_movement` are strictly protected from 
 
 One canonical predicate governs all expiration evaluations across checkout, pre-dispatch, alert jobs, and test suites:
 
-```sql
+```text
 inventory_batch.status = 'available'
 AND inventory_batch.expiration_date > (
     (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date 
