@@ -103,8 +103,42 @@ jobs:
           set -o pipefail
           npm run lint 2>&1 | tee artifacts/lint.log
 
+      - name: Diagnose Medusa TypeScript loader resolution
+        working-directory: apps/backend
+        shell: bash
+        env:
+          TS_NODE_PROJECT: ${{ github.workspace }}/apps/backend/tsconfig.json
+        run: |
+          set -o pipefail
+          node <<'NODE' 2>&1 | tee ../../artifacts/medusa-loader-diagnostic.log
+          const { createRequire } = require("node:module")
+          const path = require("node:path")
+          const cliEntry = require.resolve("@medusajs/cli")
+          const cliRequire = createRequire(cliEntry)
+          const tsconfigPathsEntry = cliRequire.resolve("tsconfig-paths")
+          const tsconfigPaths = cliRequire("tsconfig-paths")
+          const loaded = tsconfigPaths.loadConfig(process.cwd())
+          const result = {
+            cwd: process.cwd(),
+            tsNodeProject: process.env.TS_NODE_PROJECT,
+            cliEntry,
+            tsconfigPathsEntry,
+            tsconfigPathsVersion: require(path.join(path.dirname(tsconfigPathsEntry), "package.json")).version,
+            configResult: loaded.resultType,
+            configPath: loaded.configFileAbsolutePath,
+            absoluteBaseUrl: loaded.absoluteBaseUrl,
+            error: loaded.message
+          }
+          console.log(JSON.stringify(result, null, 2))
+          if (loaded.resultType !== "success" || !loaded.absoluteBaseUrl) {
+            process.exitCode = 1
+          }
+          NODE
+
       - name: Apply baseline Medusa migrations to disposable PostgreSQL
         shell: bash
+        env:
+          TS_NODE_PROJECT: ${{ github.workspace }}/apps/backend/tsconfig.json
         run: |
           set -o pipefail
           npm run db:migrate 2>&1 | tee artifacts/medusa-db-migrate.log
