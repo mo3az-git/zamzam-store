@@ -8,6 +8,7 @@
 > **Affected sections in this brief (listed, not edited):**
 > - Header metadata: **Primary payment method**
 > - **§9.3 — COD behavior**
+> - **§10.2 — Order creation transaction** (initial COD payment state)
 > - **§14 — Explicitly Out of Scope for the MVP**
 >
 > The other COD references describe COD-specific states or test cases and remain applicable to the COD branch; they do not make COD the only supported payment method.
