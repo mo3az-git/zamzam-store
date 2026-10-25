@@ -39,12 +39,19 @@ Commit under test: ad8dcbc17577d6f149e6ff96d85a2df68f2d870f.
 
 Metadata, registry integrity, install, npm ls --all, and lint passed again. The migration step reported that tsconfig-paths received an undefined base path and that the Medusa CLI could not resolve @medusajs/draft-order from the app root. The baseline migrations failed and both builds were skipped.
 
-### Corrective changes now proposed
+### Attempt 3 — Metadata checker stopped early
+
+Workflow run: https://github.com/mo3az-git/zamzam-store/actions/runs/40227226731  
+Commit under test: f80c52c93b9f2153860ca920b4d5d55cdf457b50.
+
+The updated metadata script checked all new direct version pins and identified an npm CLI output-shape edge case: for @medusajs/admin-sdk@2.21.2, npm view returned the version as a JSON string because optional metadata fields were absent. The script incorrectly expected an object with a version property and stopped before registry, install, migration or build steps. This was a validator bug, not evidence that the package version was absent; the current revision accepts the string-only form while still asserting the exact version.
+
+### Corrective changes in the current revision
 
 - Add baseUrl "." to the backend tsconfig to support the Medusa CLI's tsconfig-paths loader.
 - Make @medusajs/draft-order a direct backend dependency and add the peer packages used by the Medusa 2.21.2 default/admin module cohort, while explicitly keeping the backend React 18 / storefront React 19 split.
 - Configure projectConfig.redisUrl for local session storage and register the documented Redis Locking Module Provider using LOCKING_REDIS_URL, so the spike does not silently fall back to a fake Redis instance.
-- Capture separate metadata for every direct package/version pair. These changes are not accepted until CI verifies dependency resolution, migrations, and both builds.
+- Make the metadata checker robust to string-only npm view responses. These changes remain unaccepted until CI verifies dependency resolution, migrations, and both builds.
 
 ## 4. Evidence workflow
 
@@ -57,17 +64,17 @@ The test registry script is a guardrail only: it asserts the presence of exactly
 | Evidence item | Status | Evidence required |
 |---|---|---|
 | Candidate versions published | Source-listed; cohort compatibility unverified | npm metadata captured by CI for exact direct pins |
-| Exact direct-pin metadata and peer requirements | Passed in first two attempts | metadata JSON; repeat after candidate config changes |
-| Dependency install with strict peer checks | Passed in first two attempts | clean install log and reviewed lockfile |
-| npm ls --all dependency tree | Passed in first two attempts | full resolved dependency log; inspect for nested module-resolution blockers |
-| TP registry markup | Passed in first two attempts | exactly 59 unique rows and all remain unchecked; no behavior cases executed |
-| Backend/storefront lint | Passed in first two attempts | repeat after candidate config changes |
-| Medusa backend build | Pending; skipped after migration failure | zero exit code and CI log |
-| Next.js storefront shell build | Pending; skipped after migration failure | zero exit code and CI log |
-| Baseline migrations | Failed in both initial attempts | successful rerun against disposable PostgreSQL and log |
-| Redis connection/locking provider | Configured in this revision; pending runtime verification | successful provider connection and locking evidence |
-| Native order correlation, inventory atomicity, checkout recovery, payment/webhook/refund behavior, restore | Pending; all 59 TP statuses remain unchecked | test logs, exit codes, environment/package metadata, database assertions |
-| Lockfile committed | Pending candidate resolution/review | reviewed package-lock.json committed; use npm ci thereafter |
+| Exact direct-pin metadata and peer requirements | Passed in first two attempts; third attempt exposed a validator-shape bug and stopped early | Metadata JSON from a successful rerun after the checker fix |
+| Dependency install with strict peer checks | Passed in first two attempts | Clean install log and reviewed lockfile; rerun after package set changes |
+| npm ls --all dependency tree | Passed in first two attempts | Full resolved dependency log; inspect for nested module-resolution blockers |
+| TP registry markup | Passed in first two attempts | Exactly 59 unique rows and all remain unchecked; no behavior cases executed |
+| Backend/storefront lint | Passed in first two attempts | Repeat after package/config changes |
+| Medusa backend build | Pending; skipped after migration failures | Zero exit code and CI log |
+| Next.js storefront shell build | Pending; skipped after migration failures | Zero exit code and CI log |
+| Baseline migrations | Failed in both migration attempts; third attempt stopped before migration | Successful rerun against disposable PostgreSQL and log |
+| Redis connection/locking provider | Configured in current revision; pending runtime verification | Successful provider connection and locking evidence |
+| Native order correlation, inventory atomicity, checkout recovery, payment/webhook/refund behavior, restore | Pending; all 59 TP statuses remain unchecked | Test logs, exit codes, environment/package metadata, database assertions |
+| Lockfile committed | Pending candidate resolution/review | Reviewed package-lock.json committed; use npm ci thereafter |
 
 ## 6. Guardrails
 

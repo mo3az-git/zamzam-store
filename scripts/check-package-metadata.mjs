@@ -26,8 +26,6 @@ for (const relativePath of manifestPaths) {
   }
 }
 
-// The storefront is intentionally on React 19 while the current Medusa admin/runtime
-// peers use React 18. Do not silently allow version splits for other direct packages.
 for (const [name, byVersion] of pinsByName.entries()) {
   if (byVersion.size > 1 && !intentionalWorkspaceSplits.has(name)) {
     failures.push(name + " has conflicting exact direct pins: " +
@@ -43,9 +41,26 @@ for (const [name, byVersion] of [...pinsByName.entries()].sort(([a], [b]) => a.l
         ["view", name + "@" + version, "version", "peerDependencies", "engines", "--json"],
         { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60000 }
       )
-      const metadata = JSON.parse(output)
+      const parsed = JSON.parse(output)
+      // npm may return only the version string if optional metadata fields are absent.
+      let metadata
+      if (typeof parsed === "string") {
+        metadata = { version: parsed }
+      } else if (Array.isArray(parsed)) {
+        const [resolvedVersion, peerDependencies, engines] = parsed
+        metadata = {
+          version: resolvedVersion,
+          ...(peerDependencies && typeof peerDependencies === "object" ? { peerDependencies } : {}),
+          ...(engines && typeof engines === "object" ? { engines } : {})
+        }
+      } else if (parsed && typeof parsed === "object") {
+        metadata = parsed
+      } else {
+        throw new Error("npm view returned an unexpected JSON shape.")
+      }
+
       if (metadata.version !== version) {
-        failures.push(name + "@" + version + " metadata resolved to " + metadata.version + ".")
+        failures.push(name + "@" + version + " metadata resolved to " + String(metadata.version) + ".")
       }
       results.push({ name, requestedVersion: version, manifestPaths, ...metadata })
       console.log("OK " + name + "@" + version + " (" + manifestPaths.join(", ") + ")")
