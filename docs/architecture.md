@@ -115,7 +115,7 @@ type LockCommands = {
 ```
 
 > **Sub-Workflow Lock Skip Semantics:**  
-> The `2.22.1` source and real-Redis regression are now under test. Current regression failures affect partial-acquire cleanup, same-owner re-entry, reverse-order multi-key acquisition, and owner-safe `releaseAll`; these behaviors are not accepted until resolved with reproducible evidence:
+> The `2.22.1` source and real-Redis regression have both been inspected. The implementation's parallel multi-key acquisition without rollback, `awaitQueue` branch that bypasses same-owner renewal, and non-atomic owner-read/`UNLINK` sequence align with the failures in partial-acquire cleanup, same-owner re-entry, reverse-order acquisition, and owner-safe `releaseAll`. These behaviors are not accepted until resolved with reproducible evidence:
 > ```javascript
 > const isSubWorkflow = !!parentStepIdempotencyKey;
 > if (isSubWorkflow && !data.executeOnSubWorkflow) {
