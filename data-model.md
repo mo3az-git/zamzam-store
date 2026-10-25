@@ -509,7 +509,7 @@ Granular line item inspection for returned food products.
 | `batch_id` | VARCHAR(255) | NOT NULL | String ID of `inventory_batch` (Module Link) |
 | `quantity` | INTEGER | NOT NULL, CHECK (quantity > 0) | Quantity returned |
 | `customer_reason` | VARCHAR(100) | NOT NULL | Free-text reason stated by the customer; retained independently of the structured cause |
-| `return_cause` | VARCHAR(50) | NOT NULL | Structured cause: `merchant_fault`, `customer_change_of_mind`; set when the return is recorded and editable only before the parent request is approved |
+| `return_cause` | VARCHAR(50) | NOT NULL | Structured cause: `merchant_fault`, `customer_change_of_mind`, `courier_undelivered` (for undelivered depot returns); set when the return is recorded and editable only before the parent request is approved |
 | `goods_condition` | VARCHAR(50) | NULL | Structured inspection category: `sealed`, `opened`, `damaged_on_receipt`, `expired`; set during inspection |
 | `inspection_status`| VARCHAR(50) | NOT NULL, DEFAULT 'pending_inspection' | `pending_inspection`, `approved_restock`, `rejected_damaged`, `rejected_expired` |
 | `inspection_notes` | TEXT | NULL | Seal integrity, storage condition notes |
@@ -519,7 +519,7 @@ Granular line item inspection for returned food products.
 
 **Constraints on `return_item`:**
 - `CONSTRAINT chk_return_item_goods_condition CHECK (goods_condition IS NULL OR goods_condition IN ('sealed','opened','damaged_on_receipt','expired'))`
-- `CONSTRAINT chk_return_item_cause CHECK (return_cause IN ('merchant_fault','customer_change_of_mind'))`
+- `CONSTRAINT chk_return_item_cause CHECK (return_cause IN ('merchant_fault','customer_change_of_mind','courier_undelivered'))`
 - `return_cause` is set when the return item is recorded and may be edited only while the parent request has no frozen `approved_refund_amount`; it is immutable once the request is approved.
 - `goods_condition` is set during inspection and may be changed only while inspection remains open and the parent request is not terminal; it must be populated before refund computation.
 - `return_request_id`, `line_item_id`, `batch_id`, and `quantity` are immutable after insertion. `customer_reason` remains free text. Inspection fields may change only while the parent request is not terminal; any attempt to rewrite the identity/quantity of a recorded return item is rejected.

@@ -138,8 +138,8 @@ For each inspected return, the system computes a proposed refund from the per-un
 | Customer return / `customer_change_of_mind` | `sealed` | Paid-after-discount item amount for returned quantity | No | Refundable for item price only; shipping is not refunded. |
 | Customer return / `customer_change_of_mind` | `opened` | None | No | Not accepted; no refund for change of mind. |
 | Customer return / `customer_change_of_mind` | `damaged_on_receipt` or `expired` | Not a valid combination | Not applicable | Record as `merchant_fault` when the actual reason is damage/expiry; do not classify it as change of mind. |
-| `undelivered_depot_return`, electronic payment | Not applicable | Full refund of all items | Yes, full shipping included by default | Compute full items-plus-shipping refund and route through admin approval/override with audited reason. Shipping withholding for refused/unreachable customers remains `Owner input required`. |
-| `undelivered_depot_return`, COD | Not applicable | No cash refund when no cash was collected | No cash refund | COD collection failure remains governed by `collection_failed`; do not apply the electronic refund rule. |
+| `undelivered_depot_return` / `courier_undelivered`, electronic payment | Not applicable | Full refund of all items | Yes, full shipping included by default | `return_item.return_cause` uses `courier_undelivered`; do not apply the customer-return goods-condition rules. Compute full items-plus-shipping refund and route through admin approval/override with audited reason. Shipping withholding for refused/unreachable customers remains `Owner input required`. |
+| `undelivered_depot_return` / `courier_undelivered`, COD | Not applicable | No cash refund when no cash was collected | No cash refund | `return_item.return_cause` uses `courier_undelivered`; COD collection failure remains governed by `collection_failed`; do not apply the electronic refund rule. |
 
 **Existing TP coverage mapping (no new rows; registry remains 59):**
 - Merchant-fault returns across `sealed`, `opened`, `damaged_on_receipt`, and `expired`, plus change-of-mind handling for `sealed` versus rejected `opened`: TP-23c should cover the formula-derived amount and exact refund settlement; TP-21d covers approval/override audit; TP-23f covers immutability after completion.
@@ -147,6 +147,8 @@ For each inspected return, the system computes a proposed refund from the per-un
 - Formula breakdown (`computed_items_total`, `shipping_refund_amount`, `shipping_refund_reason`, `computed_refund_amount`) and freeze after approval: TP-21d and TP-23c; replay stability/tampering of the frozen refund request: TP-21a and TP-21b.
 - Repeated/partial refunds must stay within remaining payment capacity: TP-22a covers repeated partial refunds and reserved capacity; TP-22b covers the COD collected-cash ceiling; TP-25d covers electronic refund partials, unknown outcomes, and reconciliation.
 - Undelivered electronic order full items-plus-shipping refund, approval/override audit, and provider timeout/reconciliation: TP-21d and TP-25d. The COD undelivered path remains covered by the COD-specific `collection_failed` guard in TP-23c.
+
+**Decision-table note:** A sealed (unopened) item returned for change of mind is accepted for item price only, without shipping. This is a business decision, not a legal conclusion, and remains subject to lawyer review.
 
 **Remaining `Owner input required`:** (1) tax treatment of tax included in the paid amount (accountant input); (2) whether shipping may be withheld for an undelivered electronic order when the customer refused delivery or was unreachable; and (3) legal review/approval of the Arabic Terms of Service, Privacy Policy, and return/refund policy before launch.
 

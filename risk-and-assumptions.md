@@ -87,6 +87,7 @@ Phase 0 design closure does not depend on completion of Gates 1, 2, 3, or 5. Tho
 2. **Opened items and goods condition:** Because the products are packaged food and water, opened-item returns for a change of mind are not accepted. Opened or sealed items with a defect, damage on receipt, or an expired date are accepted with a full refund of the item price plus shipping under rule 1. The formula's goods-condition categories are `sealed`, `opened`, `damaged_on_receipt`, and `expired`.
 3. **Per-item price basis:** Use the amount actually paid for each item after discounts.
 4. **Undelivered electronic orders:** When an electronically paid order is returned undelivered by the courier, the system computes a full refund (items plus shipping) and routes it through the normal admin approval/override flow, with an audited reason for any override.
+5. **Owner to confirm — sealed change-of-mind return:** A sealed (unopened) item returned for change of mind is accepted for item price only, without shipping. This is a business decision, not a legal conclusion, and remains subject to the lawyer review already listed below.
 **Owner input required — remaining open items:**
 - **Tax treatment:** How tax included in the amount paid is treated; accountant input is required.
 - **Refused/unreachable undelivered electronic orders:** Whether shipping may be withheld when the customer refused delivery or could not be reached.
