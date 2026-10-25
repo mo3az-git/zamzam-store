@@ -22,7 +22,7 @@ const tsconfigPathsPackage = JSON.parse(
 const tsconfigPaths = cliRequire("tsconfig-paths");
 
 process.chdir(backendRoot);
-if (!/^4\\./.test(tsconfigPathsPackage.version)) {
+if (!/^4\./.test(tsconfigPathsPackage.version)) {
   throw new Error(
     "Expected the Medusa CLI to resolve tsconfig-paths 4.x; resolved " +
       tsconfigPathsPackage.version +
