@@ -187,40 +187,147 @@ The test registry script is a guardrail only: it asserts the presence of exactly
 
 ## 7. Implementation plan for initial compatibility tests (TP-01, TP-02a, TP-03)
 
-This section documents the concrete implementation plan for the first three compatibility tests.  
+This section documents the concrete implementation plan for the first three canonical compatibility tests from the Technical Prototype Registry.  
 **Execution notice:** These tests are planned here, but **NOT** yet implemented or executed. All 59 TP rows in `docs/implementation-plan.md` remain strictly unchecked `[ ]`.
 
-### TP-01: Framework boot and module resolution
-- **Objective:** Verify that Medusa v2 framework boots cleanly, resolves core modules, and loads application configuration without TypeScript/loader errors.
-- **What to build:** A minimal standalone Node/TypeScript test harness (`packages/backend/src/scripts/test-tp01-boot.ts` or standalone spike test runner) that initializes `@medusajs/framework`, instantiates the Medusa container, and asserts that core framework services and configured modules resolve without throwing runtime exceptions.
+### Canonical TP-01: Cart Creation with Batch Variant
+- **Canonical row definition (quoted verbatim from `docs/implementation-plan.md`):**
+  - **Test ID:** `TP-01`
+  - **Scenario Name & Scope:** `Cart Creation with Batch Variant`
+  - **Setup & Inputs:** `Variant with `manage_inventory: false`.`
+  - **Concurrent Interleaving / Injection:** `Standard `POST /store/carts` with line items.`
+  - **Expected Observable Result & DB State:** `Cart created; native Medusa inventory checks skipped; line has `checkout_line_key` in metadata.`
+- **What must be implemented in `apps/backend`:**
+  - A cart/line-item workflow step or subscriber hook in `apps/backend` that computes and injects `checkout_line_key` into line item `metadata` (format: `<variant_id>:<batch_id>` or a deterministic hash) upon item addition.
+  - Verification that variant configuration `manage_inventory: false` bypasses native Medusa inventory reservation checks without throwing inventory errors.
+  - Test runner script: `apps/backend/scripts/test-tp01-cart-creation.mjs` (status: to be created).
 - **Fixtures needed:**
-  - Valid `medusa-config.ts` with test environment variables (`JWT_SECRET`, `COOKIE_SECRET`, database connection URL).
-  - Disposable PostgreSQL container (`postgres:16.15-alpine`) accessible during the boot sequence.
-- **Expected evidence artifacts:**
-  - `artifacts/tp-01-framework-boot.log`: Terminal output capturing clean container startup, module registration list, exit code 0, and runtime elapsed time.
+  - Disposable PostgreSQL container (`postgres:16.15-alpine`) with baseline schema.
+  - Disposable Redis container (`redis:7.2.16-alpine`).
+  - Medusa Store API prerequisites:
+    - Default Sales Channel.
+    - Publishable API Key linked to the sales channel (passed in request headers).
+    - Region with active currency.
+    - Product with at least one Product Variant configured explicitly with `manage_inventory: false`.
+- **Evidence collection (read out-of-band and from API/DB):**
+  - HTTP status code (`200` or `201`) and response body from `POST /store/carts`.
+  - Database row inspection on `cart_line_item`: verify `metadata->>'checkout_line_key'` is present and populated with the expected value.
+  - Database inspection of native inventory tables: verify 0 inventory reservation rows created in native Medusa tables.
+  - Pre- and post-test PostgreSQL snapshots of `cart` and `cart_line_item`.
+- **Evidence directory and artifacts:**
+  - Directory: `artifacts/tp-evidence/TP-01/` (as specified in `docs/phase1-tp-execution-register.md`)
+  - Artifacts:
+    - `result.json`: TP ID, status (`passed`, `failed`, or `blocked`), UTC start/end timestamps, exact commit SHA, Node/npm versions, package-lock SHA-256, DB/Redis image versions, test command, process exit code, failure summary.
+    - `stdout.log` & `stderr.log`: raw terminal output.
+    - `db-before.sql` & `db-after.sql`: pre- and post-execution database query snapshots.
+    - `assertions.json`: machine-readable assertion results (HTTP 200/201, `checkout_line_key` in metadata, zero native inventory reservations).
+- **Blocking conditions (marked blocked instead of passed):**
+  - Store API prerequisites (publishable key, sales channel, region, product variant) missing from the database.
+  - Line-item metadata hook missing in `apps/backend`, resulting in carts created without `checkout_line_key`.
+  - Mocking API responses or database state instead of executing against the running Medusa application.
 
-### TP-02a: Redis distributed lock acquire, TTL expiry, release
-- **Objective:** Verify distributed locking semantics using the Medusa Redis locking provider against a real Redis instance, covering lock acquisition, time-to-live (TTL) expiration, and explicit owner-checked release.
-- **What to build:** A targeted concurrency test script (`packages/backend/src/scripts/test-tp02a-redis-lock.ts`) that executes three distinct operational scenarios:
-  1. *Basic Acquire and Release:* Acquire a named key (`cart:$CART_ID`) with TTL 120s; assert key exists in Redis with proper TTL; release lock with matching ownerId; assert key is deleted.
-  2. *TTL Expiry:* Acquire lock with a short TTL (e.g., 1000ms); assert key exists; sleep past expiration; assert key is automatically evicted by Redis.
-  3. *Contention / Nested Skip:* Attempt re-acquisition under conflicting owner vs same owner, validating the Medusa locking provider's behavior against documented expectations.
+### Canonical TP-02a: Distributed Cart Lock Acquisition
+- **Canonical row definition (quoted verbatim from `docs/implementation-plan.md`):**
+  - **Test ID:** `TP-02a`
+  - **Scenario Name & Scope:** `Distributed Cart Lock Acquisition`
+  - **Setup & Inputs:** `Active cart ID `$CART_ID`.`
+  - **Concurrent Interleaving / Injection:** `Call `acquireLockStep({ key: "cart:" + cart.id, ttl: 120, timeout: 5, ownerId: workerId })`.`
+  - **Expected Observable Result & DB State:** `Lock acquired in Redis (`SET cart:... worker:... NX EX 120`); verifies nested workflow lock skip behavior.`
+- **What must be implemented in `apps/backend`:**
+  - Reusable Medusa workflow step `acquireLockStep` (in `apps/backend/src/workflows/steps/acquire-lock.ts` — status: to be created) that invokes the configured Redis locking provider (`@medusajs/locking-redis`).
+  - Nested workflow lock skip behavior: workflow logic that inspects current execution context so that nested steps called by the same owner/worker re-use the held lock without attempting redundant lock acquisition or failing.
+  - Test runner script: `apps/backend/scripts/test-tp02a-distributed-lock.mjs` (status: to be created).
 - **Fixtures needed:**
-  - Real disposable Redis service (`redis:7.2.16-alpine`) reachable via `REDIS_URL` / `LOCKING_REDIS_URL`.
-  - Redis client helper for independent out-of-band state inspection (`ioredis` or raw TCP commands) to verify key existence and TTL independently of the locking provider wrapper.
-- **Expected evidence artifacts:**
-  - `artifacts/tp-02a-redis-locking.log`: Timestamped log of acquire, TTL verification, expiration wait, release assertions, and Redis server INFO.
+  - Disposable PostgreSQL container (`postgres:16.15-alpine`).
+  - Disposable Redis container (`redis:7.2.16-alpine`) reachable via `REDIS_URL` / `LOCKING_REDIS_URL`.
+  - Active Cart record in PostgreSQL with ID `$CART_ID`.
+  - Unique worker identifier (`workerId`, e.g. UUID).
+- **Evidence collection (read out-of-band and from API/DB):**
+  - Direct Redis inspection via independent client (`ioredis`):
+    - Verify key `cart:$CART_ID` exists in Redis.
+    - Verify key value matches `workerId`.
+    - Verify `TTL cart:$CART_ID` is $> 110$s and <= 120s.
+  - Step execution outcome: verify successful return from `acquireLockStep`.
+  - Nested invocation verification: execute a nested lock call within the same worker context and assert lock skip without errors.
+  - Database before/after snapshots of any session/lock tracking tables.
+- **Evidence directory and artifacts:**
+  - Directory: `artifacts/tp-evidence/TP-02a/` (as specified in `docs/phase1-tp-execution-register.md`)
+  - Artifacts:
+    - `result.json`: metadata, status, commit SHA, exit code.
+    - `stdout.log` & `stderr.log`: raw terminal output.
+    - `db-before.sql` & `db-after.sql`: database state snapshots.
+    - `assertions.json`: assertions for key presence, matching ownerId, valid TTL window, and nested lock skip pass.
+- **Blocking conditions (marked blocked instead of passed):**
+  - Redis connection failure or unconfigured `LOCKING_REDIS_URL`.
+  - `acquireLockStep` step not implemented in `apps/backend`.
+  - Redis locking provider failing to execute atomic `SET NX EX`.
+  - Active cart record missing in PostgreSQL.
+  - Mocking the Redis provider rather than verifying out-of-band Redis state.
 
-### TP-03: Custom data models in Medusa v2 (DML define, migrate, CRUD)
-- **Objective:** Verify that custom business domain entities defined with Medusa v2 Data Modeling Language (DML `model.define`) generate valid database schemas, execute migrations cleanly against PostgreSQL, and support core CRUD operations through the Medusa container.
-- **What to build:**
-  - A test module schema definition using Medusa v2 DML (`model.define("spike_test_entity", { ... })`).
-  - Migration script executing `medusa db:migrate` or custom module migration runner to generate and apply PostgreSQL DDL.
-  - A verification script performing programmatic Create, Read, Update, and Delete operations using the resolved module service, verifying field persistence, types, and primary key generation.
+### Canonical TP-03: Concurrent Cart Lock Rejection
+- **Canonical row definition (quoted verbatim from `docs/implementation-plan.md`):**
+  - **Test ID:** `TP-03`
+  - **Scenario Name & Scope:** `Concurrent Cart Lock Rejection`
+  - **Setup & Inputs:** `Lock key `cart:$CART_ID` held by Worker A.`
+  - **Concurrent Interleaving / Injection:** `Worker B initiates checkout on same cart with timeout 5s.`
+  - **Expected Observable Result & DB State:** `Worker B times out after 5s; throws `LockTimeoutError` mapped to 409 Conflict without reserving stock or altering epoch.`
+- **What must be implemented in `apps/backend`:**
+  - Checkout workflow entrypoint or endpoint route in `apps/backend` (e.g. `POST /store/carts/:id/complete` or custom checkout workflow) that calls `acquireLockStep` with a 5-second timeout.
+  - Exception mapping: error handler that intercepts `LockTimeoutError` and maps it to HTTP 409 Conflict with an explanatory error payload.
+  - Cart integrity guard: ensuring that on lock timeout, no stock reservations are written, no inventory allocation rows are inserted, and cart `epoch` remains completely unaltered.
+  - Concurrency harness script: `apps/backend/scripts/test-tp03-concurrent-lock-rejection.mjs` (status: to be created) coordinating Worker A (lock holder) and Worker B (competing requester).
 - **Fixtures needed:**
-  - Disposable PostgreSQL instance (`postgres:16.15-alpine`).
-  - Isolated test module definition registered in `medusa-config.ts`.
-- **Expected evidence artifacts:**
-  - `artifacts/tp-03-dml-migration.log`: DDL generation output, migration status output, and table structure validation from `information_schema.tables`.
-  - `artifacts/tp-03-crud-verification.log`: Execution log proving successful entity creation, query, field update, and deletion with zero ORM/mapping errors.
+  - Disposable PostgreSQL container (`postgres:16.15-alpine`).
+  - Disposable Redis container (`redis:7.2.16-alpine`).
+  - Active Cart record in PostgreSQL with known initial `epoch` (e.g. `epoch = 1`).
+  - Worker A pre-acquiring `cart:$CART_ID` with TTL >= 30s.
+- **Evidence collection (read out-of-band and from API/DB):**
+  - Wall-clock execution timer: assert Worker B's attempt blocks for ~5.0 seconds ($\pm 500$ ms) before rejecting.
+  - HTTP status / Error class: assert HTTP `409 Conflict` (or `LockTimeoutError` when calling workflow directly).
+  - PostgreSQL database before/after state diff:
+    - Cart row `epoch` is unchanged (`db-before.sql` matches `db-after.sql`).
+    - Allocation and reservation tables remain empty (0 rows created).
+  - Redis out-of-band key inspection: assert `cart:$CART_ID` remains owned by Worker A and was not overwritten or released by Worker B.
+- **Evidence directory and artifacts:**
+  - Directory: `artifacts/tp-evidence/TP-03/` (as specified in `docs/phase1-tp-execution-register.md`)
+  - Artifacts:
+    - `result.json`: metadata, status, commit SHA, exit code.
+    - `stdout.log` & `stderr.log`: raw terminal output.
+    - `db-before.sql` & `db-after.sql`: pre- and post-execution database query snapshots showing untouched epoch and 0 allocations.
+    - `assertions.json`: assertions on timeout duration, 409 Conflict mapping, unchanged epoch, and preserved Worker A lock.
+- **Blocking conditions (marked blocked instead of passed):**
+  - Checkout workflow or route not implemented in `apps/backend`.
+  - `LockTimeoutError` unhandled or returned as 500 Internal Server Error instead of 409 Conflict.
+  - Worker B bypassing the lock or Worker A's lock being improperly overwritten.
+  - State mutations (epoch change, stock reservation) occurring before lock acquisition succeeds.
+  - Simulating the timeout with mock timers instead of actual concurrent Redis contention.
 
+### Supplementary baseline checks (not TP cases)
+
+These baseline diagnostic checks were used during early scaffold validation. They do **NOT** have TP IDs and **NEVER** count as TP acceptance evidence. All 59 canonical TP rows in `docs/implementation-plan.md` remain strictly independent and unchecked.
+
+- **Baseline framework boot check:**
+  - Verifies that `@medusajs/framework` initializes cleanly, loads configured modules, and instantiates the container without loader or TypeScript errors.
+  - Script: `apps/backend/scripts/check-framework-boot.mjs` (status: to be created).
+  - Scope: developer sanity verification only; not a TP row.
+- **Baseline custom DML model & migration check:**
+  - Verifies that Medusa v2 Data Modeling Language (`model.define`) generates valid schemas and applies migrations cleanly against disposable PostgreSQL.
+  - Script: `apps/backend/scripts/check-dml-crud.mjs` (status: to be created).
+  - Scope: developer sanity verification only; not a TP row.
+
+### Referenced repository paths summary
+- Existing files in `apps/backend`:
+  - `apps/backend/medusa-config.ts` (exists)
+  - `apps/backend/package.json` (exists)
+  - `apps/backend/tsconfig.json` (exists)
+  - `apps/backend/src/index.ts` (exists)
+  - `apps/backend/src/modules/locking-redis/` (exists)
+  - `apps/backend/scripts/check-locking-redis.mjs` (exists)
+  - `apps/backend/scripts/check-locking-redis-edge-cases.mjs` (exists)
+- Files to be created for initial TP execution:
+  - `apps/backend/scripts/test-tp01-cart-creation.mjs` (to be created)
+  - `apps/backend/scripts/test-tp02a-distributed-lock.mjs` (to be created)
+  - `apps/backend/scripts/test-tp03-concurrent-lock-rejection.mjs` (to be created)
+  - `apps/backend/src/workflows/steps/acquire-lock.ts` (to be created)
+  - `apps/backend/scripts/check-framework-boot.mjs` (to be created)
+  - `apps/backend/scripts/check-dml-crud.mjs` (to be created)
