@@ -1,6 +1,6 @@
 # Phase 1 — Technical Compatibility Spike
 
-**Status:** Scaffold proposed on a review branch; automated runtime evidence pending.  
+**Status:** Baseline CI checks passed on attempt 7 (package metadata, strict install, lint, disposable PostgreSQL migrations, and both builds); Medusa build still emits a non-fatal CLI config-loader stack trace. TP behavior suite and lockfile review remain pending.  
 **Starting commit:** 404bf23275d67cc6274ed567779081c25f676100 (Phase 0 design accepted; runtime unverified).  
 **Scope boundary:** initial monorepo scaffold, package/peer metadata, strict dependency resolution, lint/build, and baseline Medusa migrations against a disposable database; then the documented TP cases. No production feature work is included.
 
@@ -71,14 +71,26 @@ Commit under test: 4a5334c271193ed5731ab29913ae245306f80ee2.
 
 Metadata checks, TP registry integrity, strict install, dependency-tree capture, lint, disposable PostgreSQL baseline migrations, and the Medusa backend build passed. The Next.js build still failed while prerendering `/404` with `<Html> should not be imported outside of pages/_document`. The current storefront source uses the App Router root layout and does not import `next/document` or define a Pages Router `pages/` directory. The workflow also explicitly exported `NODE_ENV=development` to every step, including `next build`, which emitted a non-standard-environment warning. The corrective change removes that workflow-wide override so Next.js can use its normal production-build environment; the Medusa config has its own development fallback when `NODE_ENV` is unset. This is a diagnostic hypothesis, not a passing result; the next CI run must establish whether it resolves the failure.
 
+
+### Attempt 7 — Next.js production build passes; Medusa CLI still emits a config-loader trace
+
+Workflow run: https://github.com/mo3az-git/zamzam-store/actions/runs/40228924804  
+Commit under test: 065d1d7d64aec180a649a6f5f3f432d6070f5414.
+
+The run completed successfully. Exact metadata checks passed for 19 direct pins with no metadata-checker failures; all 59 TP registry rows were present, unique, and unchecked; strict dependency installation and `npm ls --all` passed; both workspace lint commands passed; Medusa baseline migrations completed against the disposable PostgreSQL service; and the Medusa and Next.js production-build commands returned exit code 0. The Next.js output includes both `/` and `/_not-found` as static routes, and removing the workflow-wide `NODE_ENV=development` override eliminated the previous `/404` failure.
+
+**Remaining setup issue:** the Medusa build log still prints `ts-node cannot be loaded...` plus a `tsconfig-paths` `TypeError` indicating its `path` argument is undefined, before continuing to a successful build. Therefore the build command passes but its CLI/config-loader setup is not yet clean. The next run sets `NODE_ENV=production` only for the Medusa build step, leaving the migration step on the default development path, to test whether this removes the trace. This corrective run must be inspected before treating backend CLI setup as accepted.
+
+The run also generated candidate `package-lock.json` and uploaded it with the logs in artifact `phase1-spike-evidence-065d1d7d64aec180a649a6f5f3f432d6070f5414`. The lockfile is not committed yet. The npm install log reports deprecated-package notices and six packages whose install scripts are not covered by npm's current `allowScripts` policy; review these before deciding whether to approve any install scripts. Neither warning changes the fact that this CI installation and both builds succeeded, but both require dependency/security review before claiming a clean reproducible baseline.
+
 ### Corrective changes in the current revision
 
 - Add baseUrl "." to the backend tsconfig to support the Medusa CLI's tsconfig-paths loader.
 - Make @medusajs/draft-order a direct backend dependency and add the peer packages used by the Medusa 2.21.2 default/admin module cohort, while explicitly keeping the backend React 18 / storefront React 19 split.
 - Align react-router-dom with the 7.18.2 version required by Medusa Dashboard 2.21.2. The install and backend build now pass.
-- Unify React/React DOM at 18.3.1 across backend and storefront, and add a root tsconfig baseUrl for the Medusa CLI loader. The duplicate-version correction passed metadata/install/lint/migration/backend-build checks but did not yet resolve the storefront production build; the remaining environment-related hypothesis and workflow correction are recorded in Attempt 6.
+- Unify React/React DOM at 18.3.1 across backend and storefront, and add a root tsconfig baseUrl for the Medusa CLI loader. Attempt 7 confirms strict installation and both builds pass, but the Medusa config-loader trace still needs investigation.
 - Configure projectConfig.redisUrl for local session storage and register the documented Redis Locking Module Provider using LOCKING_REDIS_URL, so the spike does not silently fall back to a fake Redis instance.
-- Make the metadata checker robust to string-only npm view responses, and remove the workflow-wide `NODE_ENV=development` override so Next.js production builds use their expected environment. The new build must still pass in CI before the compatibility cohort is accepted.
+- Make the metadata checker robust to string-only npm view responses and remove the workflow-wide `NODE_ENV=development` override; both builds pass in attempt 7. The current follow-up sets `NODE_ENV=production` only for the Medusa build to determine whether this removes the non-fatal CLI config-loader trace.
 
 ## 4. Evidence workflow
 
@@ -91,14 +103,14 @@ The test registry script is a guardrail only: it asserts the presence of exactly
 | Evidence item | Status | Evidence required |
 |---|---|---|
 | Candidate versions published | Source-listed; cohort compatibility unverified | npm metadata captured by CI for exact direct pins |
-| Exact direct-pin metadata and peer requirements | Passed again in attempt 5; attempt 3 validator-shape bug corrected | Metadata JSON from successful rerun |
-| Dependency install with strict peer checks | Passed in attempt 5 after aligning React Router to 7.18.2 | Clean install log and reviewed lockfile |
-| npm ls --all dependency tree | Passed in attempt 5 | Full resolved dependency log; inspect after current package changes |
-| TP registry markup | Passed in attempt 5 | Exactly 59 unique rows and all remain unchecked; no behavior cases executed |
-| Backend/storefront lint | Passed in attempt 5 | Repeat after React alignment |
-| Medusa backend build | Passed in attempt 5, but a tsconfig-paths warning remains to be checked | Zero exit code and clean startup/config loader log |
-| Next.js storefront shell build | Failed in attempt 5 from a React runtime mismatch and again in attempt 6 with an App Router `/404` prerender error while the workflow globally set `NODE_ENV=development`; that override has now been removed and awaits rerun | Successful production build log after this correction |
-| Baseline migrations | Passed in attempt 5 against disposable PostgreSQL | Repeat if config changes affect module initialization |
+| Exact direct-pin metadata and peer requirements | Passed on attempt 7 for 19 exact direct-pin entries; no checker failures | Captured metadata JSON and peer requirements in the run artifact |
+| Dependency install with strict peer checks | Passed on attempt 7; candidate lockfile is artifact-only and has not yet been reviewed/committed; npm flagged six install scripts outside the current allowScripts policy | Review lockfile, deprecated dependency warnings, and install-script policy; then commit lockfile before relying on `npm ci` |
+| npm ls --all dependency tree | Passed on attempt 7 after React/React DOM were aligned to 18.3.1 in both workspaces | Review captured full dependency-tree log for duplicate/runtime issues |
+| TP registry markup | Passed on attempt 7 | Exactly 59 unique rows and all remain unchecked; this is registry integrity only, not behavior execution |
+| Backend/storefront lint | Passed on attempt 7 | Keep lint evidence with the run artifact |
+| Medusa backend build | Exit code 0 on attempt 7, but log contains a non-fatal `ts-node` / `tsconfig-paths` error with an undefined path; latest workflow sets `NODE_ENV=production` for the backend build only and awaits rerun | Successful build plus a clean config-loader log with no unresolved stack trace |
+| Next.js storefront shell build | Passed on attempt 7 after removal of the workflow-wide `NODE_ENV=development` override; the build statically rendered `/` and `/_not-found` | Production-build log in the run artifact; repeat with future dependency/config changes |
+| Baseline migrations | Passed on attempt 7 against disposable PostgreSQL | Preserve the migration log; app-specific custom-module migrations are not yet implemented or tested |
 | Redis connection/locking provider | Migrations passed with locking module configured; explicit lock contention behavior still unverified | Successful lock acquire/release/timeout integration evidence |
 | Native order correlation, inventory atomicity, checkout recovery, payment/webhook/refund behavior, restore | Pending; all 59 TP statuses remain unchecked | Test logs, exit codes, environment/package metadata, database assertions |
 | Lockfile committed | Pending candidate resolution/review | Reviewed package-lock.json committed; use npm ci thereafter |
