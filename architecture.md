@@ -191,11 +191,11 @@ To prevent cart item alterations while checkout is underway:
 
 ---
 
-### 4.3A Initial Checkout Response vs. Idempotent Replay Response
+### 4.4 Initial Checkout Response vs. Idempotent Replay Response
 
 The initial HTTP `201` response and the durable idempotency response are deliberately different. The initial response may include the one-time plaintext claim code exactly once; that transient value is never written to PostgreSQL, logs, audit payloads, or a replayable response cache. Before completing the idempotency row, build a sanitized `response_body`, for example `{ "order_ref": "...", "claim_available": false, "next_action": "phone_otp_lookup" }`, with the safe order reference and other non-secret fields only. Store the original `response_code` (normally `201`) separately. The retry returns the same order identity and status semantics using the sanitized body, does not generate a new claim code, and performs no inventory, checkout, or order mutations. This is **semantic replay**, not byte-for-byte equality with the first transient response.
 
-### 4.4 Immutable Per-Attempt Entity (`cart_checkout_attempt`)
+### 4.5 Immutable Per-Attempt Entity (`cart_checkout_attempt`)
 
 Revision 11 stored a mutable `order_id` directly on `cart_checkout_session`. Because order creation and database binding are separated by distributed boundaries, retries and stale workers could race to overwrite or cancel orders.
 
@@ -300,13 +300,13 @@ The workflow return shape, `cart_id` query behavior, invocation status observati
 
 ---
 
-### 4.5 Complete Reservation-to-Allocation Conversion
+### 4.6 Complete Reservation-to-Allocation Conversion
 
 `convertCartReservationsToAllocationsStep` uses one managed PostgreSQL transaction. The SQL below is an executable-contract outline: named assertions/variables are application transaction code, not PostgreSQL built-ins. It must be implemented with the same transaction handle for every SQL statement.
 
 **Critical atomicity rule:** allocation rows, informational `allocation_conversion` ledger rows, reservation transitions to `converted`, and attempt/session finalization are one transaction. A committed conversion is recovered by validating the complete committed state; the workflow never treats an existing movement row by itself as proof that conversion completed.
 
-```sql
+```text
 BEGIN;
 
 -- The order is already created/correlated. The caller obtained :order_id by a
@@ -712,7 +712,7 @@ Historical movement records in `inventory_movement` are strictly protected from 
 
 One canonical predicate governs all expiration evaluations across checkout, pre-dispatch, alert jobs, and test suites:
 
-```sql
+```text
 inventory_batch.status = 'available'
 AND inventory_batch.expiration_date > (
     (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date 
@@ -730,7 +730,7 @@ Where:
 ## 9. Payment Provider Abstraction (Electronic Payment + COD)
 
 - **MVP decision:** Electronic payment and Cash on Delivery (COD) are offered side by side. This is a recorded owner decision (Gate 6), not a pending choice.
-- **Provider boundary:** No electronic payment gateway is selected. Treat the gateway as a provider abstraction behind the Medusa Payment Module; do not couple domain workflows to a vendor-specific API or status vocabulary. Gateway selection remains `Owner input required`.
+- **Provider boundary:** No electronic payment gateway is selected. Treat the gateway as a provider abstraction behind the Medusa Payment Module; do not couple domain workflows to a vendor-specific API or status vocabulary. Gateway selection follows [DEFAULT-ASSUMPTION] D-1: Phase 0 remains provider-agnostic, and no vendor is selected. The Phase 1 Spike uses a provider simulator; the owner may change this default; see the Default Assumptions Register.
 - **Customer payment UI:** Electronic payment must use the selected provider's hosted payment page or redirect. Card PAN, CVV, and cardholder authentication data must never pass through or be stored by the storefront/backend.
 - **State separation:** Electronic payment state is held in `electronic_payment_attempt` and provider events in `payment_webhook_event`; COD collection/remittance remains in `cod_collection_record`. Payment status does not replace order, fulfillment, or inventory state.
 - **Historical note:** `pp_system_default` and the earlier TP-05 placeholder-provider discussion were prior implementation candidates, not a selected gateway or a reason to treat COD as the only MVP payment method. No provider integration is claimed tested.
