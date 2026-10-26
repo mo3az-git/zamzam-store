@@ -1,5 +1,5 @@
 import { createWorkflow, WorkflowResponse, createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
-import { MedusaError, Modules } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, MedusaError, Modules } from "@medusajs/framework/utils"
 import { setTimeout as delay } from "node:timers/promises"
 
 export interface Stage2CheckoutLockWorkflowInput {
@@ -8,6 +8,40 @@ export interface Stage2CheckoutLockWorkflowInput {
   ttl?: number
   timeout?: number
   retryInterval?: number
+  idempotencyKey?: string
+  pgClient?: { query: (text: string, values: unknown[]) => Promise<{ rowCount?: number | null }> }
+}
+
+export async function executeCasLeaseAbort(
+  client: { query: (text: string, values: unknown[]) => Promise<{ rowCount?: number | null }> },
+  key: string,
+  ownerId: string
+): Promise<{ deletedRows: number }> {
+  const result = await client.query(
+    "DELETE FROM idempotency_key WHERE key = $1 AND lease_owner_id = $2 AND status = 'pending'",
+    [key, ownerId]
+  )
+  return { deletedRows: result.rowCount ?? 0 }
+}
+
+export async function abortPendingLeaseOnLockTimeout(
+  input: Pick<Stage2CheckoutLockWorkflowInput, "idempotencyKey" | "ownerId" | "pgClient">,
+  resolvePgConnection: () => { raw?: (text: string, values: unknown[]) => Promise<unknown> } | undefined
+): Promise<void> {
+  if (!input.idempotencyKey) return
+  if (input.pgClient) {
+    await executeCasLeaseAbort(input.pgClient, input.idempotencyKey, input.ownerId)
+    return
+  }
+
+  const pg = resolvePgConnection()
+  if (!pg?.raw) {
+    throw new Error("PostgreSQL connection unavailable for idempotency lease CAS abort")
+  }
+  await pg.raw(
+    "DELETE FROM idempotency_key WHERE key = ? AND lease_owner_id = ? AND status = 'pending'",
+    [input.idempotencyKey, input.ownerId]
+  )
 }
 
 export function isLockContentionError(err: unknown): boolean {
@@ -48,6 +82,10 @@ export const stage2AcquireLockStep = createStep<
           throw err
         }
         if (Date.now() >= tryUntil) {
+          await abortPendingLeaseOnLockTimeout(input, () =>
+            container.resolve(ContainerRegistrationKeys.PG_CONNECTION) ||
+            container.resolve("__pg_connection__")
+          )
           throw new MedusaError(
             MedusaError.Types.CONFLICT,
             "Cart checkout lock timeout",

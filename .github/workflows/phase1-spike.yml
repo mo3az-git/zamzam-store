@@ -156,6 +156,34 @@ jobs:
           set -o pipefail
           node apps/backend/scripts/test-tp02a-distributed-lock.mjs 2>&1 | tee artifacts/tp-02a-distributed-lock.log
 
+      - name: Run TP-02b heartbeat unit invariants
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run spike:tp02b-unit 2>&1 | tee artifacts/tp-02b-heartbeat-unit.log
+
+      - name: Run TP-02b real-service heartbeat test
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+        run: |
+          set -o pipefail
+          npm run spike:tp02b 2>&1 | tee artifacts/tp-02b-heartbeat.log
+
+      - name: Run TP-02c lock timeout CAS unit invariants
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run spike:tp02c-unit 2>&1 | tee artifacts/tp-02c-cas-unit.log
+
+      - name: Run TP-02c real-service lock timeout CAS test
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+        run: |
+          set -o pipefail
+          npm run spike:tp02c 2>&1 | tee artifacts/tp-02c-lock-timeout-cas.log
+
       - name: Verify TP-03 negative control (non-contention error propagation)
         shell: bash
         run: |

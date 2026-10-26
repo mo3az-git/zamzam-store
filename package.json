@@ -22,6 +22,10 @@
     "spike:medusa-loader": "node scripts/check-medusa-cli-tsconfig-paths.cjs",
     "spike:tp-readiness": "node scripts/assess-phase1-tp-readiness.mjs",
     "spike:target-validator": "node apps/backend/scripts/test-disposable-target-validator.mjs",
+    "spike:tp02b-unit": "node apps/backend/scripts/check-tp02b-heartbeat-unit.mjs",
+    "spike:tp02b": "node apps/backend/scripts/test-tp02b-lock-heartbeat.mjs",
+    "spike:tp02c-unit": "node apps/backend/scripts/check-tp02c-cas-abort-unit.mjs",
+    "spike:tp02c": "node apps/backend/scripts/test-tp02c-lock-timeout-cas-abort.mjs",
     "spike:tp03-negative-control": "node apps/backend/scripts/check-stage2-lock-negative-control.mjs",
     "spike:migration-rollback": "node apps/backend/scripts/test-migration-rollback-isolated.mjs"
   },
