@@ -13,10 +13,10 @@ The platform delivers an Arabic-first direct-to-consumer e-commerce experience t
 
 ```mermaid
 graph TD
-    User["Egyptian Consumer (Mobile Browser)"] -->|HTTPS / Arabic RTL| NextStorefront["Next.js 15.5.28 Storefront (App Router, React 19)"]
-    Admin["Operations / Warehouse Staff"] -->|HTTPS / Arabic Admin| NextAdmin["Medusa Admin Dashboard (React 19)"]
+    User["Egyptian Consumer (Mobile Browser)"] -->|HTTPS / Arabic RTL| NextStorefront["Next.js 15.5.28 Storefront (App Router, React 18.3.1)"]
+    Admin["Operations / Warehouse Staff"] -->|HTTPS / Arabic Admin| NextAdmin["Medusa Admin Dashboard (React 18.3.1)"]
     
-    subgraph CoreBackend ["Medusa Commerce Engine (Node.js 24.22.1 / 22.x LTS)"]
+    subgraph CoreBackend ["Medusa Commerce Engine (Node.js 24.22.1)"]
         MedusaServer["@medusajs/medusa@2.22.1 spike candidate"]
         CoreFlows["Medusa core workflows (version resolved by pinned framework cohort)"]
         CustomModules["Custom Domain Modules (DML)"]
@@ -62,18 +62,18 @@ In Medusa v2 default configuration, all modules share a single PostgreSQL databa
 
 ## 3. Pinned Technology Version Matrix
 
-**Phase 1 spike candidate-cohort update (2026-10-25):** Phase 0 originally selected a common stable `2.21.2` cohort. The Phase 1 branch now exercises exact direct Medusa pins at `2.22.1`; exact metadata, strict install, lint, disposable PostgreSQL migrations, and both builds passed in baseline CI. This makes `2.22.1` the current **spike candidate**, not a final compatibility sign-off. The real-Redis regression then failed 4 of 7 checks; see `docs/phase-1-technical-compatibility-spike.md`. The locking provider remains a blocker and store feature development remains prohibited.
+**Phase 1 spike candidate-cohort update (2026-10-26):** Phase 0 originally selected a common stable `2.21.2` cohort. The Phase 1 branch uses exact direct Medusa pins at `2.22.1`; latest CI on `d031048` passed metadata, strict install, lint, disposable PostgreSQL migrations, both builds, Redis adapter regression, TP-02a and TP-03 steps. Those results are compatibility and narrow workflow evidence, not final compatibility sign-off or acceptance of all TP behavior. TP-02b/02c are being added in the current uncommitted worktree; see `docs/phase1-tp-case-matrix.md`. Store feature development remains blocked.
 
 | Component | Candidate pin / support stream | Rationale and evidence status |
 |---|---|---|
-| Backend runtime | Node.js `24.22.1` LTS | Official Node release published 2026-10-21. Runtime actually used by this project has not been confirmed in the present editing environment. `[VERIFIED-DOCS]`; application compatibility `[PROPOSED]`. |
+| Backend runtime | Node.js `24.22.1` LTS | CI selects the exact version from `.nvmrc`. The current local environment is Node `24.15.0`, which does not satisfy the root `24.22.x` engine; local clean install is therefore blocked. `[VERIFIED-DOCS]`; application compatibility evidenced only by CI baseline. |
 | Medusa framework | `@medusajs/framework@2.22.1` | Exact version listed on npm on 2026-10-25. Chosen as common stable cohort pending lockfile/peer-resolution and build checks. `[SOURCE-VERIFIED: package exists]`; integration `[PROPOSED]`. |
 | Medusa server | `@medusajs/medusa@2.22.1` | Exact version listed on npm on 2026-10-25. Must be resolved with framework as a compatible pair. `[SOURCE-VERIFIED: package exists]`; integration `[PROPOSED]`. |
 | Medusa CLI | `@medusajs/cli@2.22.1` | Exact version listed on npm on 2026-10-25; retain only if compatible with the selected framework/server peer requirements. `[SOURCE-VERIFIED: package exists]`; integration `[PROPOSED]`. |
 | Medusa Store SDK | `@medusajs/js-sdk@2.22.1` | Exact version listed on npm on 2026-10-25, selected to match the candidate server cohort. `[SOURCE-VERIFIED: package exists]`; storefront integration `[PROPOSED]`. |
 | Medusa internal workflow/locking modules | Resolved through the selected Medusa packages and lockfile; do not independently pin undocumented internal packages unless directly imported and published as standalone dependencies | Use the exact `2.22.1` direct pins present in the current spike branch; validate transitive resolution, import paths, and runtime behavior from the generated lockfile and CI artifacts. `[PROPOSED]`. |
 | Storefront framework | Next.js `15.5.28` | Exact patched 15.5-line candidate. Verify compatibility with the React versions resolved in the lockfile and execute the production build. `[SOURCE-VERIFIED: package exists]`; build `[PROPOSED]`. |
-| UI runtime | `react@19.3.1` and `react-dom@19.3.1` | Current stable versions listed on npm on 2026-10-25; prefer this patched pair over `19.0.0`. Next.js peer compatibility and application build remain untested. `[SOURCE-VERIFIED: package exists]`; integration `[PROPOSED]`. |
+| UI runtime | `react@18.3.1` and `react-dom@18.3.1` | Exact pins are shared across backend and storefront in the current manifests and lockfile to satisfy the tested Medusa/Next.js cohort. CI and local storefront production builds pass; application integration remains a prototype candidate. |
 | Database | PostgreSQL `16.15` target | Current PostgreSQL 16 minor release listed in official version policy on 2026-10-25. Pin image/package digest in deployment configuration before acceptance. `[VERIFIED-DOCS]`; migrations/tests `[PROPOSED]`. |
 | Cache and distributed locks | Redis `7.2.16` target | Patch-level target for reproducibility; resolve to an immutable image digest in deployment config. Lock renewal and concurrency remain `[PROPOSED]` until tested. |
 | Tailwind CSS | `3.4.17` candidate | Existing design pin; verify lockfile installation and production build. `[PROPOSED]`. |
