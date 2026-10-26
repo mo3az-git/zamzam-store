@@ -12,6 +12,7 @@ const runners = {
   "TP-04a": "test-cart-mutation-http.mjs",
   "TP-04b": "test-cart-mutation-http.mjs",
   "TP-21c": "test-tp21c-refund-identity.mjs",
+  "TP-05": "test-tp05-payment-branches.mjs",
 };
 const id = process.argv[2];
 if (!Object.hasOwn(runners, id)) throw new Error("TP runner is not authorized: " + id);
