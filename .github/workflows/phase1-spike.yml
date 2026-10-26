@@ -142,12 +142,16 @@ jobs:
 
       - name: Verify disposable target service validator
         shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
         run: |
           set -o pipefail
           npm run spike:target-validator 2>&1 | tee artifacts/disposable-target-validator.log
 
       - name: Run TP-02a distributed cart lock test
         shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
         run: |
           set -o pipefail
           node apps/backend/scripts/test-tp02a-distributed-lock.mjs 2>&1 | tee artifacts/tp-02a-distributed-lock.log
@@ -160,7 +164,7 @@ jobs:
           set -o pipefail
           npm run spike:migration-rollback 2>&1 | tee artifacts/migration-rollback-isolated.log
 
-      - name: Upload Phase 1 evidence and bootstrap lockfile
+      - name: Upload Phase 1 evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:

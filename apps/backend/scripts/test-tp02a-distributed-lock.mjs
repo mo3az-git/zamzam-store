@@ -137,7 +137,7 @@ async function writeEvidence({
     note:
       status === "passed"
         ? "TP-02a executed against real Medusa container loaded from medusa-config.ts, with real Cart fixture, cart_checkout_session, and disposable PostgreSQL and Redis services. Awaits independent review."
-        : "TP-02a execution blocked by missing prerequisites or environment service failure.",
+        : "TP-02a execution blocked by missing prerequisites, safety refusal, or environment service failure.",
   };
 
   await writeFile(path.join(evidenceDir, "result.json"), JSON.stringify(result, null, 2) + "\n");
@@ -195,11 +195,11 @@ async function runTp02aTest() {
     return 1;
   }
 
-  // Pre-connection safety validation
+  // Pre-connection safety validation (distinguishing CI disposable services from local manual execution)
   let disposableCheck;
   try {
     disposableCheck = verifyDisposableTargetServices(databaseUrl, redisUrl);
-    log("Target services verified disposable: " + JSON.stringify(disposableCheck));
+    log(`Target services verified (profile=${disposableCheck.executionProfile}): ` + JSON.stringify(disposableCheck));
   } catch (disposableErr) {
     const reason = "Target services safety check failed: " + disposableErr.message;
     logErr("BLOCKED TP-02a: " + reason);
@@ -232,8 +232,8 @@ async function runTp02aTest() {
   let pgClient = null;
   let redisClient = null;
   let createdCartId = null;
-  let createdLockKey = null;
   let createdRedisPrefixedKey = null;
+  let workerId = null;
 
   let testStatus = "failed";
   let exitCode = 1;
@@ -428,21 +428,20 @@ async function runTp02aTest() {
         createdCartId = cartId;
         log("Real Cart created successfully with ID: " + cartId);
 
-        // Verify real Cart exists in PostgreSQL table "cart"
-        const cartDbRes = await pgClient.query(
-          "SELECT id, currency_code, created_at FROM cart WHERE id = $1",
+        // Verify real Cart exists in PostgreSQL table "cart" immediately after creation
+        const cartInitialDbRes = await pgClient.query(
+          "SELECT id, currency_code FROM cart WHERE id = $1",
           [cartId]
         );
-        log("Real Cart record verified in PostgreSQL cart table: " + JSON.stringify(cartDbRes.rows[0]));
+        log("Real Cart record verified in PostgreSQL cart table upon creation: " + JSON.stringify(cartInitialDbRes.rows[0]));
 
         // 2. Create associated cart_checkout_session fixture via BatchInventoryModuleService
         const attemptId = randomUUID();
-        const workerId = "worker:tp02a:" + randomUUID();
+        workerId = "worker:tp02a:" + randomUUID();
         const nestedWorkerId = "worker:nested:" + randomUUID();
         const lockKey = "cart:" + cartId;
         const redisPrefixedKey = providerConfiguredPrefix + lockKey;
 
-        createdLockKey = lockKey;
         createdRedisPrefixedKey = redisPrefixedKey;
 
         log("Fixture cart ID: " + cartId);
@@ -487,8 +486,18 @@ async function runTp02aTest() {
         const rawSqlSession = rawSqlRes.rows[0];
         log("Retrieved fixture session via raw SQL: " + JSON.stringify(rawSqlSession));
 
-        // 3. Capture database state immediately before executing the workflow (after fixture creation and validation)
-        log("Capturing database snapshot immediately before workflow execution (after fixture validation)...");
+        // 3. Capture GENUINE pre-workflow database snapshots (after all fixtures created and validated)
+        log("Capturing genuine database snapshots immediately before workflow execution (after all fixtures validated)...");
+        
+        // Fresh pre-workflow Cart snapshot (capturing ALL columns immediately before workflow):
+        const cartDbBeforeRes = await pgClient.query(
+          "SELECT * FROM cart WHERE id = $1",
+          [cartId]
+        );
+        const cartColumnNames = cartDbBeforeRes.fields.map((f) => f.name);
+        log("Genuine pre-workflow Cart snapshot captured (all " + cartColumnNames.length + " columns): " + JSON.stringify(cartDbBeforeRes.rows[0]));
+
+        // Fresh pre-workflow cart_checkout_session snapshot:
         const dbBeforeQuery = `SELECT cart_id, current_attempt_id, epoch, status, created_at, updated_at, deleted_at FROM cart_checkout_session WHERE cart_id = '${cartId}';`;
         const dbBeforeRes = await pgClient.query(
           "SELECT cart_id, current_attempt_id, epoch, status, created_at, updated_at, deleted_at FROM cart_checkout_session WHERE cart_id = $1",
@@ -498,10 +507,10 @@ async function runTp02aTest() {
           capturedAt: new Date().toISOString(),
           query: dbBeforeQuery,
           rows: dbBeforeRes.rows,
-          cartQuery: `SELECT id, currency_code, created_at FROM cart WHERE id = '${cartId}';`,
-          cartRows: cartDbRes.rows,
+          cartQuery: `SELECT * FROM cart WHERE id = '${cartId}';`,
+          cartRows: cartDbBeforeRes.rows,
         };
-        log("Pre-workflow database snapshot captured (rows: " + dbBeforeSnapshot.rows.length + ").");
+        log("Pre-workflow database snapshots captured (checkout session rows: " + dbBeforeSnapshot.rows.length + ", cart rows: " + dbBeforeSnapshot.cartRows.length + ").");
 
         // 4. Execute parentCheckoutTestWorkflow using the real Medusa container
         log("Executing parentCheckoutTestWorkflow with real Medusa container...");
@@ -532,10 +541,10 @@ async function runTp02aTest() {
         const postReleaseRawValue = await redisClient.get(lockKey);
         log("Post-release Redis key (" + redisPrefixedKey + "): " + postReleaseValue + ", lingering keys count: " + lingeringMatchingKeys.length);
 
-        // 6. Capture database state immediately after workflow execution (FRESH QUERIES)
+        // 6. Capture database state immediately after workflow execution (FRESH POST-WORKFLOW QUERIES)
         log("Capturing fresh database snapshots immediately after workflow execution...");
         const cartDbAfterRes = await pgClient.query(
-          "SELECT id, currency_code, created_at FROM cart WHERE id = $1",
+          "SELECT * FROM cart WHERE id = $1",
           [cartId]
         );
         log("Fresh post-workflow Cart record: " + JSON.stringify(cartDbAfterRes.rows[0]));
@@ -549,7 +558,7 @@ async function runTp02aTest() {
           capturedAt: new Date().toISOString(),
           query: dbAfterQuery,
           rows: dbAfterRes.rows,
-          cartQuery: `SELECT id, currency_code, created_at FROM cart WHERE id = '${cartId}';`,
+          cartQuery: `SELECT * FROM cart WHERE id = '${cartId}';`,
           cartRows: cartDbAfterRes.rows,
         };
         log("Post-workflow database snapshot captured (rows: " + dbAfterSnapshot.rows.length + ").");
@@ -560,8 +569,54 @@ async function runTp02aTest() {
         const columns = ["cart_id", "current_attempt_id", "epoch", "status", "created_at", "updated_at", "deleted_at"];
         const observedPrefix = inFlightInspection?.prefix ?? null;
 
-        const cartBefore = cartDbRes.rows[0];
-        const cartAfter = cartDbAfterRes.rows[0];
+        const cartBeforeRowCount = cartDbBeforeRes?.rows?.length ?? 0;
+        const cartAfterRowCount = cartDbAfterRes?.rows?.length ?? 0;
+        const hasExactlyOneCartBeforeRow = cartBeforeRowCount === 1;
+        const hasExactlyOneCartAfterRow = cartAfterRowCount === 1;
+        const bothCartSnapshotsPresent = hasExactlyOneCartBeforeRow && hasExactlyOneCartAfterRow;
+
+        const cartBefore = hasExactlyOneCartBeforeRow ? cartDbBeforeRes.rows[0] : null;
+        const cartAfter = hasExactlyOneCartAfterRow ? cartDbAfterRes.rows[0] : null;
+
+        // Dynamic, thorough comparison across all physical columns of cart between pre-workflow and post-workflow snapshots
+        // STRICT REQUIREMENT (Finding 3): exactly one row required in both genuine pre-workflow and post-workflow queries
+        const cartColumnComparisons = {};
+        const cartMismatches = [];
+        let allCartColumnsEqual = bothCartSnapshotsPresent;
+
+        if (!bothCartSnapshotsPresent) {
+          allCartColumnsEqual = false;
+          if (!hasExactlyOneCartBeforeRow) {
+            cartMismatches.push(`Pre-workflow Cart query returned ${cartBeforeRowCount} rows (expected exactly 1)`);
+          }
+          if (!hasExactlyOneCartAfterRow) {
+            cartMismatches.push(`Post-workflow Cart query returned ${cartAfterRowCount} rows (expected exactly 1)`);
+          }
+        }
+
+        for (const col of cartColumnNames) {
+          if (!bothCartSnapshotsPresent) {
+            cartColumnComparisons[col] = false;
+            continue;
+          }
+          const bVal = cartBefore[col];
+          const aVal = cartAfter[col];
+          let matches = false;
+          if (bVal === null || bVal === undefined) {
+            matches = aVal === null || aVal === undefined;
+          } else if (bVal instanceof Date || (typeof bVal === "string" && !isNaN(Date.parse(bVal)) && bVal.includes("T"))) {
+            matches = new Date(bVal).toISOString() === new Date(aVal).toISOString();
+          } else if (typeof bVal === "object") {
+            matches = JSON.stringify(bVal) === JSON.stringify(aVal);
+          } else {
+            matches = bVal === aVal;
+          }
+          cartColumnComparisons[col] = matches;
+          if (!matches) {
+            allCartColumnsEqual = false;
+            cartMismatches.push(`${col}: ${JSON.stringify(bVal)} !== ${JSON.stringify(aVal)}`);
+          }
+        }
 
         assertions = [
           // --- Group 1: Environment & Disposable Safety ---
@@ -571,7 +626,7 @@ async function runTp02aTest() {
             actual: disposableCheck?.verified === true,
             passed: disposableCheck?.verified === true,
             category: "safety",
-            detail: `Verified PostgreSQL (${disposableCheck?.pgHost}:${disposableCheck?.pgPort}/${disposableCheck?.pgDatabase}) and Redis (${disposableCheck?.redisHost}:${disposableCheck?.redisPort}) are disposable loopback/test instances prior to any write operations`,
+            detail: `Verified PostgreSQL (${disposableCheck?.pgHost}:${disposableCheck?.pgPort}/${disposableCheck?.pgDatabase}) and Redis (${disposableCheck?.redisHost}:${disposableCheck?.redisPort}) under profile '${disposableCheck?.executionProfile}' prior to any write operations`,
           },
           {
             name: "disposable_validator_self_checks_passed",
@@ -729,8 +784,8 @@ async function runTp02aTest() {
           {
             name: "real_cart_persisted_in_database",
             expected: 1,
-            actual: cartDbRes.rows.length,
-            passed: cartDbRes.rows.length === 1 && cartDbRes.rows[0]?.id === cartId,
+            actual: cartInitialDbRes.rows.length,
+            passed: cartInitialDbRes.rows.length === 1 && cartInitialDbRes.rows[0]?.id === cartId,
             category: "fixture",
             detail: `Verified Cart ${cartId} is physically present in PostgreSQL table 'cart'`,
           },
@@ -947,30 +1002,34 @@ async function runTp02aTest() {
             detail: "Verified all 7 cart_checkout_session fields (cart_id, current_attempt_id, epoch, status, created_at, updated_at, deleted_at) match exactly before and after workflow execution",
           },
           {
-            name: "real_cart_all_fields_unaltered_after_workflow",
+            name: "real_cart_all_columns_unaltered_after_workflow",
             expected: {
-              id: true,
-              currency_code: true,
-              created_at: true,
+              preWorkflowRows: 1,
+              postWorkflowRows: 1,
+              columnMatches: Object.fromEntries(cartColumnNames.map((c) => [c, true])),
             },
             actual: {
-              id: cartBefore?.id === cartAfter?.id,
-              currency_code: cartBefore?.currency_code === cartAfter?.currency_code,
-              created_at:
-                cartBefore?.created_at && cartAfter?.created_at
-                  ? new Date(cartBefore.created_at).toISOString() === new Date(cartAfter.created_at).toISOString()
-                  : false,
+              preWorkflowRows: cartBeforeRowCount,
+              postWorkflowRows: cartAfterRowCount,
+              columnMatches: cartColumnComparisons,
             },
             passed: Boolean(
+              bothCartSnapshotsPresent &&
               cartBefore &&
               cartAfter &&
-              cartBefore.id === cartAfter.id &&
-              cartBefore.currency_code === cartAfter.currency_code &&
-              cartBefore.created_at && cartAfter.created_at &&
-              new Date(cartBefore.created_at).toISOString() === new Date(cartAfter.created_at).toISOString()
+              allCartColumnsEqual
             ),
             category: "behavioral",
-            detail: "Verified fresh post-workflow Cart query matches pre-workflow Cart record across id, currency_code, and created_at timestamp",
+            observed: {
+              preWorkflowRowCount: cartBeforeRowCount,
+              postWorkflowRowCount: cartAfterRowCount,
+              preWorkflowCartRow: cartBefore,
+              postWorkflowCartRow: cartAfter,
+              columnCount: cartColumnNames.length,
+              columns: cartColumnNames,
+              mismatches: cartMismatches,
+            },
+            detail: `Verified genuine pre-workflow Cart snapshot (rows=${cartBeforeRowCount}) matches post-workflow Cart snapshot (rows=${cartAfterRowCount}) across all ${cartColumnNames.length} columns: [${cartColumnNames.join(", ")}]`,
           },
         ];
 
@@ -995,10 +1054,10 @@ async function runTp02aTest() {
             "-- TP-02a DB Snapshot: Immediately Before Workflow Execution (After Fixtures)\n" +
             "-- Captured at: " + dbBeforeSnapshot.capturedAt + "\n" +
             "-- ============================================================================\n\n" +
-            "-- Query 1: Verify real Cart fixture\n" +
-            `SELECT id, currency_code, created_at FROM cart WHERE id = '${cartId}';\n\n` +
+            "-- Query 1: Verify real Cart fixture immediately before workflow (SELECT *)\n" +
+            `SELECT * FROM cart WHERE id = '${cartId}';\n\n` +
             "-- Result:\n" +
-            formatSqlTable(cartDbRes.rows, ["id", "currency_code", "created_at"]) + "\n" +
+            formatSqlTable(cartDbBeforeRes.rows, cartColumnNames) + "\n" +
             "-- Query 2: Check cart_checkout_session before workflow execution\n" +
             dbBeforeQuery + "\n\n" +
             "-- Result:\n" +
@@ -1009,10 +1068,10 @@ async function runTp02aTest() {
             "-- TP-02a DB Snapshot: Immediately After Workflow Execution\n" +
             "-- Captured at: " + dbAfterSnapshot.capturedAt + "\n" +
             "-- ============================================================================\n\n" +
-            "-- Query 1: Verify real Cart fixture after workflow (FRESH QUERY)\n" +
-            `SELECT id, currency_code, created_at FROM cart WHERE id = '${cartId}';\n\n` +
+            "-- Query 1: Verify real Cart fixture immediately after workflow (FRESH SELECT * QUERY)\n" +
+            `SELECT * FROM cart WHERE id = '${cartId}';\n\n` +
             "-- Result:\n" +
-            formatSqlTable(cartDbAfterRes.rows, ["id", "currency_code", "created_at"]) + "\n" +
+            formatSqlTable(cartDbAfterRes.rows, cartColumnNames) + "\n" +
             "-- Query 2: Check cart_checkout_session state after workflow execution\n" +
             dbAfterQuery + "\n\n" +
             "-- Result:\n" +
@@ -1024,7 +1083,7 @@ async function runTp02aTest() {
     caughtException = error;
     logErr("UNCAUGHT EXCEPTION during TP-02a: " + (error?.stack || String(error)));
   } finally {
-    // Guarnateed safe cleanup for test-owned database fixtures and Redis keys
+    // Guaranteed safe cleanup for test-owned database fixtures and Redis keys
     if (createdCartId && pgClient) {
       try {
         log("Cleaning up test cart_checkout_session fixture: " + createdCartId + "...");
@@ -1044,29 +1103,46 @@ async function runTp02aTest() {
       }
     }
 
-    if (redisClient && (createdRedisPrefixedKey || createdLockKey)) {
+    // Owner-checked Redis key deletion: never delete a key if held by a different owner
+    if (redisClient && createdRedisPrefixedKey && workerId) {
       try {
-        if (createdRedisPrefixedKey) {
-          log("Cleaning up test Redis keys: " + createdRedisPrefixedKey + "...");
-          await redisClient.del(createdRedisPrefixedKey);
+        log("Cleaning up test Redis lock key (owner-checked): " + createdRedisPrefixedKey + "...");
+        const ownerCheckDelScript = `
+          local current = redis.call('get', KEYS[1])
+          if not current then
+            return 0
+          elseif current == ARGV[1] then
+            return redis.call('del', KEYS[1])
+          else
+            return -1
+          end
+        `;
+        const delResult = await redisClient.eval(ownerCheckDelScript, 1, createdRedisPrefixedKey, workerId);
+        if (delResult === -1) {
+          const foreignOwner = await redisClient.get(createdRedisPrefixedKey);
+          const msg = `Redis lock key '${createdRedisPrefixedKey}' is owned by another worker ('${foreignOwner}'), refusing deletion.`;
+          logErr("Cleanup error (redis): " + msg);
+          cleanupErrors.push("redis: " + msg);
+        } else if (delResult === 1) {
+          log("Cleaned up lingering test Redis lock key (deleted with matching owner: " + workerId + ").");
+        } else {
+          log("Test Redis lock key already released/absent; no deletion needed.");
         }
-        if (createdLockKey) {
-          await redisClient.del(createdLockKey);
-        }
-        log("Cleaned up test Redis keys.");
       } catch (cleanErr) {
         logErr("Cleanup error (redis): " + cleanErr.message);
         cleanupErrors.push("redis: " + cleanErr.message);
       }
     }
 
+    // Client shutdowns: failure must be recorded in cleanupErrors
     try {
       if (redisClient && redisClient.status !== "end") {
         log("Closing direct out-of-band Redis client...");
         redisClient.disconnect();
       }
     } catch (cleanErr) {
-      logErr("Cleanup warning (redis disconnect): " + cleanErr.message);
+      logErr("Cleanup error (redis disconnect): " + cleanErr.message);
+      cleanupErrors.push("redis disconnect: " + cleanErr.message);
     }
 
     try {
@@ -1075,7 +1151,8 @@ async function runTp02aTest() {
         await pgClient.end();
       }
     } catch (cleanErr) {
-      logErr("Cleanup warning (pg disconnect): " + cleanErr.message);
+      logErr("Cleanup error (pg disconnect): " + cleanErr.message);
+      cleanupErrors.push("pg disconnect: " + cleanErr.message);
     }
   }
 
