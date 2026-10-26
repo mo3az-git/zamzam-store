@@ -204,6 +204,7 @@ export async function writeTpEvidence({
   note = null,
   logLines = [],
   errLines = [],
+  interleaving = null,
 }) {
   await mkdir(evidenceDir, { recursive: true });
 
@@ -230,8 +231,8 @@ export async function writeTpEvidence({
       "redis:7.2.16@sha256:1009f15ccd9ed271996d1c65745a1ab1dadedea188feb3f1ab938602a32e50a3",
     testCommand,
     processExitCode: exitCode,
-    behavioralTestExitCode: status === "passed" ? 0 : 1,
-    behavioralTestExecuted: status === "passed",
+    behavioralTestExitCode: status === "blocked" ? null : exitCode,
+    behavioralTestExecuted: status !== "blocked",
     blocker: blocker || null,
     dbBefore: "db-before.json",
     dbAfter: "db-after.json",
@@ -241,6 +242,9 @@ export async function writeTpEvidence({
 
   await writeFile(path.join(evidenceDir, "result.json"), JSON.stringify(result, null, 2) + "\n");
   await writeFile(path.join(evidenceDir, "assertions.json"), JSON.stringify(assertions, null, 2) + "\n");
+  if (interleaving) {
+    await writeFile(path.join(evidenceDir, "interleaving.json"), JSON.stringify(interleaving, null, 2) + "\n");
+  }
   await writeFile(path.join(evidenceDir, "stdout.log"), logLines.join("\n") + "\n");
   await writeFile(path.join(evidenceDir, "stderr.log"), errLines.join("\n") + (errLines.length ? "\n" : ""));
   await writeFile(path.join(evidenceDir, "dbBefore.json"), JSON.stringify(dbBefore || {}, null, 2) + "\n");

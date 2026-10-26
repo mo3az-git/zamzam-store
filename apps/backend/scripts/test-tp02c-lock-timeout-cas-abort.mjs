@@ -18,8 +18,8 @@ import {
 } from "./shared/tp-harness.mjs";
 
 const rootRequire = registerTsNode();
-const { MedusaError, Modules } = rootRequire("@medusajs/framework/utils");
-const { stage2CheckoutLockWorkflow } = rootRequire(
+const { ContainerRegistrationKeys, MedusaError, Modules } = rootRequire("@medusajs/framework/utils");
+const { stage2CheckoutLockWorkflow, abortPendingLeaseOnLockTimeout } = rootRequire(
   path.join(backendRoot, "src", "workflows", "stage2-checkout-lock-workflow.ts")
 );
 
@@ -231,6 +231,24 @@ async function runTp02cTest() {
       };
 
       const beforeLeases = await queryLeases();
+      // Exercise the guards against the SAME keys: unrelated control keys
+      // alone cannot detect a missing owner/status predicate in the DELETE.
+      const resolvePgConnection = () => container.resolve(ContainerRegistrationKeys.PG_CONNECTION);
+      await abortPendingLeaseOnLockTimeout(
+        { idempotencyKey: workerCKey, ownerId: workerBId }, resolvePgConnection
+      );
+      await abortPendingLeaseOnLockTimeout(
+        { idempotencyKey: workerBCompletedKey, ownerId: workerBId }, resolvePgConnection
+      );
+      const afterGuardProbes = await queryLeases();
+      assertions.push({
+        name: "same_key_wrong_owner_and_completed_lease_cas_probes_are_noops",
+        category: "behavioral",
+        expected: beforeLeases,
+        actual: afterGuardProbes,
+        passed: JSON.stringify(beforeLeases) === JSON.stringify(afterGuardProbes),
+        detail: "Real container PostgreSQL connection executes CAS on an existing foreign-owned key and an existing completed key.",
+      });
       dbBeforeSnapshot = {
         capturedAt: new Date().toISOString(),
         leases: beforeLeases,
@@ -250,7 +268,6 @@ async function runTp02cTest() {
             ttl: 120,
             timeout: 5,
             idempotencyKey: workerBKey,
-            pgClient,
           },
         });
       } catch (err) {

@@ -50,6 +50,8 @@ let dbAfter = null
 let dbQueries = null
 let containerDetails = null
 let cleanupErrors = []
+let activeHeartbeat = null
+const interleaving = []
 
 const log = (message) => {
   console.log(message)
@@ -71,9 +73,7 @@ async function writeEvidence(status, exitCode, blocker = null) {
     title: "Redis Lock Renewal & Heartbeat Coordination",
     batch: "B",
     status,
-    assessmentType: status === "passed"
-      ? "behavioral acceptance test (worker-component boundary; no HTTP checkout route)"
-      : "readiness check",
+    assessmentType: "behavioral test (worker-component boundary; no HTTP checkout route)",
     startedAt,
     commitSha: metadata.commitSha,
     nodeVersion: metadata.nodeVersion,
@@ -87,6 +87,7 @@ async function writeEvidence(status, exitCode, blocker = null) {
     dbAfter,
     dbQueries,
     containerDetails,
+    interleaving,
     note: status === "passed"
       ? "TP-02b exercised a real Medusa container, configured locking provider, PostgreSQL idempotency_key table, and Redis extendLock Lua command. It verifies the worker component boundary only; no HTTP checkout route exists. Await independent review."
       : "TP-02b execution blocked by missing prerequisites, safety refusal, environment failure, or a failed assertion.",
@@ -118,6 +119,7 @@ async function createLeaseFixture({ key, ownerId }) {
 
 async function cleanup() {
   try {
+    if (activeHeartbeat) await activeHeartbeat.stop()
     if (lockingService && createdCartId && lockOwnerId) {
       try {
         await lockingService.release("cart:" + createdCartId, { ownerId: lockOwnerId })
@@ -338,6 +340,12 @@ async function executeTp02b() {
 
     let scheduled = null
     let clearCount = 0
+    let releaseRenewal
+    let renewalEntered
+    const renewalGate = new Promise((resolve) => { releaseRenewal = resolve })
+    const renewalStarted = new Promise((resolve) => { renewalEntered = resolve })
+    const record = (event) => interleaving.push({ event, at: new Date().toISOString() })
+    const leaseWriter = createPostgresLeaseHeartbeatWriter(pgClient)
     const heartbeat = new CheckoutLockHeartbeat(
       {
         lockKey: prefixedRedisLockKey,
@@ -346,8 +354,19 @@ async function executeTp02b() {
         ttlSeconds: 120,
       },
       {
-        extendLock: (key, ownerId, ttlSeconds) => providerClient.extendLock(key, ownerId, ttlSeconds),
-        leaseWriter: createPostgresLeaseHeartbeatWriter(pgClient),
+        extendLock: async (key, ownerId, ttlSeconds) => {
+          record("renewal_waiting_at_gate")
+          renewalEntered()
+          await renewalGate
+          const result = await providerClient.extendLock(key, ownerId, ttlSeconds)
+          record("real_redis_renewal_completed")
+          return result
+        },
+        leaseWriter: { updateHeartbeat: async (input) => {
+          const result = await leaseWriter.updateHeartbeat(input)
+          record("real_postgres_heartbeat_completed")
+          return result
+        } },
         setIntervalFn: (callback, intervalMs) => {
           scheduled = { callback, intervalMs }
           return { testTimer: true }
@@ -355,6 +374,7 @@ async function executeTp02b() {
         clearIntervalFn: () => { clearCount += 1 },
       }
     )
+    activeHeartbeat = heartbeat
     heartbeat.start()
     assert(
       "heartbeat_schedules_exact_30_second_interval",
@@ -377,21 +397,54 @@ async function executeTp02b() {
     }
 
     await new Promise((resolve) => setTimeout(resolve, 10))
-    const successOutcome = await scheduled.callback()
+    // The timer callback deliberately returns void. Join its in-flight tick;
+    // awaiting the callback itself would race the real Redis/SQL operations.
+    scheduled.callback()
+    const pendingTick = heartbeat.tick()
+    await renewalStarted
+    let stopSettled = false
+    const stopPromise = heartbeat.stop().then(() => {
+      stopSettled = true
+      record("stop_completed")
+    })
+    try {
+      const leaseDuringDelay = await snapshotLease(primaryIdempotencyKey)
+      const ownerDuringDelay = await redisClient.get(prefixedRedisLockKey)
+      record("database_and_redis_inspected_during_delay")
+      assert(
+        "delayed_redis_renewal_blocks_postgres_heartbeat_and_stop",
+        { leaseUnchanged: true, stopSettled: false, owner: lockOwnerId },
+        { leaseDuringDelay, stopSettled, owner: ownerDuringDelay },
+        JSON.stringify(leaseDuringDelay) === JSON.stringify(leaseBefore) && !stopSettled && ownerDuringDelay === lockOwnerId,
+        "A deterministic gate delays the real provider renewal; real SQL and Redis are inspected while it is pending."
+      )
+    } finally {
+      releaseRenewal()
+    }
+    const successOutcome = await pendingTick
+    await stopPromise
     const leaseAfterSuccess = await snapshotLease(primaryIdempotencyKey)
     const ttlAfterSuccess = await redisClient.ttl(prefixedRedisLockKey)
     const advancedHeartbeat = new Date(leaseAfterSuccess.last_heartbeat_at).getTime() > new Date(leaseBefore.last_heartbeat_at).getTime()
     assert(
       "redis_extendlock_success_updates_pending_lease_heartbeat",
       { outcome: "renewed", rowCount: 1, heartbeatAdvanced: true },
-      { outcome: successOutcome, heartbeatAdvanced, ttl: ttlAfterSuccess },
+      { outcome: successOutcome, rowCount: successOutcome?.heartbeatUpdatedRows, heartbeatAdvanced: advancedHeartbeat, ttl: ttlAfterSuccess },
       successOutcome?.status === "renewed" && successOutcome?.heartbeatUpdatedRows === 1 && advancedHeartbeat && ttlAfterSuccess > 0,
       "The actual provider Redis extendLock returned 1 before the guarded PostgreSQL UPDATE ran."
     )
 
     await heartbeat.stop()
     await lockingService.release(lockKey, { ownerId: lockOwnerId })
+    record("lock_release_completed")
     const redisAfterRelease = await redisClient.get(prefixedRedisLockKey)
+    assert(
+      "stop_joins_real_renewal_before_lock_release",
+      ["renewal_waiting_at_gate", "database_and_redis_inspected_during_delay", "real_redis_renewal_completed", "real_postgres_heartbeat_completed", "stop_completed", "lock_release_completed"],
+      interleaving.map((entry) => entry.event),
+      interleaving.map((entry) => entry.event).join(",") === "renewal_waiting_at_gate,database_and_redis_inspected_during_delay,real_redis_renewal_completed,real_postgres_heartbeat_completed,stop_completed,lock_release_completed" && redisAfterRelease === null,
+      "Observed worker events and the real Redis key establish lifecycle ordering."
+    )
     const leaseBeforeLoss = await snapshotLease(primaryIdempotencyKey)
     const lockLossHeartbeat = new CheckoutLockHeartbeat(
       {

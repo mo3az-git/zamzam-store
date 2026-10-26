@@ -106,7 +106,14 @@ jobs:
           set -o pipefail
           npm run spike:medusa-loader 2>&1 | tee artifacts/medusa-loader-diagnostic.log
 
+      - name: Check JavaScript evidence harnesses for undefined variables
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run spike:lint-harness 2>&1 | tee artifacts/harness-static-check.log
+
       - name: Apply baseline Medusa migrations to disposable PostgreSQL
+        id: migrations
         shell: bash
         env:
           TS_NODE_PROJECT: ${{ github.workspace }}/apps/backend/tsconfig.json
@@ -149,56 +156,64 @@ jobs:
           npm run spike:target-validator 2>&1 | tee artifacts/disposable-target-validator.log
 
       - name: Run TP-02a distributed cart lock test
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
         run: |
           set -o pipefail
-          node apps/backend/scripts/test-tp02a-distributed-lock.mjs 2>&1 | tee artifacts/tp-02a-distributed-lock.log
+          node scripts/run-tp-with-evidence.mjs TP-02a 2>&1 | tee artifacts/tp-02a-distributed-lock.log
 
       - name: Run TP-02b heartbeat unit invariants
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
         shell: bash
         run: |
           set -o pipefail
           npm run spike:tp02b-unit 2>&1 | tee artifacts/tp-02b-heartbeat-unit.log
 
       - name: Run TP-02b real-service heartbeat test
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
         run: |
           set -o pipefail
-          npm run spike:tp02b 2>&1 | tee artifacts/tp-02b-heartbeat.log
+          node scripts/run-tp-with-evidence.mjs TP-02b 2>&1 | tee artifacts/tp-02b-heartbeat.log
 
       - name: Run TP-02c lock timeout CAS unit invariants
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
         shell: bash
         run: |
           set -o pipefail
           npm run spike:tp02c-unit 2>&1 | tee artifacts/tp-02c-cas-unit.log
 
       - name: Run TP-02c real-service lock timeout CAS test
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
         run: |
           set -o pipefail
-          npm run spike:tp02c 2>&1 | tee artifacts/tp-02c-lock-timeout-cas.log
+          node scripts/run-tp-with-evidence.mjs TP-02c 2>&1 | tee artifacts/tp-02c-lock-timeout-cas.log
 
       - name: Verify TP-03 negative control (non-contention error propagation)
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
         shell: bash
         run: |
           set -o pipefail
           node apps/backend/scripts/check-stage2-lock-negative-control.mjs 2>&1 | tee artifacts/tp-03-negative-control.log
 
       - name: Run TP-03 concurrent cart lock rejection test
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
         run: |
           set -o pipefail
-          node apps/backend/scripts/test-tp03-concurrent-lock-rejection.mjs 2>&1 | tee artifacts/tp-03-concurrent-lock-rejection.log
+          node scripts/run-tp-with-evidence.mjs TP-03 2>&1 | tee artifacts/tp-03-concurrent-lock-rejection.log
 
       - name: Verify Migration 3 rollback on isolated PostgreSQL database
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
         shell: bash
         env:
           PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"

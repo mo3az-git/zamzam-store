@@ -17,6 +17,7 @@
     "build:storefront": "npm run build --workspace @zamzam/storefront",
     "db:migrate": "npm run db:migrate --workspace @zamzam/backend",
     "spike:registry": "node scripts/verify-tp-registry.mjs",
+    "spike:lint-harness": "node scripts/check-harness-static.mjs",
     "spike:package-metadata": "node scripts/check-package-metadata.mjs",
     "spike:checks": "npm run spike:registry && npm run spike:package-metadata",
     "spike:medusa-loader": "node scripts/check-medusa-cli-tsconfig-paths.cjs",

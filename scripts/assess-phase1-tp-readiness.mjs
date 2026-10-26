@@ -8,7 +8,14 @@ const root = process.cwd();
 const require = createRequire(import.meta.url);
 const { Client } = require("pg");
 const implementationPlanPath = path.join(root, "docs", "implementation-plan.md");
-const evidenceRoot = path.join(root, "artifacts", "tp-evidence");
+// A prerequisite scan must never impersonate or overwrite a behavioral run.
+const evidenceRoot = path.join(root, "artifacts", "tp-readiness");
+const runnableBoundaries = {
+  "TP-02a": "Real Medusa distributed lock workflow runner exists; behavioral execution and independent review are separate.",
+  "TP-02b": "Real-service heartbeat worker runner exists; HTTP checkout integration is absent.",
+  "TP-02c": "Real-service lease CAS/lock-timeout workflow runner exists; HTTP 409 route is absent.",
+  "TP-03": "Real-service lock-contention workflow runner exists; HTTP 409 route is absent; inventory count is table-wide and the cart has no lines.",
+};
 const customTables = [
   "cart_batch_reservation", "cart_checkout_session", "cart_checkout_attempt",
   "idempotency_key", "inventory_batch", "inventory_movement",
@@ -192,7 +199,8 @@ const summary = {
   behavioralTestsExecuted: 0,
   passed: 0,
   failed: 0,
-  blocked: parsed.length,
+  blocked: parsed.length - Object.keys(runnableBoundaries).length,
+  notExecuted: Object.keys(runnableBoundaries).length,
   packageLockSha256: lockSha256,
   nodeVersion,
   npmVersion,
@@ -214,13 +222,14 @@ for (const item of parsed) {
   const missingTokens = capabilityTokens.filter((token) => !combinedSource.includes(token));
   const groupHasApplicationWorkflow = sourceInventory.customApiFiles.length > 0 ||
     sourceInventory.workflowFiles.length > 0 || sourceInventory.migrationFiles.length > 0;
-  const reason = item.group === "A" && item.id === "TP-01"
-    ? "No custom cart API/line-item metadata hook or real cart+batch-variant fixture is implemented; checkout_line_key is absent from backend source."
-    : item.group === "A" && item.id === "TP-02a"
-      ? "The required acquireLockStep integration is absent. Existing SafeRedisLockingProvider checks are adapter tests and cannot be substituted for the Medusa workflow step."
-      : item.group === "A" && item.id === "TP-03"
-        ? "No checkout workflow or route exists to exercise two real workers, the 5-second lock timeout, HTTP 409 mapping, and proof that reservation/epoch state is unchanged."
-        : blockerByGroup[item.group] + " The backend source inventory contains no custom API, workflow, or migration files.";
+  const runnable = Object.hasOwn(runnableBoundaries, item.id) && missingTokens.length === 0;
+  const readinessStatus = runnable ? "not_executed" : "blocked";
+  const reason = item.id === "TP-01"
+    ? "Execution explicitly unauthorized. No line-key hook or batch-variant HTTP fixture exists. This scan neither creates fixtures nor executes TP-01."
+    : runnableBoundaries[item.id] ||
+      "The full behavior for this case is not implemented. " +
+      (missingTokens.length ? "Missing source capabilities: " + missingTokens.join(", ") + ". " : "Shared primitives exist but do not establish the required route/workflow behavior. ") +
+      "See docs/phase1-tp-case-matrix.md for the per-case dependency and next action.";
   const caseDir = path.join(evidenceRoot, item.id);
   await mkdir(caseDir, { recursive: true });
   const observedAt = new Date().toISOString();
@@ -228,8 +237,8 @@ for (const item of parsed) {
     {
       name: "required_real_implementation_available",
       expected: true,
-      actual: false,
-      passed: false,
+      actual: runnable,
+      passed: runnable,
       detail: reason
     },
     {
@@ -248,8 +257,8 @@ for (const item of parsed) {
     },
     {
       name: "status_not_misreported_as_pass",
-      expected: "blocked",
-      actual: "blocked",
+      expected: "blocked or not_executed",
+      actual: readinessStatus,
       passed: true
     }
   ];
@@ -258,7 +267,7 @@ for (const item of parsed) {
     tpId: item.id,
     title: item.title,
     batch: item.group,
-    status: "blocked",
+    status: readinessStatus,
     assessmentType: "readiness-only; behavioral test not executed",
     startedAt: observedAt,
     endedAt: new Date().toISOString(),
@@ -281,7 +290,7 @@ for (const item of parsed) {
     dbAfter: "db-after.json",
     note: "Exit code 0 means the readiness assessment completed successfully. It does not mean the TP passed."
   };
-  const stdout = "BLOCKED " + item.id + " [" + item.group + "]: " + reason + "\n";
+  const stdout = readinessStatus.toUpperCase() + " " + item.id + " [" + item.group + "]: " + reason + "\n";
   await writeFile(path.join(caseDir, "result.json"), safeJson(result));
   await writeFile(path.join(caseDir, "assertions.json"), safeJson(assertions));
   await writeFile(path.join(caseDir, "implementation-check.json"), safeJson({
@@ -303,6 +312,7 @@ for (const item of parsed) {
 }
 
 const checkHDir = path.join(evidenceRoot, "CHECK-H");
+const committedLockHash = createHash("sha256").update(execFileSync("git", ["show", "HEAD:package-lock.json"], { maxBuffer: 16 * 1024 * 1024 })).digest("hex");
 await mkdir(checkHDir, { recursive: true });
 const checkH = {
   schemaVersion: 1,
@@ -323,14 +333,13 @@ const checkH = {
   backendBuildLog: "artifacts/medusa-build.log",
   storefrontBuildLog: "artifacts/next-build.log",
   redisRegressionLog: "artifacts/locking-redis-regression.log",
-  reviewBoundary: "Clean-install/build/migration evidence supports compatibility but does not pass any of the 59 TP rows. The candidate lockfile is not yet committed."
+  reviewBoundary: "Clean-install/build/migration evidence supports compatibility but does not pass any of the 59 TP rows. The lockfile is committed; compare its bytes with the tested checkout."
 };
 await writeFile(path.join(checkHDir, "result.json"), safeJson(checkH));
 await writeFile(path.join(checkHDir, "stdout.log"), "SUPPORTING EVIDENCE CHECK-H: compatibility logs recorded; independent review remains required.\n");
 await writeFile(path.join(checkHDir, "stderr.log"), "");
 await writeFile(path.join(checkHDir, "assertions.json"), safeJson([
-  { name: "tp_status_changed", expected: false, actual: false, passed: true },
-  { name: "package_lock_committed", expected: true, actual: false, passed: false, detail: "The lockfile is a CI artifact until reviewed and committed." }
+  { name: "package_lock_matches_committed_bytes", expected: committedLockHash, actual: lockSha256, passed: committedLockHash === lockSha256 }
 ]));
 await writeFile(path.join(checkHDir, "db-before.json"), safeJson(dbBefore));
 await writeFile(path.join(checkHDir, "db-after.json"), safeJson(dbAfter));
@@ -338,5 +347,5 @@ await writeFile(path.join(checkHDir, "db-before.sql"), "-- Read-only schema inve
 await writeFile(path.join(checkHDir, "db-after.sql"), "-- Read-only schema inventory query; no TP mutation executed.\n" + dbQuery);
 
 console.log("");
-console.log("TP readiness assessment completed: " + parsed.length + " cases found, 0 behavioral tests executed, " + parsed.length + " blocked by missing implementation prerequisites.");
+console.log("TP readiness assessment completed: " + parsed.length + " cases found, 0 behavioral tests executed. Readiness files are separate from behavioral evidence; consult each case's status and implementation inventory.");
 console.log("No TP status in docs/implementation-plan.md was changed.");
