@@ -240,23 +240,25 @@ This section documents the concrete implementation plan for the first three cano
   - `docs/data-model.md` §3.1 lines 181-193 defines `cart_checkout_session` (columns: `cart_id` PK, `current_attempt_id` UUID, `epoch` BIGINT DEFAULT 1, `status` VARCHAR(32) DEFAULT 'in_progress').
   - `docs/order-and-inventory-workflows.md` §2.1 lines 217-224 (Stage 2) defines `acquireLockStep(key="cart:" + cart.id, timeout=5, ttl=120, ownerId=executionId)` prior to session/attempt mutations.
 - **What must be implemented in `apps/backend`:**
-  - Reusable Medusa workflow step `acquireLockStep` (in `apps/backend/src/workflows/steps/acquire-lock.ts` — status: to be created) that invokes the configured Redis locking provider (`@medusajs/locking-redis`).
-  - Nested workflow lock skip behavior: workflow logic that inspects current execution context so that nested steps called by the same owner/worker re-use the held lock without attempting redundant lock acquisition or failing.
-  - Test runner script: `apps/backend/scripts/test-tp02a-distributed-lock.mjs` (status: to be created).
+  - Workflow steps `acquireLockStep` and `releaseLockStep`: Medusa core provides canonical implementations in `@medusajs/medusa/core-flows` (with built-in sub-workflow skipping via `parentStepIdempotencyKey`, timeout/retry loop, and compensation logic). Re-exporting them via `apps/backend/src/workflows/steps/acquire-lock.ts` ensures native framework compatibility without maintaining redundant custom code.
+  - Nested workflow lock skip behavior: validated directly using Medusa core-flows `acquireLockStep`, which checks `parentStepIdempotencyKey` and executes `StepResponse.skip()` without attempting redundant lock acquisition or failing.
+  - Test runner script: `apps/backend/scripts/test-tp02a-distributed-lock.mjs` running against the real Medusa container loaded from `apps/backend/medusa-config.ts` (using `@medusajs/medusa/loaders` matching `npx medusa exec`).
 - **Fixtures needed:**
   - Disposable PostgreSQL container (`postgres:16.15-alpine`).
   - Disposable Redis container (`redis:7.2.16-alpine`) reachable via `REDIS_URL` / `LOCKING_REDIS_URL`.
   - Active Cart record in PostgreSQL with ID `$CART_ID`.
-  - Authoritative `cart_checkout_session` record in PostgreSQL (with initial `epoch = 1`, `status = 'in_progress'`, and `current_attempt_id`).
+  - Authoritative `cart_checkout_session` record in PostgreSQL created directly through `BatchInventoryModuleService.createCartCheckoutSessions` resolved from the real Medusa container (with initial `epoch = 1`, `status = 'in_progress'`, and `current_attempt_id`), and verified via both the module service and raw SQL.
   - Unique worker identifier (`workerId`, e.g. UUID).
 - **Evidence collection (read out-of-band and from API/DB):**
   - Direct Redis inspection via independent client (`ioredis`):
-    - Verify key `cart:$CART_ID` exists in Redis.
+    - Note: keys are stored with the provider prefix configured in `medusa-config.ts` (`medusa_lock:`).
+    - Verify key `medusa_lock:cart:$CART_ID` exists in Redis.
     - Verify key value matches `workerId`.
-    - Verify `TTL cart:$CART_ID` is a TTL greater than 110 seconds and at most 120 seconds.
+    - Verify `TTL medusa_lock:cart:$CART_ID` is a TTL greater than 110 seconds and at most 120 seconds.
+    - Verify key is null (deleted) after `releaseLockStep`.
   - Step execution outcome: verify successful return from `acquireLockStep`.
   - Nested invocation verification: execute a nested lock call within the same worker context and assert lock skip without errors.
-  - Database before/after snapshots of `cart_checkout_session` and any session/lock tracking tables.
+  - Database before/after snapshots of `cart_checkout_session` written as SQL queries and formatted results to `db-before.sql` and `db-after.sql`.
 - **Evidence directory and artifacts:**
   - Directory: `artifacts/tp-evidence/TP-02a/` (as specified in `docs/phase1-tp-execution-register.md`)
   - Artifacts:
@@ -320,6 +322,26 @@ This section documents the concrete implementation plan for the first three cano
 ### Lifecycle notes and owner default assumptions
 - **Initial creation of `cart_checkout_session` [DEFAULT-ASSUMPTION, owner may change]:**
   `cart_checkout_session` is NOT created at cart creation. The first checkout attempt creates it using `INSERT ... ON CONFLICT (cart_id) DO UPDATE`, so the initial insert sets `epoch = 1`, `status = 'in_progress'`, and `current_attempt_id`, while subsequent checkout attempts increment the `epoch`. For TP-02a and TP-03 execution, the first checkout attempt manages this lifecycle transition according to this assumption.
+
+### DML Model vs Design Schema Comparison (`cart_checkout_session`)
+
+Medusa v2 Data Modeling Language (`model.define`) generates MikroORM schema definitions that diverge in specific column representations from the raw SQL schema specified in `docs/data-model.md` §3.1. To preserve the design semantics while maintaining framework model compatibility, a baseline migration (`Migration20261026000001_CreateCartCheckoutSession`) creates the DML-native table, followed by a semantic guard migration (`Migration20261026000002_AddCartCheckoutSessionSemanticGuards`) that enforces design constraints:
+
+| Column Name | Design Type (`docs/data-model.md` §3.1) | DML Generated Type (`toMikroOrmEntities`) | Semantic Reconciliation & Guard |
+|---|---|---|---|
+| `cart_id` | `VARCHAR(255) PK` | `text NOT NULL PK` | Generated as `text` by `model.text().primaryKey()`. Reconciled in PostgreSQL via check constraint `CONSTRAINT chk_ccs_cart_id_len CHECK (char_length("cart_id") <= 255)`. |
+| `current_attempt_id` | `UUID NOT NULL` | `text NOT NULL` | Generated as `text` by `model.text()`. Reconciled in PostgreSQL via regex check constraint `CONSTRAINT chk_ccs_current_attempt_id_uuid CHECK ("current_attempt_id" ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')`. |
+| `epoch` | `BIGINT NOT NULL, DEFAULT 1` | `numeric NOT NULL DEFAULT 1` | Generated as `numeric` by `model.bigNumber().default(1)`. Reconciled in PostgreSQL via check constraint `CONSTRAINT chk_ccs_epoch_positive_integer CHECK ("epoch" >= 1 AND "epoch" = floor("epoch"))`. Note: `bigNumber()` injects an accompanying `raw_epoch` JSON column. This is a recorded deviation for owner decision (see note below). |
+| `raw_epoch` | *(Not in design document)* | `jsonb NOT NULL DEFAULT '{"value":"1","precision":20}'` | Injected by Medusa DML alongside `model.bigNumber()`. Records serialization precision. Deviation recorded for owner decision. |
+| `status` | `VARCHAR(32) NOT NULL DEFAULT 'in_progress'` + `chk_ccs_status` | `text NOT NULL DEFAULT 'in_progress'` + anonymous check | Generated by `model.enum(...)`. Reconciled in PostgreSQL via explicit named constraint `CONSTRAINT chk_ccs_status CHECK ("status" IN ('in_progress', 'completed', 'aborted', 'failed'))`. |
+| `created_at` | `TIMESTAMPTZ NOT NULL DEFAULT NOW()` | `timestamptz NOT NULL DEFAULT now()` | Semantically identical. |
+| `updated_at` | `TIMESTAMPTZ NOT NULL DEFAULT NOW()` | `timestamptz NOT NULL DEFAULT now()` | Semantically identical. |
+| `deleted_at` | *(Not in design document)* | `timestamptz NULL` + partial index | Injected by Medusa DML entity builder for soft-deletable entities. Safely defaults to NULL without affecting design invariants. |
+
+- **Recorded Deviation for Owner Decision [DEVIATION-NOTE, owner decision needed]:**
+  Medusa v2 DML `model.bigNumber()` maps to PostgreSQL `numeric` and creates an auxiliary `raw_epoch` `jsonb` column for precision metadata. The design in `docs/data-model.md` §3.1 specifies `epoch BIGINT NOT NULL DEFAULT 1` without `raw_epoch`.
+  - **Proposed alternative:** Use `model.number().default(1)` in the DML entity, which maps to PostgreSQL `integer` / `bigint` without injecting the `raw_epoch` column.
+  - Per the rules, design documents remain unchanged; this deviation is documented for the project owner's explicit decision.
 
 ### Supplementary baseline checks (not TP cases)
 
