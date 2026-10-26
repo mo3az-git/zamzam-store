@@ -11,7 +11,7 @@ const backendRoot = path.resolve(__dirname, "..");
 const repositoryRoot = path.resolve(backendRoot, "../..");
 
 const require = createRequire(import.meta.url);
-const { Client: PgClient } = require("pg");
+const { Client: PgClient, Pool: PgPool } = require("pg");
 const RedisModule = require("ioredis");
 const Redis = RedisModule.default ?? RedisModule;
 
@@ -25,6 +25,9 @@ rootRequire("ts-node").register({
 const { Modules } = require("@medusajs/framework/utils");
 const { parentCheckoutTestWorkflow } = rootRequire(
   path.join(backendRoot, "src", "workflows", "test-tp02a-workflow.ts")
+);
+const { CartCheckoutSession } = rootRequire(
+  path.join(backendRoot, "src", "modules", "batch-inventory", "models", "cart-checkout-session.ts")
 );
 
 const evidenceDir = path.join(repositoryRoot, "artifacts", "tp-evidence", "TP-02a");
@@ -275,10 +278,10 @@ try {
   // Read runtime configuration declared in medusa-config.ts via container.resolve("configModule")
   const configModule = container.resolve("configModule");
   const lockingModuleConfig = configModule?.modules?.locking;
-  const configuredProviderEntry = lockingModuleConfig?.options?.providers?.[0] || {};
-  const configDeclaredResolve = configuredProviderEntry.resolve;
-  const configDeclaredId = configuredProviderEntry.id;
-  const configDeclaredIsDefault = Boolean(configuredProviderEntry.is_default);
+  const configuredProviderEntry = lockingModuleConfig?.options?.providers?.[0] || null;
+  const configDeclaredResolve = configuredProviderEntry?.resolve || null;
+  const configDeclaredId = configuredProviderEntry?.id || null;
+  const configDeclaredIsDefault = Boolean(configuredProviderEntry?.is_default);
 
   // Resolve locking module and custom batch_inventory module from real container
   const lockingService = container.resolve(Modules.LOCKING);
@@ -287,8 +290,12 @@ try {
   // Read running provider registration from container's locking service
   const containerDefaultProviderId = lockingService?.defaultProviderId;
   const providerInstance = lockingService?.providerService_?.retrieveProviderRegistration(containerDefaultProviderId);
-  const providerClassName = providerInstance?.constructor?.name;
-  const providerConfiguredPrefix = providerInstance?.prefix || "medusa_lock:";
+  const providerClassName = providerInstance?.constructor?.name || null;
+  // Read key prefix directly from running provider instance (SafeRedisLockingProvider defines keyNamePrefix)
+  const providerConfiguredPrefix = providerInstance?.keyNamePrefix ?? providerInstance?.prefix ?? null;
+  if (!providerConfiguredPrefix) {
+    throw new Error("Unable to read key prefix from running provider instance.");
+  }
 
   const containerDetails = {
     creationMechanism: "@medusajs/medusa/loaders loaders.default({ directory: backendRoot, expressApp, skipLoadingEntryPoints: true })",
@@ -316,6 +323,15 @@ try {
   log("Lock Key (logical): " + lockKey);
   log("Lock Key in Redis (prefixed): " + redisPrefixedKey);
 
+  // Inspect physical database columns for cart_checkout_session to verify presence/absence of raw_epoch
+  const columnsRes = await pgClient.query(
+    "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'cart_checkout_session' ORDER BY ordinal_position"
+  );
+  const physicalColumnNames = columnsRes.rows.map((r) => r.column_name);
+  const rawEpochColumnExistsInDb = physicalColumnNames.includes("raw_epoch");
+  log("Physical columns in cart_checkout_session: " + physicalColumnNames.join(", "));
+  log("raw_epoch column present in DB: " + rawEpochColumnExistsInDb);
+
   // Pre-test DB snapshot
   const dbBeforeQuery = `SELECT cart_id, current_attempt_id, epoch, status, created_at, updated_at, deleted_at FROM cart_checkout_session WHERE cart_id = '${cartId}';`;
   const dbBeforeRes = await pgClient.query(
@@ -331,7 +347,9 @@ try {
   // Intercept real SQL queries executed during fixture creation
   const capturedFixtureSql = [];
   const originalPgQuery = PgClient.prototype.query;
-  PgClient.prototype.query = function (...args) {
+  const originalPoolQuery = PgPool ? PgPool.prototype.query : null;
+
+  const captureInterceptor = function (...args) {
     try {
       const qText = typeof args[0] === "string" ? args[0] : args[0]?.text;
       const qValues = Array.isArray(args[1]) ? args[1] : (Array.isArray(args[0]?.values) ? args[0].values : []);
@@ -341,6 +359,20 @@ try {
     } catch {}
     return originalPgQuery.apply(this, args);
   };
+
+  PgClient.prototype.query = captureInterceptor;
+  if (PgPool) {
+    PgPool.prototype.query = function (...args) {
+      try {
+        const qText = typeof args[0] === "string" ? args[0] : args[0]?.text;
+        const qValues = Array.isArray(args[1]) ? args[1] : (Array.isArray(args[0]?.values) ? args[0].values : []);
+        if (qText && (qText.includes("cart_checkout_session") || qText.includes("INSERT") || qText.includes("insert"))) {
+          capturedFixtureSql.push({ text: qText.trim(), values: qValues });
+        }
+      } catch {}
+      return originalPoolQuery.apply(this, args);
+    };
+  }
 
   // Create cart_checkout_session fixture row via BatchInventoryModuleService from container
   log("Creating cart_checkout_session fixture via BatchInventoryModuleService.createCartCheckoutSessions...");
@@ -354,6 +386,9 @@ try {
     });
   } finally {
     PgClient.prototype.query = originalPgQuery;
+    if (PgPool && originalPoolQuery) {
+      PgPool.prototype.query = originalPoolQuery;
+    }
   }
   log("Created fixture session via module service: " + JSON.stringify(createdSession));
   log("Captured SQL statements during fixture call: " + capturedFixtureSql.length);
@@ -393,9 +428,11 @@ try {
   const releaseResult = resultData.releaseResult;
 
   // Post-workflow out-of-band Redis verification
+  const lingeringMatchingKeys = await redisClient.keys("*" + lockKey);
+  const postReleaseKeyExists = lingeringMatchingKeys.some((k) => k.endsWith(lockKey));
   const postReleaseValue = await redisClient.get(redisPrefixedKey);
   const postReleaseRawValue = await redisClient.get(lockKey);
-  log("Post-release Redis key (" + redisPrefixedKey + "): " + postReleaseValue);
+  log("Post-release Redis key (" + redisPrefixedKey + "): " + postReleaseValue + ", lingering keys count: " + lingeringMatchingKeys.length);
 
   // Post-test DB snapshot
   const dbAfterQuery = `SELECT cart_id, current_attempt_id, epoch, status, created_at, updated_at, deleted_at FROM cart_checkout_session WHERE cart_id = '${cartId}';`;
@@ -411,7 +448,7 @@ try {
 
   // Compile assertions
   const columns = ["cart_id", "current_attempt_id", "epoch", "status", "created_at", "updated_at", "deleted_at"];
-  const observedPrefix = inFlightInspection?.actualKey ? inFlightInspection.actualKey.replace(lockKey, "") : "";
+  const observedPrefix = inFlightInspection?.prefix ?? null;
 
   const assertions = [
     {
@@ -436,11 +473,32 @@ try {
       detail: "batch_inventory service resolved directly from Medusa container with DML methods",
     },
     {
+      name: "locking_provider_entry_present_in_config",
+      expected: true,
+      actual: Boolean(configuredProviderEntry && configuredProviderEntry.id),
+      passed: Boolean(configuredProviderEntry && configuredProviderEntry.id),
+      detail: `Loaded Medusa configuration contains locking provider entry (id: '${configDeclaredId}', resolve: '${configDeclaredResolve}')`,
+    },
+    {
       name: "locking_provider_configured_in_medusa_config",
       expected: configDeclaredId,
       actual: containerDefaultProviderId,
-      passed: Boolean(configDeclaredId) && configDeclaredId === containerDefaultProviderId,
+      passed: Boolean(configDeclaredId) && Boolean(containerDefaultProviderId) && configDeclaredId === containerDefaultProviderId,
       detail: `Runtime comparison: medusa-config declared provider ID (${configDeclaredId}) matches container default provider ID (${containerDefaultProviderId})`,
+    },
+    {
+      name: "locking_provider_resolve_path_matches_expected",
+      expected: "./src/modules/locking-redis/index.mjs",
+      actual: configDeclaredResolve,
+      passed: configDeclaredResolve === "./src/modules/locking-redis/index.mjs",
+      detail: `Runtime comparison: medusa-config provider resolve path matches local safe redis locking provider`,
+    },
+    {
+      name: "locking_provider_marked_is_default_in_config",
+      expected: true,
+      actual: configDeclaredIsDefault,
+      passed: configDeclaredIsDefault === true,
+      detail: `Runtime comparison: medusa-config explicitly marks locking provider as is_default: true`,
     },
     {
       name: "locking_provider_instance_is_safe_redis",
@@ -453,8 +511,8 @@ try {
       name: "redis_lock_key_prefix_matches_provider_config",
       expected: providerConfiguredPrefix,
       actual: observedPrefix,
-      passed: observedPrefix === providerConfiguredPrefix,
-      detail: `Runtime verification: Observed Redis key prefix (${observedPrefix}) equals provider configured prefix (${providerConfiguredPrefix})`,
+      passed: Boolean(providerConfiguredPrefix) && Boolean(observedPrefix) && observedPrefix === providerConfiguredPrefix,
+      detail: `Runtime verification: Observed Redis physical key prefix (${observedPrefix}) equals provider configured prefix (${providerConfiguredPrefix})`,
     },
     {
       name: "postgres_service_connected",
@@ -476,6 +534,25 @@ try {
       actual: tablePresent,
       passed: tablePresent === true,
       detail: "Verified cart_checkout_session table exists in public schema",
+    },
+    {
+      name: "fixture_no_raw_epoch_column_in_db",
+      expected: false,
+      actual: rawEpochColumnExistsInDb,
+      passed: rawEpochColumnExistsInDb === false,
+      detail: `Queried information_schema.columns for public.cart_checkout_session: physical columns = [${physicalColumnNames.join(", ")}]; raw_epoch column is absent`,
+    },
+    {
+      name: "dml_model_declared_schema_epoch_is_number_without_raw_epoch",
+      expected: { epochType: "number", rawEpochDeclared: false },
+      actual: {
+        epochType: CartCheckoutSession.schema?.epoch?.dataType?.name || null,
+        rawEpochDeclared: "raw_epoch" in CartCheckoutSession.schema,
+      },
+      passed:
+        CartCheckoutSession.schema?.epoch?.dataType?.name === "number" &&
+        !("raw_epoch" in CartCheckoutSession.schema),
+      detail: `Inspected CartCheckoutSession.schema: epoch dataType is 'number' and raw_epoch is not declared`,
     },
     {
       name: "fixture_created_via_module_service",
@@ -522,25 +599,18 @@ try {
       detail: "Retrieved via raw pgClient.query",
     },
     {
-      name: "fixture_no_raw_epoch_column_in_db",
-      expected: undefined,
-      actual: rawSqlSession?.raw_epoch,
-      passed: rawSqlSession?.raw_epoch === undefined,
-      detail: "Verified raw_epoch column is absent in database table and model",
-    },
-    {
       name: "fixture_service_and_sql_reconciled",
       expected: true,
       actual:
         retrievedServiceSession?.cart_id === rawSqlSession?.cart_id &&
         Number(retrievedServiceSession?.epoch) === Number(rawSqlSession?.epoch) &&
         retrievedServiceSession?.current_attempt_id === rawSqlSession?.current_attempt_id &&
-        rawSqlSession?.raw_epoch === undefined,
+        rawEpochColumnExistsInDb === false,
       passed:
         retrievedServiceSession?.cart_id === rawSqlSession?.cart_id &&
         Number(retrievedServiceSession?.epoch) === Number(rawSqlSession?.epoch) &&
         retrievedServiceSession?.current_attempt_id === rawSqlSession?.current_attempt_id &&
-        rawSqlSession?.raw_epoch === undefined,
+        rawEpochColumnExistsInDb === false,
       detail: "DML service output reconciles with PostgreSQL physical table state (epoch integer, no raw_epoch)",
     },
     {
@@ -594,10 +664,10 @@ try {
     },
     {
       name: "redis_lock_key_deleted_after_release",
-      expected: null,
-      actual: postReleaseValue,
-      passed: postReleaseValue === null && postReleaseRawValue === null,
-      detail: "Out-of-band Redis GET verified lock key is null after release",
+      expected: false,
+      actual: postReleaseKeyExists,
+      passed: postReleaseKeyExists === false && postReleaseValue === null && postReleaseRawValue === null,
+      detail: "Out-of-band Redis keys scan and GET verified lock key was deleted upon releaseLockStep",
     },
     {
       name: "cart_checkout_session_epoch_unaltered",

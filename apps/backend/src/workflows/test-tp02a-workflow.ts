@@ -14,10 +14,11 @@ export interface TestTp02aWorkflowInput {
 }
 
 export interface InspectRedisLockResult {
-  actualKey: string
+  actualKey: string | null
   exists: boolean
   owner: string | null
   ttl: number
+  prefix: string | null
 }
 
 export const inspectRedisLockStep = createStep<
@@ -43,21 +44,29 @@ export const inspectRedisLockStep = createStep<
     await client.connect()
 
     try {
-      // SafeRedisLockingProvider prefixes all keys with "medusa_lock:"
-      const prefixedKey = "medusa_lock:" + input.key
-      let actualKey = prefixedKey
-      let exists = await client.exists(prefixedKey)
-      if (!exists && (await client.exists(input.key))) {
-        actualKey = input.key
-        exists = 1
+      // Discover the real physical key actually stored in Redis for the logical lock key
+      const matchingKeys = await client.keys("*" + input.key)
+      const matchingKey = matchingKeys.find((k) => k.endsWith(input.key)) || null
+
+      if (matchingKey) {
+        const owner = await client.get(matchingKey)
+        const ttl = await client.ttl(matchingKey)
+        const prefix = matchingKey.slice(0, matchingKey.length - input.key.length)
+        return new StepResponse({
+          actualKey: matchingKey,
+          exists: true,
+          owner,
+          ttl,
+          prefix,
+        })
       }
-      const owner = exists ? await client.get(actualKey) : null
-      const ttl = exists ? await client.ttl(actualKey) : -2
+
       return new StepResponse({
-        actualKey,
-        exists: Boolean(exists),
-        owner,
-        ttl,
+        actualKey: null,
+        exists: false,
+        owner: null,
+        ttl: -2,
+        prefix: null,
       })
     } finally {
       client.disconnect()
