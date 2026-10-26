@@ -32,12 +32,17 @@ for (const [name, byVersion] of pinsByName.entries()) {
   }
 }
 
+const npmCliPath = process.env.npm_execpath
+if (!npmCliPath) {
+  throw new Error("Run this check via npm (npm_execpath is unavailable).")
+}
+
 for (const [name, byVersion] of [...pinsByName.entries()].sort(([a], [b]) => a.localeCompare(b))) {
   for (const [version, manifestPaths] of [...byVersion.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     try {
       const output = execFileSync(
-        "npm",
-        ["view", name + "@" + version, "version", "peerDependencies", "engines", "--json"],
+        process.execPath,
+        [npmCliPath, "view", name + "@" + version, "version", "peerDependencies", "engines", "--json"],
         { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60000 }
       )
       const parsed = JSON.parse(output)
