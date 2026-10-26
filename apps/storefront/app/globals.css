@@ -12,8 +12,11 @@
   --line: #e5eae3;
   /* Thmanyah's license does not permit redistributing/hosting font files.
      The family is used when installed locally, with cross-device fallbacks. */
-  --font-arabic-body: "Thmanyah Sans", "Thmanyah Serif Text", Tahoma, "Segoe UI", Arial, sans-serif;
-  --font-arabic-heading: "Thmanyah Serif Display", "Thmanyah Sans", Tahoma, "Segoe UI", Arial, sans-serif;
+  /* Family names verified against the internal name records of the official ZIP.
+     Local font installation is required; do not commit font binaries or serve WOFF2. */
+  --font-arabic-body: "thmanyah sans", Tahoma, "Segoe UI", Arial, sans-serif;
+  --font-arabic-heading: "thmanyah serif display", "thmanyah sans", Tahoma, "Segoe UI", Arial, sans-serif;
+  --font-arabic-reading: "thmanyah serif text", "thmanyah sans", Tahoma, "Segoe UI", Arial, sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -142,7 +145,7 @@ h1, h2, h3, .brand-text, .footer-title, .category-copy strong {
 .detail-price { color: #187358; font-size: 24px; font-weight: 900; margin: 25px 0; }
 .detail-description, .detail-variants { border-top: 1px solid var(--line); padding-top: 25px; margin-top: 25px; }
 .detail-description h2, .detail-variants h2 { font-size: 18px; }
-.detail-description p { white-space: pre-wrap; color: #657569; line-height: 2.05; font-size: 15px; }
+.detail-description p { white-space: pre-wrap; color: #657569; line-height: 2.05; font-size: 15px; font-family: var(--font-arabic-reading); }
 .detail-variants ul { padding-inline-start: 22px; color: #52695a; line-height: 2; }
 .availability-note { padding: 20px; background: #f3f8f3; border: 1px solid #dce9df; border-radius: 10px; margin: 25px 0; }
 .availability-note strong { font-size: 15px; }
