@@ -118,8 +118,8 @@ async function runTp03Test() {
     const reservationTablePresent = await checkTable("cart_batch_reservation");
     const nativeReservationTablePresent = await checkTable("reservation_item");
 
-    if (!sessionTablePresent || !cartTablePresent || !reservationTablePresent || !nativeReservationTablePresent) {
-      blockerReason = `Required tables missing: cart_checkout_session=${sessionTablePresent}, cart=${cartTablePresent}, cart_batch_reservation=${reservationTablePresent}, reservation_item=${nativeReservationTablePresent}`;
+    if (!sessionTablePresent || !cartTablePresent || !reservationTablePresent) {
+      blockerReason = `Required tables missing: cart_checkout_session=${sessionTablePresent}, cart=${cartTablePresent}, cart_batch_reservation=${reservationTablePresent}`;
       logErr("BLOCKED TP-03: " + blockerReason);
       testStatus = "blocked";
     } else {
@@ -203,7 +203,7 @@ async function runTp03Test() {
         capturedAt: new Date().toISOString(),
         cartCheckoutSession: ccsBeforeRes.rows,
         cartBatchReservation: cbrBeforeRes.rows,
-        nativeReservationItemTablePresent,
+        nativeReservationTablePresent,
         nativeReservationItemCount: nativeResBeforeCount,
       };
 
@@ -237,7 +237,7 @@ async function runTp03Test() {
         capturedAt: new Date().toISOString(),
         cartCheckoutSession: ccsAfterRes.rows,
         cartBatchReservation: cbrAfterRes.rows,
-        nativeReservationItemTablePresent,
+        nativeReservationTablePresent,
         nativeReservationItemCount: nativeResAfterCount,
       };
 
@@ -252,8 +252,12 @@ async function runTp03Test() {
       const beforeCcs = hasExactlyOneBefore ? beforeCcsRows[0] : null;
       const afterCcs = hasExactlyOneAfter ? afterCcsRows[0] : null;
 
-      const nativeBeforeLabel = `\nSELECT COUNT(*) FROM reservation_item;\n-- Count: ${dbBeforeSnapshot.nativeReservationItemCount}\n`;
-      const nativeAfterLabel = `\nSELECT COUNT(*) FROM reservation_item;\n-- Count: ${dbAfterSnapshot.nativeReservationItemCount}\n`;
+      const nativeBeforeLabel = nativeReservationTablePresent
+        ? `\nSELECT COUNT(*) FROM reservation_item;\n-- Count: ${dbBeforeSnapshot.nativeReservationItemCount}\n`
+        : "\n-- table reservation_item is missing from database schema\n";
+      const nativeAfterLabel = nativeReservationTablePresent
+        ? `\nSELECT COUNT(*) FROM reservation_item;\n-- Count: ${dbAfterSnapshot.nativeReservationItemCount}\n`
+        : "\n-- table reservation_item is missing from database schema\n";
 
       dbQueries = {
         before: `-- TP-03 DB Snapshot: Before Worker B\nSELECT * FROM cart_checkout_session WHERE cart_id = '${cartId}';\n` +
