@@ -290,11 +290,52 @@ This section documents the concrete implementation plan for the first three cano
   - `docs/data-model.md` §3.1 lines 220-239 defines `cart_batch_reservation` (pre-order reservations created during checkout).
   - `docs/data-model.md` §3.1 lines 320-334 defines `order_batch_allocation` (permanent batch allocations created upon order conversion).
   - `docs/order-and-inventory-workflows.md` §2.1 Stage 2 lines 218-222 specifies that on Redis lock timeout (>5s), the workflow catches `LockTimeoutError`, deletes any pending idempotency lease via CAS, and returns HTTP 409 Conflict without mutating session epoch or reserving stock.
-- **What must be implemented in `apps/backend`:**
-  - Checkout workflow entrypoint or endpoint route in `apps/backend` (e.g. `POST /store/carts/:id/complete` or custom checkout workflow) that calls `acquireLockStep` with a 5-second timeout.
-  - Exception mapping: error handler that intercepts `LockTimeoutError` and maps it to HTTP 409 Conflict with an explanatory error payload.
-  - Cart integrity guard: ensuring that on lock timeout, no reservation rows are inserted into `cart_batch_reservation`, no allocation rows are inserted into `order_batch_allocation`, and `cart_checkout_session.epoch` and `current_attempt_id` remain completely unaltered in PostgreSQL.
-  - Concurrency harness script: `apps/backend/scripts/test-tp03-concurrent-lock-rejection.mjs` (status: to be created) coordinating Worker A (lock holder) and Worker B (competing requester).
+  - `docs/architecture.md` §4.2 lines 130-165 specifies the explicit separation of Redis cart lock (`timeout = 5s, ttl = 120s`) from PostgreSQL lease authority, and CAS abort on Redis lock acquisition failure.
+
+#### Concrete TP-03 Specification and Implementation Plan
+
+The following concrete requirements define the execution contract for TP-03 (planning only; not implemented or executed in this commit):
+
+1. **Minimum Checkout Entry Point (Workflow Contract):**
+   - Must be implemented as an internal Medusa workflow (e.g. `checkoutEntrypointWorkflow` or `stage2CheckoutLockWorkflow`), not a public storefront feature.
+   - The workflow invokes `acquireLockStep({ key: "cart:" + cartId, ttl: 120, timeout: 5, ownerId: workerBId })` via the real Medusa container.
+   - Contention setup: Worker A acquires and holds `cart:<cartId>` in Redis (with TTL = 120s, owner = `workerAId`).
+   - Worker B executes the workflow against the same cart. After 5 seconds of Redis contention, `acquireLockStep` times out and throws `LockTimeoutError`.
+   - The entry point catches `LockTimeoutError` and maps it to a structured 409 Conflict representation (status `409`, code `"LOCK_TIMEOUT"`, message `"Cart checkout lock timeout"`).
+
+2. **Tables Asserted Unchanged and Snapshot Protocol:**
+   - Snapshots captured immediately before Worker B execution (`db-before.sql` / `db-before.json`) and immediately after Worker B failure (`db-after.sql` / `db-after.json`).
+   - Exact tables and columns verified identical:
+     - `cart_checkout_session`: exactly 1 row; `epoch`, `current_attempt_id`, `status`, `created_at`, `updated_at`, `deleted_at` match before and after.
+     - `cart_batch_reservation`: exactly 0 rows for the cart under test before and after.
+     - `order_batch_allocation`: exactly 0 rows for the cart/order under test before and after.
+     - Native Medusa inventory `reservation_item`: exactly 0 rows for the cart/variant under test before and after (verifying native reservations were not triggered).
+   - Snapshot queries executed via direct PostgreSQL client and recorded in formatted evidence tables.
+
+3. **Wall-Clock Contention Duration Measurement:**
+   - Worker B's execution duration is measured using high-resolution wall-clock timing (`performance.now()`).
+   - Timing begins immediately before calling Worker B's workflow execution and ends immediately when the 409 / `LockTimeoutError` is caught.
+   - Assertion requirement: elapsed duration must be `5.0` seconds plus or minus `0.5` seconds (`4.5s <= duration <= 5.5s`).
+
+4. **Out-of-Band Redis Preserved-Lock Verification:**
+   - After Worker B fails and the error is asserted, an out-of-band Redis client directly inspects the lock key `medusa_lock:cart:<cartId>`.
+   - Assertions:
+     - Key exists in Redis (`EXISTS === 1`).
+     - Key owner still matches Worker A (`GET === workerAId`).
+     - Remaining TTL is positive (`TTL > 0`).
+     - Proves Worker B did not overwrite, preempt, or delete Worker A's held lock.
+
+5. **Size Cap and Shared Harness Architecture:**
+   - Total size cap: The TP-03 runner script (`apps/backend/scripts/test-tp03-concurrent-lock-rejection.mjs`) and any new helpers must stay around **400 lines or less**.
+   - Shared harness module: Extract reusable container bootstrap, PostgreSQL inspection client, Redis client, disposable target validation, and evidence serialization from `test-tp02a-distributed-lock.mjs` into a shared module (e.g. `apps/backend/scripts/shared/tp-container-harness.mjs`).
+   - Zero-regression constraint: Refactoring TP-02a to use the shared harness must not alter TP-02a runtime behavior, assertions, or CI green status.
+
+6. **Unanswered Design Questions (Document Gaps Flagged):**
+   - **HTTP-409 Mapping Location:** `docs/order-and-inventory-workflows.md` §2.1 specifies returning "HTTP 409 Conflict", but Medusa v2 workflows throw errors (or `WorkflowExecutionError`) rather than returning HTTP responses directly. The documents do not specify whether the 409 mapping lives in a custom API route layer (`apps/backend/src/api/store/carts/[id]/complete/route.ts`), an Express middleware / Medusa error interceptor, or an internal workflow-level response object. For TP-03, does the test invoke a custom API route or the workflow directly?
+   - **Stage 1 Idempotency Lease Interaction:** `docs/order-and-inventory-workflows.md` §2.1 specifies Stage 1 (PostgreSQL `idempotency_key` lease) runs before Stage 2 (Redis lock), and on lock timeout executes CAS deletion (`DELETE FROM idempotency_key WHERE key = :idempotency_key AND lease_owner_id = :executionId`). The documents do not specify whether TP-03 includes Stage 1 and asserts the CAS lease deletion, or tests Stage 2 in isolation.
+   - **Worker A Setup Mechanism:** The documents specify Worker A "holds" the lock, but do not specify whether Worker A should hold it via direct Redis `SET NX EX` with the configured prefix, via an active long-running workflow instance, or via a child worker process.
+   - **Custom Reservation Schema Availability in Phase 1:** `cart_batch_reservation` and `order_batch_allocation` are defined in `docs/data-model.md` §3.1, but their DML models and migrations do not exist yet in Phase 1. The test must clarify whether TP-03 creates minimal placeholder tables for these models or performs conditional existence checks.
+
 - **Fixtures needed:**
   - Disposable PostgreSQL container (`postgres:16.15-alpine`).
   - Disposable Redis container (`redis:7.2.16-alpine`).
