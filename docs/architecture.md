@@ -62,7 +62,7 @@ In Medusa v2 default configuration, all modules share a single PostgreSQL databa
 
 ## 3. Pinned Technology Version Matrix
 
-**Phase 1 spike candidate-cohort update (2026-10-26):** Phase 0 originally selected a common stable `2.21.2` cohort. The Phase 1 branch uses exact direct Medusa pins at `2.22.1`; latest CI on `d031048` passed metadata, strict install, lint, disposable PostgreSQL migrations, both builds, Redis adapter regression, TP-02a and TP-03 steps. Those results are compatibility and narrow workflow evidence, not final compatibility sign-off or acceptance of all TP behavior. TP-02b/02c are being added in the current uncommitted worktree; see `docs/phase1-tp-case-matrix.md`. Store feature development remains blocked.
+**Phase 1 spike candidate-cohort update (2026-10-26):** Phase 0 originally selected 2.21.2. Phase 1 uses exact Medusa 2.22.1 pins. Code commit 4ad59a6 passed strict install, metadata/tree checks, lint, migrations, both builds, TP-02a/02b/02c/03 and rollback in disposable CI services. These are compatibility and narrow component/workflow results, not independent acceptance. TP-02c/TP-03 lack HTTP 409 coverage; TP-03 inventory evidence is table-wide on an empty cart. See docs/phase1-tp-case-matrix.md. Store feature development remains blocked.
 
 | Component | Candidate pin / support stream | Rationale and evidence status |
 |---|---|---|
