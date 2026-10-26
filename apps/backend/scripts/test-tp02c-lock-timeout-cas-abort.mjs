@@ -112,6 +112,8 @@ async function runTp02cTest() {
   let containerDetails = null;
   let caughtException = null;
   const cleanupErrors = [];
+  const interleaving = [];
+  const record = (event) => interleaving.push({ event, at: new Date().toISOString() });
 
   try {
     pgClient = createPgClient(databaseUrl);
@@ -192,6 +194,7 @@ async function runTp02cTest() {
       await lockingService.acquire(lockKey, { ownerId: workerAId, expire: 120 });
       const workerAInRedisVal = await redisClient.get(createdRedisPrefixedKey);
       const workerATtl = await redisClient.ttl(createdRedisPrefixedKey);
+      record("worker_a_lock_acquired_and_inspected");
 
       // 4. Create database leases before lock attempt
       // - Worker B pending lease (the one that should be CAS-aborted on timeout)
@@ -224,13 +227,14 @@ async function runTp02cTest() {
       // Capture pre-contention database snapshot
       const queryLeases = async () => {
         const res = await pgClient.query(
-          "SELECT key, status, lease_owner_id, locked_at, last_heartbeat_at FROM idempotency_key WHERE key IN ($1, $2, $3) ORDER BY key",
+          "SELECT * FROM idempotency_key WHERE key IN ($1, $2, $3) ORDER BY key",
           [workerBKey, workerCKey, workerBCompletedKey]
         );
         return res.rows;
       };
 
       const beforeLeases = await queryLeases();
+      const sessionBefore = await pgClient.query("SELECT * FROM cart_checkout_session WHERE cart_id = $1", [cartId]);
       // Exercise the guards against the SAME keys: unrelated control keys
       // alone cannot detect a missing owner/status predicate in the DELETE.
       const resolvePgConnection = () => container.resolve(ContainerRegistrationKeys.PG_CONNECTION);
@@ -241,6 +245,7 @@ async function runTp02cTest() {
         { idempotencyKey: workerBCompletedKey, ownerId: workerBId }, resolvePgConnection
       );
       const afterGuardProbes = await queryLeases();
+      record("same_key_guard_probes_completed");
       assertions.push({
         name: "same_key_wrong_owner_and_completed_lease_cas_probes_are_noops",
         category: "behavioral",
@@ -252,12 +257,14 @@ async function runTp02cTest() {
       dbBeforeSnapshot = {
         capturedAt: new Date().toISOString(),
         leases: beforeLeases,
+        session: sessionBefore.rows,
         redisLock: { key: createdRedisPrefixedKey, owner: workerAInRedisVal, ttl: workerATtl },
       };
 
       // 5. Worker B executes workflow against same cart with timeout 5 and idempotencyKey
       log(`Worker B (${workerBId}) executing stage2CheckoutLockWorkflow with timeout=5s and idempotencyKey=${workerBKey}...`);
       const startMs = performance.now();
+      record("worker_b_workflow_started");
       let workerBCaughtError = null;
       try {
         const workflow = stage2CheckoutLockWorkflow(container);
@@ -274,16 +281,20 @@ async function runTp02cTest() {
         workerBCaughtError = err;
       }
       const durationSeconds = (performance.now() - startMs) / 1000;
+      record("worker_b_workflow_finished");
       log(`Worker B finished in ${durationSeconds.toFixed(3)}s with error: ${workerBCaughtError?.message || "none"}`);
 
       // 6. Capture post-contention database snapshot
       const afterLeases = await queryLeases();
       const postWorkerAVal = await redisClient.get(createdRedisPrefixedKey);
       const postWorkerATtl = await redisClient.ttl(createdRedisPrefixedKey);
+      const sessionAfter = await pgClient.query("SELECT * FROM cart_checkout_session WHERE cart_id = $1", [cartId]);
+      record("post_timeout_sql_and_redis_inspected");
 
       dbAfterSnapshot = {
         capturedAt: new Date().toISOString(),
         leases: afterLeases,
+        session: sessionAfter.rows,
         redisLock: { key: createdRedisPrefixedKey, owner: postWorkerAVal, ttl: postWorkerATtl },
       };
 
@@ -299,6 +310,9 @@ async function runTp02cTest() {
 
       const add = (name, category, expected, actual, passed, detail) =>
         assertions.push({ name, category, expected, actual, passed, detail });
+      add("checkout_session_exactly_one_and_unchanged", "behavioral", sessionBefore.rows, sessionAfter.rows,
+        sessionBefore.rowCount === 1 && sessionAfter.rowCount === 1 && JSON.stringify(sessionBefore.rows) === JSON.stringify(sessionAfter.rows),
+        "CAS lease abort preserves every session field including epoch and deleted_at.");
 
       add("target_services_verified_disposable", "safety", true, disposableCheck?.verified === true, disposableCheck?.verified === true, `Profile: ${disposableCheck?.executionProfile}`);
       add("disposable_validator_self_checks_passed", "safety", validatorSelfCheck.total, validatorSelfCheck.passed, validatorSelfCheck.allPassed === true, `${validatorSelfCheck.passed}/${validatorSelfCheck.total} passed`);
@@ -406,6 +420,7 @@ async function runTp02cTest() {
     dbAfter: dbAfterSnapshot,
     dbQueries,
     containerDetails,
+    interleaving,
   });
 
   if (testStatus === "passed") {

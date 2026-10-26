@@ -33,15 +33,6 @@ const groups = {
   F: new Set(["TP-21a", "TP-21b", "TP-21c", "TP-21d", "TP-21e", "TP-21f", "TP-22a", "TP-22b", "TP-23a", "TP-23b", "TP-23c", "TP-23d", "TP-23f"]),
   G: new Set(["TP-25a", "TP-25b", "TP-25c", "TP-25d", "TP-24b"])
 };
-const blockerByGroup = {
-  A: "Required real cart/checkout workflow fixtures and step integration are absent. The Redis adapter has separate passing tests, but those do not exercise Medusa cart creation or the native checkout lock workflow.",
-  B: "Custom checkout guards, session/epoch/idempotency persistence, and the workflow/route that enforces their HTTP behavior are absent.",
-  C: "Custom batch inventory, reservation ledger, movement schema, lock protocol, and database triggers/migrations are absent.",
-  D: "The required cart-to-order correlation, idempotent conversion, crash checkpoints, recovery, and fencing workflows are absent.",
-  E: "The custom Egypt shipping-zone provider/rate data and guest claim/session routes are absent.",
-  F: "The custom return/refund schema, immutable records, lifecycle services, database triggers, dual-control and capacity guards are absent.",
-  G: "The provider-neutral electronic-payment/COD records, webhook simulator/verification, payout/reconciliation and payment recovery workflows are absent."
-};
 const requiredTokensById = {
   "TP-01": ["checkout_line_key", "cart"],
   "TP-02a": ["acquireLockStep"],
@@ -190,6 +181,8 @@ await db.end();
 const dbQuery = "SELECT table_schema, table_name FROM information_schema.tables WHERE " +
   "table_schema NOT IN ('pg_catalog', 'information_schema') AND table_type = 'BASE TABLE' " +
   "ORDER BY table_schema, table_name;\n";
+const runnableCount = parsed.filter((item) => Object.hasOwn(runnableBoundaries, item.id) &&
+  (requiredTokensById[item.id] || []).every((token) => combinedSource.includes(token))).length;
 const summary = {
   assessmentType: "readiness-only; no TP behavior was executed or simulated",
   commitSha,
@@ -199,8 +192,8 @@ const summary = {
   behavioralTestsExecuted: 0,
   passed: 0,
   failed: 0,
-  blocked: parsed.length - Object.keys(runnableBoundaries).length,
-  notExecuted: Object.keys(runnableBoundaries).length,
+  blocked: parsed.length - runnableCount,
+  notExecuted: runnableCount,
   packageLockSha256: lockSha256,
   nodeVersion,
   npmVersion,

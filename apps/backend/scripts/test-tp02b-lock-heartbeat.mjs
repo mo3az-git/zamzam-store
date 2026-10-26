@@ -397,6 +397,10 @@ async function executeTp02b() {
     }
 
     await new Promise((resolve) => setTimeout(resolve, 10))
+    // Force observable TTL decay so a fake/no-op renewal cannot pass merely
+    // because the freshly acquired 120-second lock still exists.
+    await redisClient.pexpire(prefixedRedisLockKey, 10_000)
+    const ttlBeforeRenewal = await redisClient.ttl(prefixedRedisLockKey)
     // The timer callback deliberately returns void. Join its in-flight tick;
     // awaiting the callback itself would race the real Redis/SQL operations.
     scheduled.callback()
@@ -429,8 +433,8 @@ async function executeTp02b() {
     assert(
       "redis_extendlock_success_updates_pending_lease_heartbeat",
       { outcome: "renewed", rowCount: 1, heartbeatAdvanced: true },
-      { outcome: successOutcome, rowCount: successOutcome?.heartbeatUpdatedRows, heartbeatAdvanced: advancedHeartbeat, ttl: ttlAfterSuccess },
-      successOutcome?.status === "renewed" && successOutcome?.heartbeatUpdatedRows === 1 && advancedHeartbeat && ttlAfterSuccess > 0,
+      { outcome: successOutcome, rowCount: successOutcome?.heartbeatUpdatedRows, heartbeatAdvanced: advancedHeartbeat, ttlBeforeRenewal, ttl: ttlAfterSuccess },
+      successOutcome?.status === "renewed" && successOutcome?.heartbeatUpdatedRows === 1 && advancedHeartbeat && ttlBeforeRenewal > 0 && ttlBeforeRenewal <= 10 && ttlAfterSuccess > 110 && ttlAfterSuccess <= 120,
       "The actual provider Redis extendLock returned 1 before the guarded PostgreSQL UPDATE ran."
     )
 

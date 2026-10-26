@@ -221,6 +221,10 @@ jobs:
           set -o pipefail
           npm run spike:migration-rollback 2>&1 | tee artifacts/migration-rollback-isolated.log
 
+      - name: Summarize all 59 current-commit TP execution outcomes
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        run: node scripts/summarize-phase1-evidence.mjs
+
       - name: Upload Phase 1 evidence
         if: always()
         uses: actions/upload-artifact@v4
