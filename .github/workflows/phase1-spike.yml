@@ -140,6 +140,12 @@ jobs:
           set -o pipefail
           npm run spike:tp-readiness 2>&1 | tee artifacts/tp-readiness-assessment.log
 
+      - name: Verify disposable target service validator
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run spike:target-validator 2>&1 | tee artifacts/disposable-target-validator.log
+
       - name: Run TP-02a distributed cart lock test
         shell: bash
         run: |
