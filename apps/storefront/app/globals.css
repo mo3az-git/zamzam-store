@@ -97,7 +97,7 @@ h3, .brand-text, .footer-title { font-family: var(--font-arabic-body); }
 .site-header { background: #fffefa; border-bottom: 1px solid var(--line); position: relative; z-index: 5; }
 .nav-layout { display: flex; align-items: center; justify-content: space-between; min-height: 82px; gap: 20px; }
 .brand { display: inline-flex; align-items: center; gap: 11px; font-weight: 800; font-size: 23px; white-space: nowrap; }
-.brand-icon { display: inline-grid; place-items: center; width: 45px; height: 45px; color: white; background: var(--green); border-radius: 14px 3px 14px 3px; font-family: Georgia, serif; font-size: 29px; }
+.brand-icon { display: inline-grid; place-items: center; width: 45px; height: 45px; color: white; background: var(--green); border-radius: 14px 3px 14px 3px; font-family: var(--font-arabic-heading); font-weight: 900; font-size: 29px; }
 .brand-text { display: inline-flex; flex-direction: column; line-height: 1; gap: 6px; }
 .brand-text small { font: 700 9px/1 Arial, sans-serif; letter-spacing: .28em; color: #8a9f97; direction: ltr; }
 .nav-links { display: flex; align-items: center; gap: 38px; font-size: 14px; font-weight: 700; }
@@ -128,7 +128,7 @@ h3, .brand-text, .footer-title { font-family: var(--font-arabic-body); }
 .ring-one { width: 420px; height: 420px; }
 .ring-two { width: 480px; height: 480px; border-style: dashed; }
 .hero-center { width: 240px; height: 240px; border-radius: 50%; background: #f4f9ed; box-shadow: 0 14px 50px #194d3a25; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 8px; position: relative; z-index: 1; }
-.hero-mark { font-size: 95px; color: #216b53; line-height: 1.2; font-family: Georgia, serif; }
+.hero-mark { font-size: 95px; color: #216b53; line-height: 1.2; font-family: var(--font-arabic-heading); font-weight: 900; }
 .hero-center span { font-size: 22px; color: #275c49; font-weight: 800; }
 .hero-art-caption { position: absolute; bottom: 13px; font: 700 11px Arial, sans-serif; letter-spacing: .3em; color: #638e7b; direction: ltr; }
 
