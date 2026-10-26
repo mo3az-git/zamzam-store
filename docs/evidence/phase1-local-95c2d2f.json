@@ -1,0 +1,517 @@
+{
+  "testedCommit": "95c2d2f7e5adcf6855dc72bb2500fe5208a2ed94",
+  "finishedAt": "2026-10-26T17:48:18.7305150Z",
+  "node": "v24.22.1",
+  "testCommand": "./scripts/run-local-spike.ps1 -PostgresBin artifacts/tools/postgresql-runtime/pgsql/bin -SkipInstall",
+  "strictInstallSkipped": true,
+  "targeted": false,
+  "cleanupErrors": [],
+  "services": {
+    "postgresVersion": "postgres (PostgreSQL) 16.15",
+    "redisVersion": "Redis server v=7.2.16 sha=00000000:0 malloc=libc bits=64 build=b384acb61e356827",
+    "postgresExecutableSha256": "8192A1B2E02F9546B4FC775519C5CA719F2BFA1D6A4A7AC6F3258C5E4DA39E5D",
+    "redisExecutableSha256": "816E0707ABA306ED3C8662299EEB05FC11C0EFC3E7C0858D75D3849E04334BB4"
+  },
+  "steps": [
+    {
+      "name": "migrations",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\npm.cmd run db:migrate",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/migrations.log"
+    },
+    {
+      "name": "spike-registry",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\npm.cmd run spike:registry",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/spike-registry.log"
+    },
+    {
+      "name": "spike-lint-harness",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\npm.cmd run spike:lint-harness",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/spike-lint-harness.log"
+    },
+    {
+      "name": "lint",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\npm.cmd run lint",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/lint.log"
+    },
+    {
+      "name": "spike-medusa-loader",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\npm.cmd run spike:medusa-loader",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/spike-medusa-loader.log"
+    },
+    {
+      "name": "build-backend",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\npm.cmd run build:backend",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/build-backend.log"
+    },
+    {
+      "name": "build-storefront",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\npm.cmd run build:storefront",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/build-storefront.log"
+    },
+    {
+      "name": "spike-target-validator",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\npm.cmd run spike:target-validator",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/spike-target-validator.log"
+    },
+    {
+      "name": "spike-tp02b-unit",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\npm.cmd run spike:tp02b-unit",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/spike-tp02b-unit.log"
+    },
+    {
+      "name": "spike-tp02c-unit",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\npm.cmd run spike:tp02c-unit",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/spike-tp02c-unit.log"
+    },
+    {
+      "name": "spike-tp03-negative-control",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\npm.cmd run spike:tp03-negative-control",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/spike-tp03-negative-control.log"
+    },
+    {
+      "name": "dependency-tree",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\npm.cmd ls --all",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/dependency-tree.log"
+    },
+    {
+      "name": "redis-adapter",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\npm.cmd run spike:locking-redis --workspace @zamzam/backend",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/redis-adapter.log"
+    },
+    {
+      "name": "readiness",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\npm.cmd run spike:tp-readiness",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/readiness.log"
+    },
+    {
+      "name": "TP-02a",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\node.exe scripts/run-tp-with-evidence.mjs TP-02a",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/TP-02a.log"
+    },
+    {
+      "name": "TP-02b",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\node.exe scripts/run-tp-with-evidence.mjs TP-02b",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/TP-02b.log"
+    },
+    {
+      "name": "TP-02c",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\node.exe scripts/run-tp-with-evidence.mjs TP-02c",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/TP-02c.log"
+    },
+    {
+      "name": "TP-03",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\node.exe scripts/run-tp-with-evidence.mjs TP-03",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/TP-03.log"
+    },
+    {
+      "name": "TP-04a",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\node.exe scripts/run-tp-with-evidence.mjs TP-04a",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/TP-04a.log"
+    },
+    {
+      "name": "TP-04b",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\node.exe scripts/run-tp-with-evidence.mjs TP-04b",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/TP-04b.log"
+    },
+    {
+      "name": "TP-21c",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\node.exe scripts/run-tp-with-evidence.mjs TP-21c",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/TP-21c.log"
+    },
+    {
+      "name": "migration-rollback",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\npm.cmd run spike:migration-rollback",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/migration-rollback.log"
+    },
+    {
+      "name": "execution-matrix",
+      "command": "<repository>\\artifacts\\tools\\node-v24.22.1-win-x64\\node.exe scripts/summarize-phase1-evidence.mjs",
+      "exitCode": 0,
+      "log": "artifacts/local-services/a469f23a-67ab-4af6-bfbf-d31e298a9fba/execution-matrix.log"
+    }
+  ],
+  "cases": [
+    {
+      "id": "TP-02a",
+      "status": "passed",
+      "assertions": 39,
+      "processExitCode": 0,
+      "command": "node apps/backend/scripts/test-tp02a-distributed-lock.mjs",
+      "boundary": "behavioral acceptance test",
+      "sourceWorkingTreeDirty": false,
+      "digests": {
+        "result.json": "12fbc7e34c6476f9ba487ad55cfac597b54a504bdc9c04cbdf268556bcb72b40",
+        "assertions.json": "e4554268080086597ac89d5006aaba92c47882fd2cc35c9e357e019c4262fdfc",
+        "stdout.log": "bc1130bc4034418a5d57fff946a8d0545519396768785a0bacf8503df31c3eca",
+        "stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "db-before.json": "c371e5fbb334e325463c08cce261f0cbe16c2b5e90c425385131ebe3c93df275",
+        "db-after.json": "1edfdd8a261d76aeb4665bfe4931dfc460befbf9915f9547c525b9be6691d6f1"
+      }
+    },
+    {
+      "id": "TP-02b",
+      "status": "passed",
+      "assertions": 14,
+      "processExitCode": 0,
+      "command": "node apps/backend/scripts/test-tp02b-lock-heartbeat.mjs",
+      "boundary": "behavioral test (worker-component boundary; no HTTP checkout route)",
+      "sourceWorkingTreeDirty": false,
+      "digests": {
+        "result.json": "28d3806af5b691eaf4fd8deddb5937ad2e6f0805e68c88f21134561379f6c702",
+        "assertions.json": "e6da834de15f148aaa250eb91b10088550f3157a16d8c63fd4bc79f6bbd580df",
+        "stdout.log": "57c66ef275ab48da4f5504461d6bfd0a78afee56d005bf21c69f546b62d33a0f",
+        "stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "db-before.json": "93456046d1e86383029035960eb3962e8643072e27799e3411121a4b007baf70",
+        "db-after.json": "392a14ceb9474b1383f6e003b20d5fbce9a432c8e0dd2ca1a15ad83681c10bdb"
+      }
+    },
+    {
+      "id": "TP-02c",
+      "status": "passed",
+      "assertions": 37,
+      "processExitCode": 0,
+      "command": "node apps/backend/scripts/test-checkout-lock-http.mjs TP-02c",
+      "boundary": "original workflow assertions plus real prototype checkout-lock HTTP stage; no full checkout/order conversion",
+      "sourceWorkingTreeDirty": false,
+      "digests": {
+        "result.json": "434f1a4dba6e465af9c4998abfd592a256f6e24adba4bb647b8c1c4e83cb8f12",
+        "assertions.json": "4de103557c0f5b1869c1e450d074f4eb991259b99834697b3b35f32bac1c88e1",
+        "stdout.log": "22f59ceb8d275abe64a68d19027fc603fc004c91d149212cec484664ecacb635",
+        "stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "db-before.json": "955536c60c959152321ec2ae209b0f5aeb4f384ace67eb8571031fde88df2a6a",
+        "db-after.json": "f0ef485c3f0e3b0a9d4fff20a8a111e6e4b52cb9130c97cefdc4374c1b67767e"
+      }
+    },
+    {
+      "id": "TP-03",
+      "status": "passed",
+      "assertions": 48,
+      "processExitCode": 0,
+      "command": "node apps/backend/scripts/test-checkout-lock-http.mjs TP-03",
+      "boundary": "original workflow assertions plus real prototype checkout-lock HTTP stage; no full checkout/order conversion",
+      "sourceWorkingTreeDirty": false,
+      "digests": {
+        "result.json": "f191c05304f102943f5c21eaf0e7d8bf3a10d69c0aab1044d2f9affae19bb55d",
+        "assertions.json": "22185ab403cbcc8face334829b84fe4887623a4822f8adbe6d3b5bb1046b7018",
+        "stdout.log": "ed9c15f072194014879320557864681504f82972ca346e9347eb69f961f1fa7a",
+        "stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "db-before.json": "efd899b3619962fcf057e90a533d67f7dcc27621281dc56f3be4669b219e9b31",
+        "db-after.json": "680106dee86338dd45985be2f47b1ed55e5e24b4923158d740af2afb88828ef5"
+      }
+    },
+    {
+      "id": "TP-04a",
+      "status": "passed",
+      "assertions": 18,
+      "processExitCode": 0,
+      "command": "node apps/backend/scripts/test-cart-mutation-http.mjs TP-04a",
+      "boundary": "real native HTTP mutation routes; no cart creation TP-01 or recovery-controller execution",
+      "sourceWorkingTreeDirty": false,
+      "digests": {
+        "result.json": "1e4e4e04f086d692ebdf738fdf63797255e0d075c4adedae622eb8586197ec94",
+        "assertions.json": "55aa1d24703d524184b615755afc16c19a46ec4d03db083ffbe0f7749533b74f",
+        "stdout.log": "bb01d61a272338316f5655ea3077d00e491089a9cab3124388b80069125348ba",
+        "stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "db-before.json": "d8240e2396a8098ed962ae36031dce7b8c2d60f51baaf59042fa7f5f10ae5631",
+        "db-after.json": "d8240e2396a8098ed962ae36031dce7b8c2d60f51baaf59042fa7f5f10ae5631"
+      }
+    },
+    {
+      "id": "TP-04b",
+      "status": "passed",
+      "assertions": 10,
+      "processExitCode": 0,
+      "command": "node apps/backend/scripts/test-cart-mutation-http.mjs TP-04b",
+      "boundary": "real native HTTP mutation routes; no cart creation TP-01 or recovery-controller execution",
+      "sourceWorkingTreeDirty": false,
+      "digests": {
+        "result.json": "187f54ec655d3940a50a021bd90b41f7cf7052b811285dd302c4582dcf351333",
+        "assertions.json": "4344485385f1205335bacd6251278ffd73e3a62bbe1200946a4a473a704bc0b4",
+        "stdout.log": "f089c2ed0803c671acae81df6464c1b8136126c4e6efa01c734904510deda7cb",
+        "stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "db-before.json": "3ce62d10bade79f8a00e624e92e9538b5f981239adf34df1bd55fd5fac1c6937",
+        "db-after.json": "3ce62d10bade79f8a00e624e92e9538b5f981239adf34df1bd55fd5fac1c6937"
+      }
+    },
+    {
+      "id": "TP-21c",
+      "status": "passed",
+      "assertions": 12,
+      "processExitCode": 0,
+      "command": "node apps/backend/scripts/test-tp21c-refund-identity.mjs",
+      "boundary": "real Medusa system_security cryptography component; no refund persistence or payout-provider claim",
+      "sourceWorkingTreeDirty": false,
+      "digests": {
+        "result.json": "9490dc743a9e53bf4ae9cee214c4ceed50f0f130daac98fa2604dfe73dec7908",
+        "assertions.json": "7e2252b09a69d5bf2aab94db43e7ed4e9719c92218aefdbe1a8c9533209de6d2",
+        "stdout.log": "5c73f5444af9e13186020ee03f9d26fa6c8d0b735d22ef672965323dac5cbc32",
+        "stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "db-before.json": "71553cf4359b4e9679613e88600e81f316d0f80212c1da3f56c06fd006e7585d",
+        "db-after.json": "71553cf4359b4e9679613e88600e81f316d0f80212c1da3f56c06fd006e7585d"
+      }
+    }
+  ],
+  "all59Statuses": [
+    {
+      "id": "TP-01",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-02a",
+      "status": "passed"
+    },
+    {
+      "id": "TP-02b",
+      "status": "passed"
+    },
+    {
+      "id": "TP-02c",
+      "status": "passed"
+    },
+    {
+      "id": "TP-03",
+      "status": "passed"
+    },
+    {
+      "id": "TP-04a",
+      "status": "passed"
+    },
+    {
+      "id": "TP-04b",
+      "status": "passed"
+    },
+    {
+      "id": "TP-05",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-06a",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-06b",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-07a",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-07b",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-08a",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-08b",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-09",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-10",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-11",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-12a",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-12b",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-12c",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-13a",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-13b",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-13c",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-13d",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-13e",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-13f",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-13g",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-14a",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-14b",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-15a",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-15b",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-15c",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-16",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-17",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-18",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-19",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-20a",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-20b",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-21a",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-21b",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-21c",
+      "status": "passed"
+    },
+    {
+      "id": "TP-21d",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-21e",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-21f",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-22a",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-22b",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-23a",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-23b",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-23c",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-23d",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-23e",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-23f",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-24a",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-24b",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-24c",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-25a",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-25b",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-25c",
+      "status": "blocked"
+    },
+    {
+      "id": "TP-25d",
+      "status": "blocked"
+    }
+  ],
+  "gate": "NOT READY — BLOCKERS REMAIN",
+  "formalAcceptance": 0,
+  "note": "Derived from the clean-commit local run; digests identify its retained raw files. Independently reviewed acceptance is not claimed. Native Windows services differ from CI Linux image distributions."
+}
