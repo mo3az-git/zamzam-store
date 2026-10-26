@@ -50,6 +50,9 @@ export default defineConfig({
       resolve: "./src/modules/system-security"
     },
     {
+      resolve: "./src/modules/order-operations"
+    },
+    {
       resolve: "@medusajs/medusa/locking",
       options: {
         providers: [
