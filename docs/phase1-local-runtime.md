@@ -48,6 +48,19 @@ it is recorded in the run manifest. `-Targeted -Cases TP-04a,TP-04b` runs migrat
 and those behavioral cases on fresh services without repeating the baseline
 build/unit/rollback suite. A targeted pass is not a full-suite pass.
 
+The inventory ledger cases can be run without TP-01:
+
+```powershell
+./scripts/run-local-spike.ps1 -SkipInstall -Targeted -Cases TP-06a,TP-06b,TP-07a,TP-24c
+```
+
+The default full run includes these four inventory cases and the migration 6
+UP/DOWN/UP rollback assertions. The ledger harness creates uniquely named,
+guarded disposable databases and temporary roles only inside its isolated
+PostgreSQL cluster, then drops resources it created. TP-24c verifies both an
+application role's table privileges and the database trigger's immutable-row
+boundary; this is test-only role provisioning, not a production migration role.
+
 The runner refuses occupied ports 5432/6379. It creates a fresh PostgreSQL cluster
 under `artifacts/local-services/<UUID>/`, binds both servers to 127.0.0.1, creates
 only `zamzam_spike`, and enables the existing strict disposable-target validator.
@@ -84,6 +97,15 @@ modified sources are not treated as clean-commit evidence.
   container, with PostgreSQL/Redis running. It checks stable HMAC/request hashes,
   fresh AES-256-GCM nonces, decryption and tamper rejection. It does not create a
   refund, enforce refund roles/capacity or contact a payout provider.
+- TP-06a/TP-06b/TP-07a execute the real `InventoryLedger` against native Medusa
+  cart/product services and PostgreSQL. They cover FEFO reservation, exact
+  replay, conflicting intent, ledger divergence, rollback, concurrency and
+  pre-order expiry release. They do not create or convert an order, and expiry
+  cleanup is allowed only while the checkout attempt remains pre-order.
+- TP-24c uses a temporary unprivileged app role and a separate inventory-writer
+  role in the disposable cluster to show that revoked table access and the
+  movement immutability trigger hold independently. It does not provision
+  application roles in deployable migrations.
 
 The crypto component requires backend-only `HMAC_KEY` (at least 32 UTF-8 bytes)
 and `REFUND_ENCRYPTION_KEY` (32 random bytes encoded as 64 hex characters). Tests

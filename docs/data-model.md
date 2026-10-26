@@ -145,6 +145,8 @@ Depots and fulfillment facilities located in Egypt.
 
 #### `inventory_batch`
 The authoritative physical lot tracking entity for FEFO dispatch, landed costing, and expiry management.
+
+**Phase 1 physical implementation:** migration `Migration20261026000006_CreateInventoryLedger` creates this table with supplier/location foreign keys, unique receipt-operation identity, checked nonnegative on-hand/reserved/quarantined balances, the tri-balance rule, and the documented numeric cost fields. A receipt operation inserts the zero-balance row and its first `receipt` movement atomically. Reservations and cleanup change balances only with corresponding immutable movement rows. See [the inventory ledger implementation boundary](phase1-inventory-ledger.md) for current local/CI runner scope and limitations.
 | Column Name | Type | Constraints | Description |
 |---|---|---|---|
 | `id` | VARCHAR(255) | PK | Unique ID (`bat_...`) |

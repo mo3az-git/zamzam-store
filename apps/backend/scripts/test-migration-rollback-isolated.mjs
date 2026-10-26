@@ -27,6 +27,12 @@ const { Migration20261026000002_AddCartCheckoutSessionSemanticGuards } = rootReq
 const { Migration20261026000003_ConvertEpochToIntegerAndDropRawEpoch } = rootRequire(
   path.join(backendRoot, "src", "modules", "batch-inventory", "migrations", "Migration20261026000003_ConvertEpochToIntegerAndDropRawEpoch.ts")
 );
+const { Migration20261026000004_CreateCartBatchReservation } = rootRequire(
+  path.join(backendRoot, "src", "modules", "batch-inventory", "migrations", "Migration20261026000004_CreateCartBatchReservation.ts")
+);
+const { Migration20261026000006_CreateInventoryLedger } = rootRequire(
+  path.join(backendRoot, "src", "modules", "batch-inventory", "migrations", "Migration20261026000006_CreateInventoryLedger.ts")
+);
 
 const logLines = [];
 const errLines = [];
@@ -169,6 +175,52 @@ async function run() {
     const mig3 = new Migration20261026000003_ConvertEpochToIntegerAndDropRawEpoch(mockDriver, mockEm);
     const q3 = await executeMigrationQueries(testClient, mig3, "up");
     log("Migration 3 UP executed (" + q3.length + " queries).");
+
+    const mig4 = new Migration20261026000004_CreateCartBatchReservation(mockDriver, mockEm);
+    const q4 = await executeMigrationQueries(testClient, mig4, "up");
+    log("Migration 4 UP executed (" + q4.length + " queries).");
+
+    // Exercise the new inventory DDL lifecycle on the same isolated schema.
+    const inventoryMigration = new Migration20261026000006_CreateInventoryLedger(mockDriver, mockEm);
+    const inventoryUp = await executeMigrationQueries(testClient, inventoryMigration, "up");
+    const objectsUp = await testClient.query(`SELECT table_name FROM information_schema.tables
+      WHERE table_schema='public' AND table_name=ANY($1::text[]) ORDER BY table_name`, [[
+      "supplier", "inventory_location", "inventory_batch", "cart_checkout_attempt", "inventory_movement",
+    ]]);
+    const triggerUp = await testClient.query(`SELECT tgname FROM pg_trigger
+      WHERE tgrelid='inventory_movement'::regclass AND NOT tgisinternal AND tgname='trg_inventory_movement_immutable'`);
+    const cbrForeignKeyUp = await testClient.query(`SELECT conname FROM pg_constraint
+      WHERE conrelid='cart_batch_reservation'::regclass AND conname='fk_cbr_batch'`);
+    assert("inventory_ddl_up_creates_required_tables", 5, objectsUp.rowCount, objectsUp.rowCount===5,
+      "Migration 6 UP creates supplier, inventory_location, inventory_batch, cart_checkout_attempt and inventory_movement")
+    assert("inventory_ddl_up_installs_immutability_trigger", 1, triggerUp.rowCount, triggerUp.rowCount===1,
+      "Movement UPDATE/DELETE trigger exists after UP")
+    assert("inventory_ddl_up_links_reservations_to_batches", 1, cbrForeignKeyUp.rowCount, cbrForeignKeyUp.rowCount===1,
+      "Reservation batch foreign key exists after UP")
+
+    const inventoryDown = await executeMigrationQueries(testClient, inventoryMigration, "down");
+    const objectsDown = await testClient.query(`SELECT table_name FROM information_schema.tables
+      WHERE table_schema='public' AND table_name=ANY($1::text[]) ORDER BY table_name`, [[
+      "supplier", "inventory_location", "inventory_batch", "cart_checkout_attempt", "inventory_movement",
+    ]]);
+    const triggerFunctionDown = await testClient.query(`SELECT proname FROM pg_proc
+      WHERE proname IN ('trg_enforce_inventory_movement_immutable','guard_checkout_attempt_identity')`);
+    const cbrForeignKeyDown = await testClient.query(`SELECT conname FROM pg_constraint
+      WHERE conrelid='cart_batch_reservation'::regclass AND conname='fk_cbr_batch'`);
+    assert("inventory_ddl_down_removes_owned_tables", 0, objectsDown.rowCount, objectsDown.rowCount===0,
+      "Migration 6 DOWN drops only its inventory ledger schema objects")
+    assert("inventory_ddl_down_removes_functions_and_trigger", 0, triggerFunctionDown.rowCount, triggerFunctionDown.rowCount===0,
+      "Migration 6 DOWN drops trigger functions and their dependent trigger")
+    assert("inventory_ddl_down_removes_cbr_batch_foreign_key", 0, cbrForeignKeyDown.rowCount, cbrForeignKeyDown.rowCount===0,
+      "Migration 6 DOWN restores the pre-existing reservation table")
+    const inventoryReUp = await executeMigrationQueries(testClient, inventoryMigration, "up");
+    const objectsReUp = await testClient.query(`SELECT table_name FROM information_schema.tables
+      WHERE table_schema='public' AND table_name=ANY($1::text[])`, [[
+      "supplier", "inventory_location", "inventory_batch", "cart_checkout_attempt", "inventory_movement",
+    ]]);
+    assert("inventory_ddl_reup_recreates_required_tables", 5, objectsReUp.rowCount, objectsReUp.rowCount===5,
+      "Migration 6 can be re-applied after DOWN")
+    log(`Migration 6 inventory UP/DOWN/UP lifecycle executed (${inventoryUp.length}/${inventoryDown.length}/${inventoryReUp.length} statements).`)
 
     // ------------------------------------------------------------------------
     // Step 2: Verify epoch is INTEGER and raw_epoch is absent after UP

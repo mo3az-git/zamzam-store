@@ -230,6 +230,46 @@ jobs:
           set -o pipefail
           node scripts/run-tp-with-evidence.mjs TP-04b 2>&1 | tee artifacts/tp-04b-native-http.log
 
+      - name: Run TP-06a same-batch multi-line reservation
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+          PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-06a 2>&1 | tee artifacts/tp-06a-inventory-reservation.log
+
+      - name: Run TP-06b replay, divergence, rollback, and contention
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+          PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-06b 2>&1 | tee artifacts/tp-06b-inventory-replay-rollback.log
+
+      - name: Run TP-07a expired reservation cleanup and replay
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+          PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-07a 2>&1 | tee artifacts/tp-07a-inventory-cleanup.log
+
+      - name: Run TP-24c PostgreSQL movement immutability roles
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+          PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-24c 2>&1 | tee artifacts/tp-24c-ledger-immutability.log
+
       - name: Run TP-21c refund identity and encryption test
         if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
         shell: bash

@@ -17,6 +17,10 @@ const runnableBoundaries = {
   "TP-03": "Original real-service lock contention assertions plus real prototype checkout-lock HTTP 409 are exercised; inventory count remains table-wide on an empty cart.",
   "TP-04a": "Real native Store API mutation guard and disposable HTTP runner exist.",
   "TP-04b": "Native HTTP guard rejects stale in-progress sessions; the recovery-controller protocol remains unimplemented and is not claimed by the aborted-state fixture control.",
+  "TP-06a": "Real Medusa cart and product modules reserve multi-line quantities against PostgreSQL batch rows using Cairo-date FEFO and append-only movement snapshots; TP-01 remains unexecuted.",
+  "TP-06b": "Real PostgreSQL runner covers replay, intent conflict, divergence, injected transaction rollback, and backend-observed batch contention; it does not implement order conversion.",
+  "TP-07a": "Real PostgreSQL runner covers expired reservation release, immutable movement consistency, retry, and concurrent cleanup; order-aware recovery remains outside this boundary.",
+  "TP-24c": "Real Medusa app-role privilege denial and separate non-owner trigger rejection run against an isolated PostgreSQL database; no production roles are changed.",
   "TP-21c": "Real Medusa system_security refund fingerprint/hash/encryption component and real-service harness exist; refund persistence and payout behavior remain absent.",
 };
 const customTables = [
