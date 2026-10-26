@@ -187,8 +187,13 @@ The test registry script is a guardrail only: it asserts the presence of exactly
 
 ## 7. Implementation plan for initial compatibility tests (TP-01, TP-02a, TP-03)
 
-This section documents the concrete implementation plan for the first three canonical compatibility tests from the Technical Prototype Registry.  
-**Execution notice:** These tests are planned here, but **NOT** yet implemented or executed. All 59 TP rows in `docs/implementation-plan.md` remain strictly unchecked `[ ]`.
+This section documents the concrete implementation plan for the first three canonical compatibility tests from the Technical Prototype Registry.
+
+**Execution status:**
+- **TP-02a (Distributed Cart Lock Acquisition):** executed once against the real Medusa container and disposable PostgreSQL/Redis; evidence is awaiting independent review.
+- **TP-01 (Cart Creation with Batch Variant):** not executed.
+- **TP-03 (Concurrent Cart Lock Rejection):** not executed.
+- All 59 canonical TP rows in `docs/implementation-plan.md` remain strictly unchecked `[ ]`. The implementation plans below for TP-01 and TP-03 are specifications, not executed tests.
 
 ### Canonical TP-01: Cart Creation with Batch Variant
 - **Canonical row definition (quoted verbatim from `docs/implementation-plan.md`):**
