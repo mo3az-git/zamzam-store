@@ -10,6 +10,10 @@
   --deep: #164a3d;
   --cream: #f8f8f2;
   --line: #e5eae3;
+  /* Thmanyah's license does not permit redistributing/hosting font files.
+     The family is used when installed locally, with cross-device fallbacks. */
+  --font-arabic-body: "Thmanyah Sans", "Thmanyah Serif Text", Tahoma, "Segoe UI", Arial, sans-serif;
+  --font-arabic-heading: "Thmanyah Serif Display", "Thmanyah Sans", Tahoma, "Segoe UI", Arial, sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -19,13 +23,16 @@ body {
   min-height: 100vh;
   background: #fffefa;
   color: var(--ink);
-  font-family: Tahoma, "Segoe UI", Arial, sans-serif;
+  font-family: var(--font-arabic-body);
   -webkit-font-smoothing: antialiased;
 }
 a { color: inherit; text-decoration: none; }
 a:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid #8dc9b1; outline-offset: 3px; }
 button, input { font: inherit; }
 .shell { width: min(1200px, calc(100% - 48px)); margin-inline: auto; }
+h1, h2, h3, .brand-text, .footer-title, .category-copy strong {
+  font-family: var(--font-arabic-heading);
+}
 
 .topline { background: #174e40; color: #f0f9f3; text-align: center; padding: 9px 16px; font-size: 12px; letter-spacing: .015em; }
 .site-header { background: #fffefa; border-bottom: 1px solid var(--line); position: relative; z-index: 5; }
