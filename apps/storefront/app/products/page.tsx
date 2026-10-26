@@ -24,7 +24,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   }).toString()}`
 
   return (
-    <main className="shell catalog-page">
+    <main className="shell catalog-page" id="main-content">
       <nav className="breadcrumbs" aria-label="مسار التنقل"><Link href="/">الرئيسية</Link><span>/</span><span>المنتجات</span></nav>
       <div className="catalog-intro">
         <div><span className="kicker">الكتالوج</span><h1>اكتشف المنتجات</h1><p>البيانات المعروضة تأتي مباشرةً من قائمة المنتجات المنشورة في Medusa.</p></div>
