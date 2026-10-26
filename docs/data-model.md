@@ -184,13 +184,14 @@ Authoritative cart-level pointer for active epoch and current execution attempt.
 |---|---|---|---|
 | `cart_id` | VARCHAR(255) | PK | String ID referencing Medusa `cart` (Module Link) |
 | `current_attempt_id` | UUID | NOT NULL | Canonical UUID v4 of active checkout attempt |
-| `epoch` | BIGINT | NOT NULL, DEFAULT 1 | Monotonically incremented checkout epoch |
+| `epoch` | INTEGER | NOT NULL, DEFAULT 1 | Monotonically incremented checkout epoch [DEFAULT-ASSUMPTION, owner may change: Medusa v2 DML maps model.number() to PostgreSQL INTEGER without injecting precision metadata columns like raw_epoch, providing clean integer semantics for cart checkout attempt epochs; owner may revert to BIGINT if 2B attempt limit is insufficient] |
 | `status` | VARCHAR(32) | NOT NULL, DEFAULT 'in_progress' | `in_progress`, `completed`, `aborted`, `failed` |
 | `created_at` | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | UTC timestamp |
 | `updated_at` | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | UTC timestamp |
 
 **Constraints on `cart_checkout_session`:**
 - `CONSTRAINT chk_ccs_status CHECK (status IN ('in_progress', 'completed', 'aborted', 'failed'))`
+- `CONSTRAINT chk_ccs_epoch_positive CHECK (epoch >= 1)`
 
 #### `cart_checkout_attempt`
 Immutable per-attempt execution history, order correlation, and fencing record.
