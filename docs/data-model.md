@@ -183,7 +183,7 @@ Authoritative cart-level pointer for active epoch and current execution attempt.
 | Column Name | Type | Constraints | Description |
 |---|---|---|---|
 | `cart_id` | VARCHAR(255) | PK | String ID referencing Medusa `cart` (Module Link) |
-| `current_attempt_id` | UUID | NOT NULL | Canonical UUID v4 of active checkout attempt |
+| `current_attempt_id` | TEXT | NOT NULL | Canonical UUID v4 of active checkout attempt [Physical-schema clarification: Medusa v2 DML model.text() generates PostgreSQL TEXT column, reinforced with regex check constraint chk_ccs_current_attempt_id_uuid to strictly enforce valid UUID format without altering identifier semantics] |
 | `epoch` | INTEGER | NOT NULL, DEFAULT 1 | Monotonically incremented checkout epoch [DEFAULT-ASSUMPTION, owner may change: Medusa v2 DML maps model.number() to PostgreSQL INTEGER without injecting precision metadata columns like raw_epoch, providing clean integer semantics for cart checkout attempt epochs; owner may revert to BIGINT if 2B attempt limit is insufficient] |
 | `status` | VARCHAR(32) | NOT NULL, DEFAULT 'in_progress' | `in_progress`, `completed`, `aborted`, `failed` |
 | `created_at` | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | UTC timestamp |
@@ -191,6 +191,8 @@ Authoritative cart-level pointer for active epoch and current execution attempt.
 
 **Constraints on `cart_checkout_session`:**
 - `CONSTRAINT chk_ccs_status CHECK (status IN ('in_progress', 'completed', 'aborted', 'failed'))`
+- `CONSTRAINT chk_ccs_current_attempt_id_uuid CHECK (current_attempt_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')`
+- `CONSTRAINT chk_ccs_cart_id_len CHECK (char_length(cart_id) <= 255)`
 - `CONSTRAINT chk_ccs_epoch_positive CHECK (epoch >= 1)`
 
 #### `cart_checkout_attempt`

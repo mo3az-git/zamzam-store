@@ -1,6 +1,6 @@
 # Phase 1 — Technical Compatibility Spike
 
-**Status:** Baseline compatibility checks passed on Medusa 2.22.1, but the first real-Redis regression failed **4 of 7 checks** in attempt 10. Redis locking is a blocking risk. The package-lock.json is committed and enforced via `npm ci --strict-peer-deps` in CI. All 59 TP behavior cases remain unchecked.  
+**Status:** Baseline compatibility checks passed on Medusa 2.22.1. TP-02a (Distributed Cart Lock Acquisition) has been executed once against the real Medusa container and disposable PostgreSQL/Redis, with evidence pending independent review. TP-01 and TP-03 have not yet been executed. The package-lock.json is committed and enforced via `npm ci --strict-peer-deps` in CI. All 59 canonical TP rows in `docs/implementation-plan.md` remain strictly unchecked `[ ]`.  
 **Starting commit:** 404bf23275d67cc6274ed567779081c25f676100 (Phase 0 design accepted; runtime unverified).  
 **Scope boundary:** initial monorepo scaffold, package/peer metadata, strict dependency resolution, lint/build, and baseline Medusa migrations against a disposable database; then the documented TP cases. No production feature work is included.
 
@@ -353,6 +353,12 @@ These baseline diagnostic checks were used during early scaffold validation. The
   - Script: `apps/backend/scripts/check-dml-crud.mjs` (status: to be created).
   - Scope: developer sanity verification only; not a TP row.
 
+### Current execution status for initial compatibility tests
+- **TP-02a (Distributed Cart Lock Acquisition):** Executed once against the real Medusa container and disposable PostgreSQL/Redis services; hardened runtime evidence pending independent review. Implementation plan checkbox remains strictly unchecked `[ ]`.
+- **TP-01 (Cart Creation with Batch Variant):** Not yet executed. Checkbox remains strictly unchecked `[ ]`.
+- **TP-03 (Concurrent Cart Lock Rejection):** Not yet executed. Checkbox remains strictly unchecked `[ ]`.
+- **Canonical TP Checkboxes:** All 59 TP rows in `docs/implementation-plan.md` remain strictly `[ ]`.
+
 ### Referenced repository paths summary
 - Existing files in `apps/backend`:
   - `apps/backend/medusa-config.ts` (exists)
@@ -360,12 +366,14 @@ These baseline diagnostic checks were used during early scaffold validation. The
   - `apps/backend/tsconfig.json` (exists)
   - `apps/backend/src/index.ts` (exists)
   - `apps/backend/src/modules/locking-redis/` (exists)
+  - `apps/backend/src/modules/batch-inventory/` (exists)
+  - `apps/backend/src/workflows/steps/acquire-lock.ts` (exists)
+  - `apps/backend/src/workflows/test-tp02a-workflow.ts` (exists)
   - `apps/backend/scripts/check-locking-redis.mjs` (exists)
   - `apps/backend/scripts/check-locking-redis-edge-cases.mjs` (exists)
-- Files to be created for initial TP execution:
+  - `apps/backend/scripts/test-tp02a-distributed-lock.mjs` (exists)
+- Files to be created for subsequent TP execution:
   - `apps/backend/scripts/test-tp01-cart-creation.mjs` (to be created)
-  - `apps/backend/scripts/test-tp02a-distributed-lock.mjs` (to be created)
   - `apps/backend/scripts/test-tp03-concurrent-lock-rejection.mjs` (to be created)
-  - `apps/backend/src/workflows/steps/acquire-lock.ts` (to be created)
   - `apps/backend/scripts/check-framework-boot.mjs` (to be created)
   - `apps/backend/scripts/check-dml-crud.mjs` (to be created)
