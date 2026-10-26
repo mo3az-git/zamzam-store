@@ -22,7 +22,7 @@ export default async function ProductPage({ params }: { params: Promise<ProductP
   const { handle } = await params
   const result = await listStoreProducts({ handle, limit: 1 })
   if (result.error) return (
-    <main className="shell detail-page">
+    <main id="main-content" className="shell detail-page">
       <Link href="/products" className="subtle-link">→ العودة للكتالوج</Link>
       <div className="notice" role="status"><strong>تعذر عرض المنتج</strong><p>{storeErrorMessage(result.error)}</p></div>
     </main>
@@ -38,7 +38,7 @@ export default async function ProductPage({ params }: { params: Promise<ProductP
   const price = displayPrice(product)
 
   return (
-    <main className="shell detail-page">
+    <main id="main-content" className="shell detail-page">
       <nav className="breadcrumbs" aria-label="مسار التنقل"><Link href="/">الرئيسية</Link><span>/</span><Link href="/products">المنتجات</Link><span>/</span><span>{product.title}</span></nav>
       <div className="detail-grid">
         <div className="detail-gallery">
