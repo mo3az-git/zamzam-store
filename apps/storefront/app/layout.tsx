@@ -3,35 +3,61 @@ import Link from "next/link"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "زمزم ستور | Zamzam Store",
-  description: "تصفح منتجات زمزم ستور من مياه زمزم المعبأة والتمور. الأسعار والمواصفات من كتالوج المتجر.",
+  title: "زمزم ستور | تفاصيل تليق بذوقك",
+  description: "زمزم ستور: تجربة عربية راقية لتصفح مياه زمزم المعبأة والتمور، مع بيانات وأسعار من كتالوج Medusa.",
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="ar" dir="rtl">
       <body>
-        <div className="topline">مرحبًا بك في زمزم ستور — تصفّح المنتجات المتاحة في الكتالوج</div>
-        <header className="site-header">
-          <div className="shell nav-layout">
-            <Link href="/" className="brand" aria-label="زمزم ستور — الرئيسية">
-              <span className="brand-icon" aria-hidden="true">ز</span>
-              <span className="brand-text">زمزم <small>STORE</small></span>
+        <a className="lux-skip-link" href="#main-content">انتقل إلى المحتوى</a>
+        <div className="lux-topbar">
+          <div className="shell lux-topbar-content">
+            <span>أهلًا بك في زمزم ستور</span>
+            <span className="lux-topbar-en">ARABIC BY DESIGN <span aria-hidden="true">✦</span> ZAMZAM STORE</span>
+          </div>
+        </div>
+        <header className="lux-header">
+          <div className="shell lux-nav">
+            <Link href="/" className="lux-brand" aria-label="زمزم ستور — الرئيسية">
+              <span className="lux-brand-mark" aria-hidden="true">ز</span>
+              <span className="lux-brand-name">زمزم <small>زَمْزَمْ سْتُور</small></span>
             </Link>
-            <nav className="nav-links" aria-label="التنقل الرئيسي">
+            <nav className="lux-primary-nav" aria-label="التنقل الرئيسي">
               <Link href="/">الرئيسية</Link>
-              <Link href="/products">المنتجات</Link>
+              <Link href="/products">المتجر</Link>
+              <Link href="/#lux-collections">المجموعات</Link>
             </nav>
-            <Link href="/products" className="nav-cta">تسوق الآن <span aria-hidden="true">←</span></Link>
+            <Link className="lux-header-action" href="/products">
+              اكتشف المنتجات
+              <span aria-hidden="true">↖</span>
+            </Link>
           </div>
         </header>
         {children}
-        <footer className="site-footer">
-          <div className="shell footer-layout">
-            <div><span className="footer-title">زمزم ستور</span><p>متجر إلكتروني عربي لعرض المنتجات المدرجة من مياه زمزم المعبأة والتمور.</p></div>
-            <nav aria-label="روابط التذييل"><Link href="/">الرئيسية</Link><Link href="/products">المنتجات</Link></nav>
+        <footer className="lux-footer">
+          <div className="shell">
+            <div className="lux-footer-grid">
+              <div className="lux-footer-about">
+                <span className="lux-eyebrow">زمزم ستور</span>
+                <strong>تفاصيل تستحق<br /><span>الاهتمام.</span></strong>
+                <p>متجر عربي لاكتشاف مياه زمزم المعبأة والتمور. جميع تفاصيل المنتجات وأسعارها المعروضة مصدرها نظام المتجر.</p>
+              </div>
+              <nav className="lux-footer-links" aria-label="روابط المتجر">
+                <span>روابط سريعة</span>
+                <Link href="/">الرئيسية <span aria-hidden="true">↗</span></Link>
+                <Link href="/products">المنتجات <span aria-hidden="true">↗</span></Link>
+                <Link href="/#lux-collections">المجموعات <span aria-hidden="true">↗</span></Link>
+              </nav>
+              <div className="lux-footer-mark" aria-hidden="true">ز</div>
+            </div>
+            <div className="lux-footer-bottom">
+              <span>© {new Date().getFullYear()} زمزم ستور</span>
+              <span>هوية عربية معاصرة</span>
+              <span className="lux-footer-en">ZAMZAM / EGYPT</span>
+            </div>
           </div>
-          <div className="shell footer-bottom"><span>© {new Date().getFullYear()} زمزم ستور</span><span>جميع بيانات المنتجات مصدرها نظام المتجر</span></div>
         </footer>
       </body>
     </html>
