@@ -74,4 +74,4 @@ The full canonical criteria remain in docs/implementation-plan.md. Every lettere
 
 The lockfile is forced to LF by .gitattributes so local and CI SHA-256 match c3de50651eccf1a8c6843b5c0e536de375d05b91a2bf7818fd94fdfa7c6b291f. Local services identify the verified native EDB PostgreSQL 16.15-1 and redis-windows 7.2.16 MSYS2 builds. CI independently uses the pinned Linux images. No existing service is reused or reset.
 
-**Gate verdict:** NOT READY — BLOCKERS REMAIN. 0/59 accepted; 7 recorded runner passes pending independent review and remaining integration boundaries; 52 blocked/unexecuted, including TP-01. The other 51 blocked cases still require their individually listed domain implementations/fixtures. No TP checkbox is changed.
+**Gate verdict:** NOT READY — BLOCKERS REMAIN. 0/59 formally accepted; the seven earlier runner boundaries and TP-06a, TP-06b, TP-07a, and TP-24c have executable evidence boundaries and still require independent review; 48 cases remain blocked or unexecuted, including TP-01. The other 47 blocked cases still require their individually listed domain implementations/fixtures. No TP checkbox is changed.

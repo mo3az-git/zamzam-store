@@ -320,6 +320,7 @@ try {
     await new InventoryLedger(runtime.container).reserveCart(fixture.authority)
     const reservationId=(await adminPg.query("SELECT id FROM cart_batch_reservation WHERE checkout_attempt_id=$1",[fixture.authority.attemptId])).rows[0].id
     await adminPg.query("UPDATE cart_batch_reservation SET expires_at=NOW()-INTERVAL '1 second' WHERE id=$1",[reservationId])
+    dbBefore = await saveSnapshot([batch.id])
     const oneEvents=[], twoEvents=[]
     let entered,release
     const atUpdate=new Promise((resolve)=>{entered=resolve}),gate=new Promise((resolve)=>{release=resolve})
@@ -337,7 +338,8 @@ try {
       check("two_cleanup_workers_are_distinct_and_serialized",true,{firstPid,secondPid,blockers},firstPid!==secondPid&&blockers.includes(firstPid))
     } finally { release() }
     const [firstResult,secondResult]=await Promise.all([firstPromise,secondPromise])
-    const after=await saveSnapshot([batch.id]), row=after.reservations.find((r)=>r.id===reservationId), releaseMoves=after.movements.filter((m)=>m.reference_id===reservationId&&m.movement_type==="reservation_release")
+    const after=await saveSnapshot([batch.id]); dbAfter=after
+    const row=after.reservations.find((r)=>r.id===reservationId), releaseMoves=after.movements.filter((m)=>m.reference_id===reservationId&&m.movement_type==="reservation_release")
     check("expired_reservation_release_is_atomic_once",{status:"expired",reserved:0,movements:1},{status:row.status,reserved:after.batches.find((b)=>b.id===batch.id).quantity_reserved,movements:releaseMoves.length},row.status==="expired"&&after.batches.find((b)=>b.id===batch.id).quantity_reserved===0&&releaseMoves.length===1)
     check("second_cleanup_is_zero_write_replay",true,{first:firstResult.map((x)=>x.replay),second:secondResult.map((x)=>x.replay)},firstResult.length===1&&secondResult.length===1&&firstResult[0].replay===false&&secondResult[0].replay===true)
     await adminPg.query("UPDATE cart_batch_reservation SET status='active' WHERE id=$1",[reservationId])
