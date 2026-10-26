@@ -92,7 +92,7 @@ async function runTp03Test() {
   log(`Disposable target validator self-checks: ${validatorSelfCheck.passed}/${validatorSelfCheck.total} passed.`);
 
   let pgClient = null, redisClient = null, createdCartId = null, createdRedisPrefixedKey = null;
-  let workerAId = null, lockingService = null, testStatus = "failed", exitCode = 1;
+  let workerAId = null, controlWorkerBId = null, lockingService = null, testStatus = "failed", exitCode = 1;
   let blockerReason = null, assertions = [], dbBeforeSnapshot = null, dbAfterSnapshot = null;
   let dbQueries = null, containerDetails = null, caughtException = null;
   const cleanupErrors = [];
@@ -158,9 +158,30 @@ async function runTp03Test() {
         status: "in_progress",
       });
 
-      // 3. Worker A acquires cart lock via real container locking module
+      // 2b. Positive control: Worker B acquires free lock on cart, verifies Redis ownership/TTL, and releases it
       const lockKey = "cart:" + cartId;
       createdRedisPrefixedKey = providerPrefix + lockKey;
+      controlWorkerBId = "worker:tp03:B:control:" + randomUUID();
+      let controlSuccess = false;
+      try {
+        const controlWf = stage2CheckoutLockWorkflow(container);
+        const controlRes = await controlWf.run({ input: { cartId, ownerId: controlWorkerBId, ttl: 120, timeout: 5 } });
+        controlSuccess = Boolean(controlRes?.result?.key === lockKey && controlRes?.result?.ownerId === controlWorkerBId);
+      } catch (err) {
+        logErr("Control Worker B acquisition failed: " + err.message);
+      }
+
+      const controlRedisOwner = await redisClient.get(createdRedisPrefixedKey);
+      const controlRedisTtl = await redisClient.ttl(createdRedisPrefixedKey);
+      const controlOwnerValid = controlRedisOwner === controlWorkerBId;
+      const controlTtlValid = controlRedisTtl > 110 && controlRedisTtl <= 120;
+      await lockingService.release(lockKey, { ownerId: controlWorkerBId });
+      const postControlVal = await redisClient.get(createdRedisPrefixedKey);
+      const postControlExists = await redisClient.exists(createdRedisPrefixedKey);
+      const controlReleased = postControlExists === 0 && postControlVal === null;
+      log(`Positive control: acquired=${controlSuccess}, ownerValid=${controlOwnerValid}, ttl=${controlRedisTtl}s, released=${controlReleased}`);
+
+      // 3. Worker A acquires cart lock via real container locking module
       workerAId = "worker:tp03:A:" + randomUUID();
       const workerBId = "worker:tp03:B:" + randomUUID();
 
@@ -254,6 +275,11 @@ async function runTp03Test() {
 
       add("real_cart_created_via_medusa_service", "fixture", true, Boolean(realCart?.id?.startsWith("cart_")), Boolean(realCart?.id?.startsWith("cart_")), `Cart ID: ${cartId}`);
       add("cart_checkout_session_linked_to_real_cart", "fixture", cartId, beforeCcs?.cart_id, beforeCcs?.cart_id === cartId, "Linked cart_id match");
+
+      add("control_worker_b_acquires_free_lock", "control", true, controlSuccess, controlSuccess === true, "Worker B acquired free lock via workflow");
+      add("control_redis_owner_is_worker_b", "control", { owner: controlWorkerBId, ttlValid: true }, { owner: controlRedisOwner, ttl: controlRedisTtl }, controlOwnerValid && controlTtlValid, `Owner matches; TTL=${controlRedisTtl}s in (110, 120]`);
+      add("control_lock_released_before_contention", "control", true, controlReleased, controlReleased === true, "Control lock released and deleted before contention test");
+
       add("worker_a_acquired_lock_via_container_locking_module", "behavioral", workerAId, workerAInRedisVal, workerAInRedisVal === workerAId, "Worker A lock in Redis");
 
       add("worker_b_workflow_threw_error", "behavioral", true, Boolean(workerBCaughtError), Boolean(workerBCaughtError), "Worker B threw on contention");
@@ -269,20 +295,16 @@ async function runTp03Test() {
       add("cart_checkout_session_attempt_id_unaltered", "behavioral", beforeCcs?.current_attempt_id, afterCcs?.current_attempt_id, Boolean(beforeCcs && afterCcs && beforeCcs.current_attempt_id === afterCcs.current_attempt_id), "attempt_id unaltered");
       add("cart_checkout_session_epoch_unaltered", "behavioral", 1, Number(afterCcs?.epoch), Number(beforeCcs?.epoch) === 1 && Number(afterCcs?.epoch) === 1, "epoch 1 unaltered");
       add("cart_checkout_session_status_unaltered", "behavioral", "in_progress", afterCcs?.status, beforeCcs?.status === "in_progress" && afterCcs?.status === "in_progress", "status unaltered");
-      add("cart_checkout_session_all_fields_unaltered", "behavioral", true, Boolean(
+      const allSessionFieldsMatch = Boolean(
         beforeCcs && afterCcs && beforeCcs.cart_id === afterCcs.cart_id && beforeCcs.current_attempt_id === afterCcs.current_attempt_id &&
         Number(beforeCcs.epoch) === Number(afterCcs.epoch) && beforeCcs.status === afterCcs.status &&
         new Date(beforeCcs.created_at).toISOString() === new Date(afterCcs.created_at).toISOString() &&
         new Date(beforeCcs.updated_at).toISOString() === new Date(afterCcs.updated_at).toISOString()
-      ), Boolean(
-        beforeCcs && afterCcs && beforeCcs.cart_id === afterCcs.cart_id && beforeCcs.current_attempt_id === afterCcs.current_attempt_id &&
-        Number(beforeCcs.epoch) === Number(afterCcs.epoch) && beforeCcs.status === afterCcs.status &&
-        new Date(beforeCcs.created_at).toISOString() === new Date(afterCcs.created_at).toISOString() &&
-        new Date(beforeCcs.updated_at).toISOString() === new Date(afterCcs.updated_at).toISOString()
-      ), "All session columns unaltered");
+      );
+      add("cart_checkout_session_all_fields_unaltered", "behavioral", true, allSessionFieldsMatch, allSessionFieldsMatch, "All session columns unaltered");
 
       add("cart_batch_reservation_zero_rows_before_and_after", "behavioral", { before: 0, after: 0 }, { before: dbBeforeSnapshot.cartBatchReservation.length, after: dbAfterSnapshot.cartBatchReservation.length }, dbBeforeSnapshot.cartBatchReservation.length === 0 && dbAfterSnapshot.cartBatchReservation.length === 0, "Zero reservations");
-      add("native_inventory_reservation_item_zero_rows_before_and_after", "behavioral", dbBeforeSnapshot.nativeReservationItemCount, dbAfterSnapshot.nativeReservationItemCount, dbBeforeSnapshot.nativeReservationItemCount === dbAfterSnapshot.nativeReservationItemCount, "Native reservations untouched");
+      add("native_inventory_reservation_item_count_unchanged_before_and_after", "behavioral", dbBeforeSnapshot.nativeReservationItemCount, dbAfterSnapshot.nativeReservationItemCount, dbBeforeSnapshot.nativeReservationItemCount === dbAfterSnapshot.nativeReservationItemCount, "Native Medusa reservation_item table count is table-wide on the disposable database and remained unchanged before and after Worker B rejection");
 
       const hasRequiredCols = ["id", "checkout_attempt_id", "cart_id", "checkout_line_key", "checkout_epoch", "batch_id", "quantity", "unit_cost_snapshot", "status", "expires_at"].every((c) => physicalCbrCols.includes(c));
       add("cart_batch_reservation_schema_reconciled", "schema", true, hasRequiredCols, hasRequiredCols, `Columns: [${physicalCbrCols.join(", ")}]`);
@@ -291,6 +313,13 @@ async function runTp03Test() {
     caughtException = error;
     logErr("UNCAUGHT EXCEPTION during TP-03: " + (error?.stack || String(error)));
   } finally {
+    if (lockingService && createdCartId && controlWorkerBId) {
+      try {
+        await lockingService.release("cart:" + createdCartId, { ownerId: controlWorkerBId });
+      } catch {
+        // already released or not acquired
+      }
+    }
     if (lockingService && createdCartId && workerAId) {
       try {
         log(`Worker A (${workerAId}) releasing lock for cart:${createdCartId}...`);
