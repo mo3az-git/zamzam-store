@@ -146,6 +146,12 @@ jobs:
           set -o pipefail
           node apps/backend/scripts/test-tp02a-distributed-lock.mjs 2>&1 | tee artifacts/tp-02a-distributed-lock.log
 
+      - name: Verify Migration 3 rollback on isolated PostgreSQL database
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run spike:migration-rollback 2>&1 | tee artifacts/migration-rollback-isolated.log
+
       - name: Upload Phase 1 evidence and bootstrap lockfile
         if: always()
         uses: actions/upload-artifact@v4

@@ -20,7 +20,8 @@
     "spike:package-metadata": "node scripts/check-package-metadata.mjs",
     "spike:checks": "npm run spike:registry && npm run spike:package-metadata",
     "spike:medusa-loader": "node scripts/check-medusa-cli-tsconfig-paths.cjs",
-    "spike:tp-readiness": "node scripts/assess-phase1-tp-readiness.mjs"
+    "spike:tp-readiness": "node scripts/assess-phase1-tp-readiness.mjs",
+    "spike:migration-rollback": "node apps/backend/scripts/test-migration-rollback-isolated.mjs"
   },
   "devDependencies": {
     "@swc/core": "^1.7.28",
