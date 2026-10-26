@@ -1,29 +1,27 @@
-import { createHash, randomUUID } from "node:crypto";
-import { execFileSync } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { verifyDisposableTargetServices, runDisposableValidatorSelfChecks } from "./verify-disposable-target.mjs";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const backendRoot = path.resolve(__dirname, "..");
-const repositoryRoot = path.resolve(backendRoot, "../..");
+import {
+  backendRoot,
+  repositoryRoot,
+  registerTsNode,
+  formatSqlTable,
+  getSystemMetadata,
+  loadMedusaContainer,
+  createPgClient,
+  createRedisClient,
+  cleanupRedisLockKey,
+  safeCloseClients,
+  writeTpEvidence,
+  verifyDisposableTargetServices,
+  runDisposableValidatorSelfChecks,
+} from "./shared/tp-harness.mjs";
 
 const require = createRequire(import.meta.url);
 const { Client: PgClient, Pool: PgPool } = require("pg");
-const RedisModule = require("ioredis");
-const Redis = RedisModule.default ?? RedisModule;
 
-// Register ts-node so that TypeScript workflow and module definitions can be imported directly
-const rootRequire = createRequire(path.join(repositoryRoot, "package.json"));
-rootRequire("ts-node").register({
-  project: path.join(backendRoot, "tsconfig.json"),
-  transpileOnly: true,
-});
-
-const { Modules } = require("@medusajs/framework/utils");
+const rootRequire = registerTsNode();
+const { Modules } = rootRequire("@medusajs/framework/utils");
 const { parentCheckoutTestWorkflow } = rootRequire(
   path.join(backendRoot, "src", "workflows", "test-tp02a-workflow.ts")
 );
@@ -32,7 +30,6 @@ const { CartCheckoutSession } = rootRequire(
 );
 
 const evidenceDir = path.join(repositoryRoot, "artifacts", "tp-evidence", "TP-02a");
-await mkdir(evidenceDir, { recursive: true });
 
 const logLines = [];
 const errLines = [];
@@ -45,53 +42,12 @@ function logErr(msg) {
   errLines.push(msg);
 }
 
-function captureVersion(cmd, args) {
-  try {
-    const executable =
-      process.platform === "win32" && !cmd.endsWith(".cmd") && !cmd.endsWith(".exe")
-        ? `${cmd}.cmd`
-        : cmd;
-    return execFileSync(executable, args, { encoding: "utf8" }).trim();
-  } catch {
-    try {
-      return execFileSync(cmd, args, { encoding: "utf8" }).trim();
-    } catch {
-      return "unavailable";
-    }
-  }
-}
-
-function formatSqlTable(rows, columns) {
-  if (!rows || rows.length === 0) {
-    return "(0 rows)\n";
-  }
-  const colKeys = columns || Object.keys(rows[0]);
-  const header = colKeys.join(" | ");
-  const separator = colKeys.map((c) => "-".repeat(Math.max(c.length, 8))).join("-+-");
-  const dataLines = rows.map((r) =>
-    colKeys
-      .map((k) => {
-        const val = r[k];
-        if (val === null || val === undefined) return "NULL";
-        if (typeof val === "object") return JSON.stringify(val);
-        return String(val);
-      })
-      .join(" | ")
-  );
-  return `${header}\n${separator}\n${dataLines.join("\n")}\n(${rows.length} row${rows.length === 1 ? "" : "s"})\n`;
-}
-
 const startedAt = new Date().toISOString();
-const commitSha = process.env.GITHUB_SHA || "local-head";
-const nodeVersion = process.version;
-const npmVersion = captureVersion("npm", ["--version"]);
-let lockSha256 = null;
-try {
-  const lockContent = await readFile(path.join(repositoryRoot, "package-lock.json"));
-  lockSha256 = createHash("sha256").update(lockContent).digest("hex");
-} catch {
-  // lockfile absence recorded as null
-}
+const metadata = await getSystemMetadata();
+const commitSha = metadata.commitSha;
+const nodeVersion = metadata.nodeVersion;
+const npmVersion = metadata.npmVersion;
+const lockSha256 = metadata.packageLockSha256;
 
 const databaseUrl = process.env.DATABASE_URL;
 const redisUrl = process.env.LOCKING_REDIS_URL || process.env.REDIS_URL;
@@ -106,56 +62,33 @@ async function writeEvidence({
   dbQueries,
   containerDetails,
 }) {
-  const endedAt = new Date().toISOString();
-  const result = {
-    schemaVersion: 1,
+  await writeTpEvidence({
+    evidenceDir,
     tpId: "TP-02a",
     title: "Distributed Cart Lock Acquisition",
     batch: "A",
     status,
     assessmentType: status === "passed" ? "behavioral acceptance test" : "readiness check",
     startedAt,
-    endedAt,
     commitSha,
     nodeVersion,
     npmVersion,
     packageLockSha256: lockSha256,
-    databaseImageRef:
-      process.env.PHASE1_POSTGRES_IMAGE_REF ||
-      "postgres:16.15@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54",
-    redisImageRef:
-      process.env.PHASE1_REDIS_IMAGE_REF ||
-      "redis:7.2.16@sha256:1009f15ccd9ed271996d1c65745a1ab1dadedea188feb3f1ab938602a32e50a3",
     testCommand: "node apps/backend/scripts/test-tp02a-distributed-lock.mjs",
-    processExitCode: exitCode,
-    behavioralTestExitCode: status === "passed" ? 0 : 1,
-    behavioralTestExecuted: status === "passed",
-    blocker: blocker || null,
-    dbBefore: "db-before.json",
-    dbAfter: "db-after.json",
-    containerDetails: containerDetails || null,
+    exitCode,
+    blocker,
+    assertions,
+    dbBefore,
+    dbAfter,
+    dbQueries,
+    containerDetails,
     note:
       status === "passed"
         ? "TP-02a executed against real Medusa container loaded from medusa-config.ts, with real Cart fixture, cart_checkout_session, and disposable PostgreSQL and Redis services. Awaits independent review."
         : "TP-02a execution blocked by missing prerequisites, safety refusal, or environment service failure.",
-  };
-
-  await writeFile(path.join(evidenceDir, "result.json"), JSON.stringify(result, null, 2) + "\n");
-  await writeFile(path.join(evidenceDir, "assertions.json"), JSON.stringify(assertions, null, 2) + "\n");
-  await writeFile(path.join(evidenceDir, "stdout.log"), logLines.join("\n") + "\n");
-  await writeFile(path.join(evidenceDir, "stderr.log"), errLines.join("\n") + (errLines.length ? "\n" : ""));
-  await writeFile(path.join(evidenceDir, "dbBefore.json"), JSON.stringify(dbBefore || {}, null, 2) + "\n");
-  await writeFile(path.join(evidenceDir, "dbAfter.json"), JSON.stringify(dbAfter || {}, null, 2) + "\n");
-  await writeFile(path.join(evidenceDir, "db-before.json"), JSON.stringify(dbBefore || {}, null, 2) + "\n");
-  await writeFile(path.join(evidenceDir, "db-after.json"), JSON.stringify(dbAfter || {}, null, 2) + "\n");
-  await writeFile(
-    path.join(evidenceDir, "db-before.sql"),
-    dbQueries?.before || "-- No database queries executed before test.\n"
-  );
-  await writeFile(
-    path.join(evidenceDir, "db-after.sql"),
-    dbQueries?.after || "-- No database queries executed after test.\n"
-  );
+    logLines,
+    errLines,
+  });
 }
 
 async function runTp02aTest() {
@@ -248,18 +181,12 @@ async function runTp02aTest() {
 
   try {
     log("Connecting direct PostgreSQL inspection client to " + databaseUrl.replace(/:[^:@]+@/, ":***@") + "...");
-    pgClient = new PgClient({ connectionString: databaseUrl, connectionTimeoutMillis: 5000 });
+    pgClient = createPgClient(databaseUrl);
     await pgClient.connect();
     log("Direct PostgreSQL inspection client connected successfully.");
 
     log("Connecting direct out-of-band Redis client to " + redisUrl.replace(/:[^:@]+@/, ":***@") + "...");
-    redisClient = new Redis(redisUrl, {
-      lazyConnect: true,
-      connectTimeout: 5000,
-      maxRetriesPerRequest: 1,
-      retryStrategy: () => null,
-    });
-    redisClient.on("error", () => {});
+    redisClient = createRedisClient(redisUrl);
     await redisClient.connect();
     const redisPing = await redisClient.ping();
     log("Direct out-of-band Redis client connected successfully (PING=" + redisPing + ").");
@@ -308,28 +235,8 @@ async function runTp02aTest() {
       } else {
         // Boot the REAL Medusa container loaded from apps/backend/medusa-config.ts
         log("Loading REAL Medusa container from " + backendRoot + "...");
-        const originalCwd = process.cwd();
-        if (process.cwd() !== backendRoot) {
-          process.chdir(backendRoot);
-        }
-        process.env.MEDUSA_WORKER_MODE = "server";
-
-        const medusaLoadersModule = await import("@medusajs/medusa/loaders/index");
-        const loaders = medusaLoadersModule.default?.default || medusaLoadersModule.default || medusaLoadersModule;
-        const express = (await import("express")).default;
-        const expressApp = express();
-
-        const { container } = await loaders({
-          directory: backendRoot,
-          expressApp,
-          skipLoadingEntryPoints: true,
-        });
+        const container = await loadMedusaContainer();
         log("REAL Medusa container initialized successfully.");
-
-        // Revert working directory if needed
-        if (process.cwd() !== originalCwd) {
-          process.chdir(originalCwd);
-        }
 
         // Read runtime configuration declared in medusa-config.ts via container.resolve("configModule")
         const configModule = container.resolve("configModule");
@@ -1105,55 +1012,21 @@ async function runTp02aTest() {
 
     // Owner-checked Redis key deletion: never delete a key if held by a different owner
     if (redisClient && createdRedisPrefixedKey && workerId) {
-      try {
-        log("Cleaning up test Redis lock key (owner-checked): " + createdRedisPrefixedKey + "...");
-        const ownerCheckDelScript = `
-          local current = redis.call('get', KEYS[1])
-          if not current then
-            return 0
-          elseif current == ARGV[1] then
-            return redis.call('del', KEYS[1])
-          else
-            return -1
-          end
-        `;
-        const delResult = await redisClient.eval(ownerCheckDelScript, 1, createdRedisPrefixedKey, workerId);
-        if (delResult === -1) {
-          const foreignOwner = await redisClient.get(createdRedisPrefixedKey);
-          const msg = `Redis lock key '${createdRedisPrefixedKey}' is owned by another worker ('${foreignOwner}'), refusing deletion.`;
-          logErr("Cleanup error (redis): " + msg);
-          cleanupErrors.push("redis: " + msg);
-        } else if (delResult === 1) {
-          log("Cleaned up lingering test Redis lock key (deleted with matching owner: " + workerId + ").");
-        } else {
-          log("Test Redis lock key already released/absent; no deletion needed.");
-        }
-      } catch (cleanErr) {
-        logErr("Cleanup error (redis): " + cleanErr.message);
-        cleanupErrors.push("redis: " + cleanErr.message);
-      }
+      await cleanupRedisLockKey(redisClient, createdRedisPrefixedKey, workerId, {
+        log,
+        logErr,
+        cleanupErrors,
+      });
     }
 
     // Client shutdowns: failure must be recorded in cleanupErrors
-    try {
-      if (redisClient && redisClient.status !== "end") {
-        log("Closing direct out-of-band Redis client...");
-        redisClient.disconnect();
-      }
-    } catch (cleanErr) {
-      logErr("Cleanup error (redis disconnect): " + cleanErr.message);
-      cleanupErrors.push("redis disconnect: " + cleanErr.message);
-    }
-
-    try {
-      if (pgClient) {
-        log("Closing direct PostgreSQL inspection client...");
-        await pgClient.end();
-      }
-    } catch (cleanErr) {
-      logErr("Cleanup error (pg disconnect): " + cleanErr.message);
-      cleanupErrors.push("pg disconnect: " + cleanErr.message);
-    }
+    await safeCloseClients({
+      pgClient,
+      redisClient,
+      log,
+      logErr,
+      cleanupErrors,
+    });
   }
 
   // Finalize lifecycle state AFTER cleanup completes
