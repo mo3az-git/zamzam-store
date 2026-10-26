@@ -297,20 +297,20 @@ This section documents the concrete implementation plan for the first three cano
 The following concrete requirements define the execution contract for TP-03 (planning only; not implemented or executed in this commit):
 
 1. **Minimum Checkout Entry Point (Workflow Contract):**
-   - Must be implemented as an internal Medusa workflow (e.g. `checkoutEntrypointWorkflow` or `stage2CheckoutLockWorkflow`), not a public storefront feature.
-   - The workflow invokes `acquireLockStep({ key: "cart:" + cartId, ttl: 120, timeout: 5, ownerId: workerBId })` via the real Medusa container.
-   - Contention setup: Worker A acquires and holds `cart:<cartId>` in Redis (with TTL = 120s, owner = `workerAId`).
-   - Worker B executes the workflow against the same cart. After 5 seconds of Redis contention, `acquireLockStep` times out and throws `LockTimeoutError`.
-   - The entry point catches `LockTimeoutError` and maps it to a structured 409 Conflict representation (status `409`, code `"LOCK_TIMEOUT"`, message `"Cart checkout lock timeout"`).
+   - Must be implemented as an internal Medusa workflow (e.g. `stage2CheckoutLockWorkflow`), not a public storefront feature.
+   - Contention setup: Worker A acquires and holds `cart:<cartId>` via `Modules.LOCKING` from the real Medusa container (with TTL = 120s, owner = `workerAId`).
+   - Worker B executes the workflow against the same cart with `timeout: 5` and `ownerId: workerBId`.
+   - After 5 seconds of Redis contention, `acquireLockStep` times out and throws `LockTimeoutError`.
+   - Workflow error mapping: The workflow catches `LockTimeoutError` and rethrows `MedusaError(MedusaError.Types.CONFLICT, "Cart checkout lock timeout", "LOCK_TIMEOUT")`. TP-03 verifies this workflow-level behavior directly (no HTTP route is exercised). The register will record that HTTP-level 409 is NOT exercised and TP-03 remains "workflow-level only, partial" until a real route exists; it will never be described as fully passed or complete.
 
 2. **Tables Asserted Unchanged and Snapshot Protocol:**
    - Snapshots captured immediately before Worker B execution (`db-before.sql` / `db-before.json`) and immediately after Worker B failure (`db-after.sql` / `db-after.json`).
    - Exact tables and columns verified identical:
      - `cart_checkout_session`: exactly 1 row; `epoch`, `current_attempt_id`, `status`, `created_at`, `updated_at`, `deleted_at` match before and after.
      - `cart_batch_reservation`: exactly 0 rows for the cart under test before and after.
-     - `order_batch_allocation`: exactly 0 rows for the cart/order under test before and after.
-     - Native Medusa inventory `reservation_item`: exactly 0 rows for the cart/variant under test before and after (verifying native reservations were not triggered).
+     - Native Medusa inventory `reservation_item`: exactly 0 rows for the cart's variants under test before and after (verifying native reservations were not triggered).
    - Snapshot queries executed via direct PostgreSQL client and recorded in formatted evidence tables.
+   - Note on `order_batch_allocation`: As decided by the owner, `order_batch_allocation` is written during order conversion and is covered by TP-09/10; it is removed from TP-03 assertions.
 
 3. **Wall-Clock Contention Duration Measurement:**
    - Worker B's execution duration is measured using high-resolution wall-clock timing (`performance.now()`).
@@ -327,14 +327,14 @@ The following concrete requirements define the execution contract for TP-03 (pla
 
 5. **Size Cap and Shared Harness Architecture:**
    - Total size cap: The TP-03 runner script (`apps/backend/scripts/test-tp03-concurrent-lock-rejection.mjs`) and any new helpers must stay around **400 lines or less**.
-   - Shared harness module: Extract reusable container bootstrap, PostgreSQL inspection client, Redis client, disposable target validation, and evidence serialization from `test-tp02a-distributed-lock.mjs` into a shared module (e.g. `apps/backend/scripts/shared/tp-container-harness.mjs`).
-   - Zero-regression constraint: Refactoring TP-02a to use the shared harness must not alter TP-02a runtime behavior, assertions, or CI green status.
+   - Shared harness module: Extract reusable container bootstrap, PostgreSQL inspection client, Redis client, disposable target validation, and evidence serialization from `test-tp02a-distributed-lock.mjs` into a shared module (`apps/backend/scripts/shared/tp-harness.mjs`).
+   - Zero-regression constraint: Refactoring TP-02a to use the shared harness must not alter TP-02a runtime behavior, assertions (exactly 39 assertions preserved), or CI green status.
 
-6. **Unanswered Design Questions (Document Gaps Flagged):**
-   - **HTTP-409 Mapping Location:** `docs/order-and-inventory-workflows.md` §2.1 specifies returning "HTTP 409 Conflict", but Medusa v2 workflows throw errors (or `WorkflowExecutionError`) rather than returning HTTP responses directly. The documents do not specify whether the 409 mapping lives in a custom API route layer (`apps/backend/src/api/store/carts/[id]/complete/route.ts`), an Express middleware / Medusa error interceptor, or an internal workflow-level response object. For TP-03, does the test invoke a custom API route or the workflow directly?
-   - **Stage 1 Idempotency Lease Interaction:** `docs/order-and-inventory-workflows.md` §2.1 specifies Stage 1 (PostgreSQL `idempotency_key` lease) runs before Stage 2 (Redis lock), and on lock timeout executes CAS deletion (`DELETE FROM idempotency_key WHERE key = :idempotency_key AND lease_owner_id = :executionId`). The documents do not specify whether TP-03 includes Stage 1 and asserts the CAS lease deletion, or tests Stage 2 in isolation.
-   - **Worker A Setup Mechanism:** The documents specify Worker A "holds" the lock, but do not specify whether Worker A should hold it via direct Redis `SET NX EX` with the configured prefix, via an active long-running workflow instance, or via a child worker process.
-   - **Custom Reservation Schema Availability in Phase 1:** `cart_batch_reservation` and `order_batch_allocation` are defined in `docs/data-model.md` §3.1, but their DML models and migrations do not exist yet in Phase 1. The test must clarify whether TP-03 creates minimal placeholder tables for these models or performs conditional existence checks.
+6. **Owner Decisions for TP-03 Specification [DEFAULT-ASSUMPTIONS, owner may change]:**
+   - **Decision 1 — Error mapping boundary:** The error mapping lives at the workflow boundary: the TP-03 workflow catches `LockTimeoutError` and throws `MedusaError(MedusaError.Types.CONFLICT, "Cart checkout lock timeout", "LOCK_TIMEOUT")`. TP-03 verifies the workflow-level behavior (no HTTP route). Record in the register that the HTTP-level 409 is NOT exercised and TP-03 stays "workflow-level only, partial" until a real route exists; never describe it as fully passed or complete.
+   - **Decision 2 — Stage 2 isolation:** TP-03 tests Stage 2 (Redis cart lock) in isolation, identical to TP-02a. Stage 1 (idempotency lease CAS deletion) is covered by TP-12a/b/c and is out of scope for TP-03.
+   - **Decision 3 — Worker A lock holding mechanism:** Worker A acquires `cart:<cartId>` through the real locking module resolved from the real Medusa container (`Modules.LOCKING`, same provider, distinct `workerAId`, `ttl = 120`) and holds it until the test ends; Worker B runs the real TP-03 workflow with `timeout: 5` on the same cart.
+   - **Decision 4 — Custom table creation & assertion scope:** Create the real `cart_batch_reservation` table exactly per `docs/data-model.md` §3.1 (its own migration, DML model aligned with the table following the same model/migration reconciliation approach as `cart_checkout_session`, plus a reconciliation assertion). Remove `order_batch_allocation` from TP-03's assertions (it is written at order conversion, covered by TP-09/10). Assert unchanged: `cart_checkout_session` (`epoch`, `current_attempt_id`, `status`, `created_at`, `updated_at`, `deleted_at`), `cart_batch_reservation` has 0 rows for the cart, and native `reservation_item` has 0 rows for the cart's variants.
 
 - **Fixtures needed:**
   - Disposable PostgreSQL container (`postgres:16.15-alpine`).
@@ -344,11 +344,10 @@ The following concrete requirements define the execution contract for TP-03 (pla
   - Worker A pre-acquiring `cart:$CART_ID` in Redis with TTL >= 30 seconds.
 - **Evidence collection (read out-of-band and from API/DB):**
   - Wall-clock execution timer: assert Worker B's attempt blocks for 5.0 seconds plus or minus 0.5 seconds before rejecting.
-  - HTTP status / Error class: assert HTTP `409 Conflict` (or `LockTimeoutError` when calling workflow directly).
+  - Workflow error class & code: assert `MedusaError.Types.CONFLICT` with code `"LOCK_TIMEOUT"` and message `"Cart checkout lock timeout"` thrown at workflow boundary (HTTP 409 route is not exercised).
   - PostgreSQL database before/after state diff:
     - Assert `cart_checkout_session.epoch and current_attempt_id are unchanged before/after` (verifying `db-before.sql` matches `db-after.sql` for `cart_checkout_session`).
     - Assert exactly 0 new rows in `cart_batch_reservation` for the cart under test.
-    - Assert exactly 0 new rows in `order_batch_allocation` for the cart under test.
     - Assert exactly 0 new reservation rows in Medusa native inventory/reservation tables (e.g. `reservation_item`), verifying native inventory checks remain bypassed.
   - Redis out-of-band key inspection: assert `cart:$CART_ID` remains owned by Worker A and was not overwritten or released by Worker B.
 - **Evidence directory and artifacts:**
@@ -356,13 +355,13 @@ The following concrete requirements define the execution contract for TP-03 (pla
   - Artifacts:
     - `result.json`: metadata, status, commit SHA, exit code.
     - `stdout.log` & `stderr.log`: raw terminal output.
-    - `db-before.sql` & `db-after.sql`: pre- and post-execution database query snapshots showing untouched `cart_checkout_session.epoch`, untouched `current_attempt_id`, and zero rows in `cart_batch_reservation`, `order_batch_allocation`, and native reservation tables.
-    - `assertions.json`: assertions on timeout duration, 409 Conflict mapping, `cart_checkout_session.epoch and current_attempt_id are unchanged before/after`, zero reservations/allocations across custom and native tables, and preserved Worker A lock.
+    - `db-before.sql` & `db-after.sql`: pre- and post-execution database query snapshots showing untouched `cart_checkout_session.epoch`, untouched `current_attempt_id`, and zero rows in `cart_batch_reservation` and native reservation tables.
+    - `assertions.json`: assertions on timeout duration, `MedusaError(CONFLICT, LOCK_TIMEOUT)` workflow mapping, `cart_checkout_session.epoch and current_attempt_id are unchanged before/after`, zero reservations across custom and native tables, and preserved Worker A lock.
 - **Blocking conditions (marked blocked instead of passed):**
-  - Checkout workflow or route not implemented in `apps/backend`.
-  - `LockTimeoutError` unhandled or returned as 500 Internal Server Error instead of 409 Conflict.
+  - Checkout workflow not implemented in `apps/backend`.
+  - `LockTimeoutError` unhandled or returned as unexpected error instead of `MedusaError(CONFLICT, LOCK_TIMEOUT)`.
   - Worker B bypassing the lock or Worker A's lock being improperly overwritten.
-  - State mutations (modifying `cart_checkout_session.epoch`, altering `current_attempt_id`, or creating rows in `cart_batch_reservation` or `order_batch_allocation`) occurring before lock acquisition succeeds.
+  - State mutations (modifying `cart_checkout_session.epoch`, altering `current_attempt_id`, or creating rows in `cart_batch_reservation`) occurring before lock acquisition succeeds.
   - Simulating the timeout with mock timers instead of actual concurrent Redis contention.
 
 ### Lifecycle notes and owner default assumptions
