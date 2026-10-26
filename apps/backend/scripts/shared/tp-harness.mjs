@@ -263,10 +263,10 @@ export async function writeTpEvidence({
   await writeFile(path.join(evidenceDir, "db-after.json"), JSON.stringify(dbAfter || {}, null, 2) + "\n");
   await writeFile(
     path.join(evidenceDir, "db-before.sql"),
-    dbQueries?.before || "-- No database queries executed before test.\n"
+    dbQueries?.before || "-- SQL text is not retained in this file. Captured runtime query results, when available, are in db-before.json.\n"
   );
   await writeFile(
     path.join(evidenceDir, "db-after.sql"),
-    dbQueries?.after || "-- No database queries executed after test.\n"
+    dbQueries?.after || "-- SQL text is not retained in this file. Captured runtime query results, when available, are in db-after.json.\n"
   );
 }
