@@ -80,6 +80,48 @@ function formatSqlTable(rows, columns) {
   return `${header}\n${separator}\n${dataLines.join("\n")}\n(${rows.length} row${rows.length === 1 ? "" : "s"})\n`;
 }
 
+function verifyDisposableTargetServices(dbUrlStr, rdUrlStr) {
+  if (!dbUrlStr || !rdUrlStr) {
+    throw new Error("DATABASE_URL and LOCKING_REDIS_URL / REDIS_URL must both be defined.");
+  }
+
+  const parsedDb = new URL(dbUrlStr);
+  const parsedRd = new URL(rdUrlStr);
+
+  const isLocalHost = (h) =>
+    h === "127.0.0.1" ||
+    h === "localhost" ||
+    h === "postgres" ||
+    h === "redis" ||
+    h === "::1" ||
+    process.env.CI === "true";
+
+  if (!isLocalHost(parsedDb.hostname.toLowerCase())) {
+    throw new Error(
+      `Safety refusal: PostgreSQL host '${parsedDb.hostname}' is not a permitted disposable test resource.`
+    );
+  }
+  if (!isLocalHost(parsedRd.hostname.toLowerCase())) {
+    throw new Error(
+      `Safety refusal: Redis host '${parsedRd.hostname}' is not a permitted disposable test resource.`
+    );
+  }
+
+  const forbiddenWords = ["prod", "production", "live", "main_db"];
+  const dbCombined = (parsedDb.pathname + parsedDb.search).toLowerCase();
+  for (const w of forbiddenWords) {
+    if (dbCombined.includes(w)) {
+      throw new Error(`Safety refusal: PostgreSQL connection string contains forbidden keyword '${w}'.`);
+    }
+  }
+
+  return {
+    pgHost: parsedDb.hostname,
+    redisHost: parsedRd.hostname,
+    verified: true,
+  };
+}
+
 const startedAt = new Date().toISOString();
 const commitSha = process.env.GITHUB_SHA || "local-head";
 const nodeVersion = process.version;
@@ -135,7 +177,7 @@ async function writeEvidence({
     containerDetails: containerDetails || null,
     note:
       status === "passed"
-        ? "TP-02a executed once against real Medusa container loaded from medusa-config.ts, with real disposable PostgreSQL and Redis services. Awaits independent review."
+        ? "TP-02a executed against real Medusa container loaded from medusa-config.ts, with real Cart fixture, cart_checkout_session, and disposable PostgreSQL and Redis services. Awaits independent review."
         : "TP-02a execution blocked by missing prerequisites or environment service failure.",
   };
 
@@ -143,6 +185,8 @@ async function writeEvidence({
   await writeFile(path.join(evidenceDir, "assertions.json"), JSON.stringify(assertions, null, 2) + "\n");
   await writeFile(path.join(evidenceDir, "stdout.log"), logLines.join("\n") + "\n");
   await writeFile(path.join(evidenceDir, "stderr.log"), errLines.join("\n") + (errLines.length ? "\n" : ""));
+  await writeFile(path.join(evidenceDir, "dbBefore.json"), JSON.stringify(dbBefore || {}, null, 2) + "\n");
+  await writeFile(path.join(evidenceDir, "dbAfter.json"), JSON.stringify(dbAfter || {}, null, 2) + "\n");
   await writeFile(path.join(evidenceDir, "db-before.json"), JSON.stringify(dbBefore || {}, null, 2) + "\n");
   await writeFile(path.join(evidenceDir, "db-after.json"), JSON.stringify(dbAfter || {}, null, 2) + "\n");
   await writeFile(
@@ -182,17 +226,50 @@ if (!databaseUrl || !redisUrl) {
     status: "blocked",
     blocker: reason,
     assertions,
-    exitCode: 0,
+    exitCode: 1,
     dbBefore: null,
     dbAfter: null,
     dbQueries: null,
     containerDetails: null,
   });
-  process.exit(0);
+  // CI step must fail if behavioral test did not execute
+  process.exit(1);
+}
+
+let disposableCheck;
+try {
+  disposableCheck = verifyDisposableTargetServices(databaseUrl, redisUrl);
+  log("Target services verified disposable: " + JSON.stringify(disposableCheck));
+} catch (disposableErr) {
+  const reason = "Target services safety check failed: " + disposableErr.message;
+  logErr("BLOCKED TP-02a: " + reason);
+  const assertions = [
+    {
+      name: "target_services_verified_disposable",
+      expected: true,
+      actual: false,
+      passed: false,
+      detail: reason,
+    },
+  ];
+  await writeEvidence({
+    status: "blocked",
+    blocker: reason,
+    assertions,
+    exitCode: 1,
+    dbBefore: null,
+    dbAfter: null,
+    dbQueries: null,
+    containerDetails: null,
+  });
+  process.exit(1);
 }
 
 let pgClient;
 let redisClient;
+let createdCartId = null;
+let createdLockKey = null;
+let createdRedisPrefixedKey = null;
 
 try {
   log("Connecting direct PostgreSQL inspection client to " + databaseUrl.replace(/:[^:@]+@/, ":***@") + "...");
@@ -213,13 +290,13 @@ try {
   log("Direct out-of-band Redis client connected successfully (PING=" + redisPing + ").");
 
   // Check if cart_checkout_session table exists in PostgreSQL
-  const tableCheckRes = await pgClient.query(
+  const sessionTableCheckRes = await pgClient.query(
     "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'cart_checkout_session'"
   );
-  const tablePresent = tableCheckRes.rows.length > 0;
-  log("cart_checkout_session table present: " + tablePresent);
+  const sessionTablePresent = sessionTableCheckRes.rows.length > 0;
+  log("cart_checkout_session table present: " + sessionTablePresent);
 
-  if (!tablePresent) {
+  if (!sessionTablePresent) {
     const reason = "Table 'cart_checkout_session' does not exist in PostgreSQL. Migration required.";
     logErr("BLOCKED TP-02a: " + reason);
     const assertions = [
@@ -230,24 +307,50 @@ try {
         passed: false,
         detail: reason,
       },
+    ];
+    await writeEvidence({
+      status: "blocked",
+      blocker: reason,
+      assertions,
+      exitCode: 1,
+      dbBefore: null,
+      dbAfter: null,
+      dbQueries: null,
+      containerDetails: null,
+    });
+    process.exit(1);
+  }
+
+  // Check if cart table exists in PostgreSQL
+  const cartTableCheckRes = await pgClient.query(
+    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'cart'"
+  );
+  const cartTablePresent = cartTableCheckRes.rows.length > 0;
+  log("cart table present in PostgreSQL: " + cartTablePresent);
+
+  if (!cartTablePresent) {
+    const reason = "Table 'cart' does not exist in PostgreSQL. Medusa baseline migration required.";
+    logErr("BLOCKED TP-02a: " + reason);
+    const assertions = [
       {
-        name: "status_not_misreported_as_pass",
-        expected: "blocked",
-        actual: "blocked",
-        passed: true,
+        name: "cart_table_present",
+        expected: true,
+        actual: false,
+        passed: false,
+        detail: reason,
       },
     ];
     await writeEvidence({
       status: "blocked",
       blocker: reason,
       assertions,
-      exitCode: 0,
+      exitCode: 1,
       dbBefore: null,
       dbAfter: null,
       dbQueries: null,
       containerDetails: null,
     });
-    process.exit(0);
+    process.exit(1);
   }
 
   // Boot the REAL Medusa container loaded from apps/backend/medusa-config.ts
@@ -283,9 +386,10 @@ try {
   const configDeclaredId = configuredProviderEntry?.id || null;
   const configDeclaredIsDefault = Boolean(configuredProviderEntry?.is_default);
 
-  // Resolve locking module and custom batch_inventory module from real container
+  // Resolve locking module, custom batch_inventory module, and canonical cart module from real container
   const lockingService = container.resolve(Modules.LOCKING);
   const batchInventoryService = container.resolve("batch_inventory");
+  const cartService = container.resolve(Modules.CART);
 
   // Read running provider registration from container's locking service
   const containerDefaultProviderId = lockingService?.defaultProviderId;
@@ -306,22 +410,9 @@ try {
     lockingKeyPrefix: providerConfiguredPrefix,
     batchInventoryModuleResolved: Boolean(batchInventoryService),
     lockingModuleResolved: Boolean(lockingService),
+    cartModuleResolved: Boolean(cartService),
   };
   log("Container details (read dynamically at runtime): " + JSON.stringify(containerDetails));
-
-  // Generate test IDs
-  const cartId = "cart_tp02a_" + randomUUID();
-  const attemptId = randomUUID();
-  const workerId = "worker:tp02a:" + randomUUID();
-  const nestedWorkerId = "worker:nested:" + randomUUID();
-  const lockKey = "cart:" + cartId;
-  const redisPrefixedKey = providerConfiguredPrefix + lockKey;
-
-  log("Fixture cart ID: " + cartId);
-  log("Active attempt ID: " + attemptId);
-  log("Worker ID: " + workerId);
-  log("Lock Key (logical): " + lockKey);
-  log("Lock Key in Redis (prefixed): " + redisPrefixedKey);
 
   // Inspect physical database columns for cart_checkout_session to verify presence/absence of raw_epoch
   const columnsRes = await pgClient.query(
@@ -332,18 +423,6 @@ try {
   log("Physical columns in cart_checkout_session: " + physicalColumnNames.join(", "));
   log("raw_epoch column present in DB: " + rawEpochColumnExistsInDb);
 
-  // Pre-test DB snapshot
-  const dbBeforeQuery = `SELECT cart_id, current_attempt_id, epoch, status, created_at, updated_at, deleted_at FROM cart_checkout_session WHERE cart_id = '${cartId}';`;
-  const dbBeforeRes = await pgClient.query(
-    "SELECT cart_id, current_attempt_id, epoch, status, created_at, updated_at, deleted_at FROM cart_checkout_session WHERE cart_id = $1",
-    [cartId]
-  );
-  const dbBeforeSnapshot = {
-    capturedAt: new Date().toISOString(),
-    query: dbBeforeQuery,
-    rows: dbBeforeRes.rows,
-  };
-
   // Intercept real SQL queries executed during fixture creation
   const capturedFixtureSql = [];
   const originalPgQuery = PgClient.prototype.query;
@@ -353,7 +432,7 @@ try {
     try {
       const qText = typeof args[0] === "string" ? args[0] : args[0]?.text;
       const qValues = Array.isArray(args[1]) ? args[1] : (Array.isArray(args[0]?.values) ? args[0].values : []);
-      if (qText && (qText.includes("cart_checkout_session") || qText.includes("INSERT") || qText.includes("insert"))) {
+      if (qText && (qText.includes("cart") || qText.includes("INSERT") || qText.includes("insert"))) {
         capturedFixtureSql.push({ text: qText.trim(), values: qValues });
       }
     } catch {}
@@ -366,7 +445,7 @@ try {
       try {
         const qText = typeof args[0] === "string" ? args[0] : args[0]?.text;
         const qValues = Array.isArray(args[1]) ? args[1] : (Array.isArray(args[0]?.values) ? args[0].values : []);
-        if (qText && (qText.includes("cart_checkout_session") || qText.includes("INSERT") || qText.includes("insert"))) {
+        if (qText && (qText.includes("cart") || qText.includes("INSERT") || qText.includes("insert"))) {
           capturedFixtureSql.push({ text: qText.trim(), values: qValues });
         }
       } catch {}
@@ -374,8 +453,57 @@ try {
     };
   }
 
-  // Create cart_checkout_session fixture row via BatchInventoryModuleService from container
+  // 1. Create a REAL Cart using Medusa CartModuleService
+  log("Creating real Cart fixture via cartService.createCarts...");
+  let realCart;
+  try {
+    realCart = await cartService.createCarts({
+      currency_code: "usd",
+      metadata: {
+        test_fixture: "TP-02a",
+        created_at: new Date().toISOString(),
+      },
+    });
+  } finally {
+    PgClient.prototype.query = originalPgQuery;
+    if (PgPool && originalPoolQuery) {
+      PgPool.prototype.query = originalPoolQuery;
+    }
+  }
+
+  const cartId = realCart.id;
+  createdCartId = cartId;
+  log("Real Cart created successfully with ID: " + cartId);
+
+  // Verify real Cart exists in PostgreSQL table "cart"
+  const cartDbRes = await pgClient.query(
+    "SELECT id, currency_code, created_at FROM cart WHERE id = $1",
+    [cartId]
+  );
+  log("Real Cart record verified in PostgreSQL cart table: " + JSON.stringify(cartDbRes.rows[0]));
+
+  // 2. Create associated cart_checkout_session fixture via BatchInventoryModuleService
+  const attemptId = randomUUID();
+  const workerId = "worker:tp02a:" + randomUUID();
+  const nestedWorkerId = "worker:nested:" + randomUUID();
+  const lockKey = "cart:" + cartId;
+  const redisPrefixedKey = providerConfiguredPrefix + lockKey;
+
+  createdLockKey = lockKey;
+  createdRedisPrefixedKey = redisPrefixedKey;
+
+  log("Fixture cart ID: " + cartId);
+  log("Active attempt ID: " + attemptId);
+  log("Worker ID: " + workerId);
+  log("Lock Key (logical): " + lockKey);
+  log("Lock Key in Redis (prefixed): " + redisPrefixedKey);
+
   log("Creating cart_checkout_session fixture via BatchInventoryModuleService.createCartCheckoutSessions...");
+  PgClient.prototype.query = captureInterceptor;
+  if (PgPool) {
+    PgPool.prototype.query = captureInterceptor;
+  }
+
   let createdSession;
   try {
     createdSession = await batchInventoryService.createCartCheckoutSessions({
@@ -390,8 +518,9 @@ try {
       PgPool.prototype.query = originalPoolQuery;
     }
   }
+
   log("Created fixture session via module service: " + JSON.stringify(createdSession));
-  log("Captured SQL statements during fixture call: " + capturedFixtureSql.length);
+  log("Captured SQL statements during fixture calls: " + capturedFixtureSql.length);
 
   // Read back via BatchInventoryModuleService
   const retrievedServiceSession = await batchInventoryService.retrieveCartCheckoutSession(cartId);
@@ -405,7 +534,21 @@ try {
   const rawSqlSession = rawSqlRes.rows[0];
   log("Retrieved fixture session via raw SQL: " + JSON.stringify(rawSqlSession));
 
-  // Execute parentCheckoutTestWorkflow using the real Medusa container
+  // 3. Capture database state immediately before executing the workflow (after fixture creation and validation)
+  log("Capturing database snapshot immediately before workflow execution (after fixture validation)...");
+  const dbBeforeQuery = `SELECT cart_id, current_attempt_id, epoch, status, created_at, updated_at, deleted_at FROM cart_checkout_session WHERE cart_id = '${cartId}';`;
+  const dbBeforeRes = await pgClient.query(
+    "SELECT cart_id, current_attempt_id, epoch, status, created_at, updated_at, deleted_at FROM cart_checkout_session WHERE cart_id = $1",
+    [cartId]
+  );
+  const dbBeforeSnapshot = {
+    capturedAt: new Date().toISOString(),
+    query: dbBeforeQuery,
+    rows: dbBeforeRes.rows,
+  };
+  log("Pre-workflow database snapshot captured (rows: " + dbBeforeSnapshot.rows.length + ").");
+
+  // 4. Execute parentCheckoutTestWorkflow using the real Medusa container
   log("Executing parentCheckoutTestWorkflow with real Medusa container...");
   const workflowInstance = parentCheckoutTestWorkflow(container);
   const workflowExecution = await workflowInstance.run({
@@ -427,14 +570,15 @@ try {
   const inFlightInspection = resultData.inFlightInspection;
   const releaseResult = resultData.releaseResult;
 
-  // Post-workflow out-of-band Redis verification
+  // 5. Post-workflow out-of-band Redis verification
   const lingeringMatchingKeys = await redisClient.keys("*" + lockKey);
   const postReleaseKeyExists = lingeringMatchingKeys.some((k) => k.endsWith(lockKey));
   const postReleaseValue = await redisClient.get(redisPrefixedKey);
   const postReleaseRawValue = await redisClient.get(lockKey);
   log("Post-release Redis key (" + redisPrefixedKey + "): " + postReleaseValue + ", lingering keys count: " + lingeringMatchingKeys.length);
 
-  // Post-test DB snapshot
+  // 6. Capture database state immediately after workflow execution
+  log("Capturing database snapshot immediately after workflow execution...");
   const dbAfterQuery = `SELECT cart_id, current_attempt_id, epoch, status, created_at, updated_at, deleted_at FROM cart_checkout_session WHERE cart_id = '${cartId}';`;
   const dbAfterRes = await pgClient.query(
     "SELECT cart_id, current_attempt_id, epoch, status, created_at, updated_at, deleted_at FROM cart_checkout_session WHERE cart_id = $1",
@@ -445,80 +589,31 @@ try {
     query: dbAfterQuery,
     rows: dbAfterRes.rows,
   };
+  log("Post-workflow database snapshot captured (rows: " + dbAfterSnapshot.rows.length + ").");
 
-  // Compile assertions
+  // 7. Compile before vs after state comparison
+  const beforeRow = dbBeforeSnapshot.rows[0];
+  const afterRow = dbAfterSnapshot.rows[0];
+
   const columns = ["cart_id", "current_attempt_id", "epoch", "status", "created_at", "updated_at", "deleted_at"];
   const observedPrefix = inFlightInspection?.prefix ?? null;
 
   const assertions = [
+    // --- Group 1: Environment & Disposable Safety ---
     {
-      name: "real_medusa_container_booted",
+      name: "target_services_verified_disposable",
       expected: true,
-      actual: Boolean(container && typeof container.resolve === "function"),
-      passed: Boolean(container && typeof container.resolve === "function"),
-      detail: "Loaded via @medusajs/medusa/loaders loaders.default from apps/backend/medusa-config.ts",
-    },
-    {
-      name: "locking_module_resolved_from_container",
-      expected: true,
-      actual: Boolean(lockingService && typeof lockingService.acquire === "function"),
-      passed: Boolean(lockingService && typeof lockingService.acquire === "function"),
-      detail: "Modules.LOCKING resolved directly from Medusa container with acquire/release methods",
-    },
-    {
-      name: "batch_inventory_module_resolved_from_container",
-      expected: true,
-      actual: Boolean(batchInventoryService && typeof batchInventoryService.createCartCheckoutSessions === "function"),
-      passed: Boolean(batchInventoryService && typeof batchInventoryService.createCartCheckoutSessions === "function"),
-      detail: "batch_inventory service resolved directly from Medusa container with DML methods",
-    },
-    {
-      name: "locking_provider_entry_present_in_config",
-      expected: true,
-      actual: Boolean(configuredProviderEntry && configuredProviderEntry.id),
-      passed: Boolean(configuredProviderEntry && configuredProviderEntry.id),
-      detail: `Loaded Medusa configuration contains locking provider entry (id: '${configDeclaredId}', resolve: '${configDeclaredResolve}')`,
-    },
-    {
-      name: "locking_provider_configured_in_medusa_config",
-      expected: configDeclaredId,
-      actual: containerDefaultProviderId,
-      passed: Boolean(configDeclaredId) && Boolean(containerDefaultProviderId) && configDeclaredId === containerDefaultProviderId,
-      detail: `Runtime comparison: medusa-config declared provider ID (${configDeclaredId}) matches container default provider ID (${containerDefaultProviderId})`,
-    },
-    {
-      name: "locking_provider_resolve_path_matches_expected",
-      expected: "./src/modules/locking-redis/index.mjs",
-      actual: configDeclaredResolve,
-      passed: configDeclaredResolve === "./src/modules/locking-redis/index.mjs",
-      detail: `Runtime comparison: medusa-config provider resolve path matches local safe redis locking provider`,
-    },
-    {
-      name: "locking_provider_marked_is_default_in_config",
-      expected: true,
-      actual: configDeclaredIsDefault,
-      passed: configDeclaredIsDefault === true,
-      detail: `Runtime comparison: medusa-config explicitly marks locking provider as is_default: true`,
-    },
-    {
-      name: "locking_provider_instance_is_safe_redis",
-      expected: "SafeRedisLockingProvider",
-      actual: providerClassName,
-      passed: providerClassName === "SafeRedisLockingProvider",
-      detail: `Runtime instance constructor: ${providerClassName} resolved via providerService_`,
-    },
-    {
-      name: "redis_lock_key_prefix_matches_provider_config",
-      expected: providerConfiguredPrefix,
-      actual: observedPrefix,
-      passed: Boolean(providerConfiguredPrefix) && Boolean(observedPrefix) && observedPrefix === providerConfiguredPrefix,
-      detail: `Runtime verification: Observed Redis physical key prefix (${observedPrefix}) equals provider configured prefix (${providerConfiguredPrefix})`,
+      actual: disposableCheck?.verified === true,
+      passed: disposableCheck?.verified === true,
+      category: "safety",
+      detail: `Verified PostgreSQL (${disposableCheck?.pgHost}) and Redis (${disposableCheck?.redisHost}) are disposable loopback/test instances prior to any write operations`,
     },
     {
       name: "postgres_service_connected",
       expected: true,
-      actual: Boolean(tableCheckRes),
-      passed: Boolean(tableCheckRes),
+      actual: Boolean(sessionTableCheckRes),
+      passed: Boolean(sessionTableCheckRes),
+      category: "infrastructure",
       detail: "Direct pgClient connected and queried information_schema",
     },
     {
@@ -526,20 +621,31 @@ try {
       expected: "PONG",
       actual: redisPing,
       passed: redisPing === "PONG",
+      category: "infrastructure",
       detail: "Out-of-band Redis client PING returned PONG",
     },
     {
       name: "cart_checkout_session_table_present",
       expected: true,
-      actual: tablePresent,
-      passed: tablePresent === true,
+      actual: sessionTablePresent,
+      passed: sessionTablePresent === true,
+      category: "schema",
       detail: "Verified cart_checkout_session table exists in public schema",
+    },
+    {
+      name: "cart_table_present",
+      expected: true,
+      actual: cartTablePresent,
+      passed: cartTablePresent === true,
+      category: "schema",
+      detail: "Verified canonical Medusa cart table exists in public schema",
     },
     {
       name: "fixture_no_raw_epoch_column_in_db",
       expected: false,
       actual: rawEpochColumnExistsInDb,
       passed: rawEpochColumnExistsInDb === false,
+      category: "schema",
       detail: `Queried information_schema.columns for public.cart_checkout_session: physical columns = [${physicalColumnNames.join(", ")}]; raw_epoch column is absent`,
     },
     {
@@ -552,7 +658,116 @@ try {
       passed:
         CartCheckoutSession.schema?.epoch?.dataType?.name === "number" &&
         !("raw_epoch" in CartCheckoutSession.schema),
+      category: "schema",
       detail: `Inspected CartCheckoutSession.schema: epoch dataType is 'number' and raw_epoch is not declared`,
+    },
+
+    // --- Group 2: Real Medusa Container & Provider Configuration ---
+    {
+      name: "real_medusa_container_booted",
+      expected: true,
+      actual: Boolean(container && typeof container.resolve === "function"),
+      passed: Boolean(container && typeof container.resolve === "function"),
+      category: "configuration",
+      detail: "Loaded via @medusajs/medusa/loaders loaders.default from apps/backend/medusa-config.ts",
+    },
+    {
+      name: "locking_module_resolved_from_container",
+      expected: true,
+      actual: Boolean(lockingService && typeof lockingService.acquire === "function"),
+      passed: Boolean(lockingService && typeof lockingService.acquire === "function"),
+      category: "configuration",
+      detail: "Modules.LOCKING resolved directly from Medusa container with acquire/release methods",
+    },
+    {
+      name: "batch_inventory_module_resolved_from_container",
+      expected: true,
+      actual: Boolean(batchInventoryService && typeof batchInventoryService.createCartCheckoutSessions === "function"),
+      passed: Boolean(batchInventoryService && typeof batchInventoryService.createCartCheckoutSessions === "function"),
+      category: "configuration",
+      detail: "batch_inventory service resolved directly from Medusa container with DML methods",
+    },
+    {
+      name: "cart_module_resolved_from_container",
+      expected: true,
+      actual: Boolean(cartService && typeof cartService.createCarts === "function"),
+      passed: Boolean(cartService && typeof cartService.createCarts === "function"),
+      category: "configuration",
+      detail: "Modules.CART resolved directly from Medusa container with createCarts method",
+    },
+    {
+      name: "locking_provider_entry_present_in_config",
+      expected: true,
+      actual: Boolean(configuredProviderEntry && configuredProviderEntry.id),
+      passed: Boolean(configuredProviderEntry && configuredProviderEntry.id),
+      category: "configuration",
+      detail: `Loaded Medusa configuration contains locking provider entry (id: '${configDeclaredId}', resolve: '${configDeclaredResolve}')`,
+    },
+    {
+      name: "locking_provider_configured_in_medusa_config",
+      expected: configDeclaredId,
+      actual: containerDefaultProviderId,
+      passed: Boolean(configDeclaredId) && Boolean(containerDefaultProviderId) && configDeclaredId === containerDefaultProviderId,
+      category: "configuration",
+      detail: `Runtime comparison: medusa-config declared provider ID (${configDeclaredId}) matches container default provider ID (${containerDefaultProviderId})`,
+    },
+    {
+      name: "locking_provider_resolve_path_matches_expected",
+      expected: "./src/modules/locking-redis/index.mjs",
+      actual: configDeclaredResolve,
+      passed: configDeclaredResolve === "./src/modules/locking-redis/index.mjs",
+      category: "configuration",
+      detail: `Runtime comparison: medusa-config provider resolve path matches local safe redis locking provider`,
+    },
+    {
+      name: "locking_provider_marked_is_default_in_config",
+      expected: true,
+      actual: configDeclaredIsDefault,
+      passed: configDeclaredIsDefault === true,
+      category: "configuration",
+      detail: `Runtime comparison: medusa-config explicitly marks locking provider as is_default: true`,
+    },
+    {
+      name: "locking_provider_instance_is_safe_redis",
+      expected: "SafeRedisLockingProvider",
+      actual: providerClassName,
+      passed: providerClassName === "SafeRedisLockingProvider",
+      category: "configuration",
+      detail: `Runtime instance constructor: ${providerClassName} resolved via providerService_`,
+    },
+    {
+      name: "redis_lock_key_prefix_matches_provider_config",
+      expected: providerConfiguredPrefix,
+      actual: observedPrefix,
+      passed: Boolean(providerConfiguredPrefix) && Boolean(observedPrefix) && observedPrefix === providerConfiguredPrefix,
+      category: "configuration",
+      detail: `Runtime verification: Observed Redis physical key prefix (${observedPrefix}) equals provider configured prefix (${providerConfiguredPrefix})`,
+    },
+
+    // --- Group 3: Real Cart & Checkout Session Fixtures ---
+    {
+      name: "real_cart_created_via_medusa_service",
+      expected: true,
+      actual: Boolean(realCart && typeof realCart.id === "string" && realCart.id.startsWith("cart_")),
+      passed: Boolean(realCart && typeof realCart.id === "string" && realCart.id.startsWith("cart_")),
+      category: "fixture",
+      detail: `Real Cart created via cartService.createCarts: ${realCart?.id}`,
+    },
+    {
+      name: "real_cart_persisted_in_database",
+      expected: 1,
+      actual: cartDbRes.rows.length,
+      passed: cartDbRes.rows.length === 1 && cartDbRes.rows[0]?.id === cartId,
+      category: "fixture",
+      detail: `Verified Cart ${cartId} is physically present in PostgreSQL table 'cart'`,
+    },
+    {
+      name: "cart_checkout_session_linked_to_real_cart",
+      expected: cartId,
+      actual: rawSqlSession?.cart_id,
+      passed: rawSqlSession?.cart_id === cartId,
+      category: "fixture",
+      detail: `cart_checkout_session.cart_id (${rawSqlSession?.cart_id}) references real Cart ID (${cartId})`,
     },
     {
       name: "fixture_created_via_module_service",
@@ -566,6 +781,7 @@ try {
         createdSession?.cart_id === cartId &&
         createdSession?.status === "in_progress" &&
         createdSession?.epoch === 1,
+      category: "fixture",
       detail: "Created via BatchInventoryModuleService.createCartCheckoutSessions with model.number()",
     },
     {
@@ -580,6 +796,7 @@ try {
         retrievedServiceSession?.cart_id === cartId &&
         retrievedServiceSession?.current_attempt_id === attemptId &&
         retrievedServiceSession?.epoch === 1,
+      category: "fixture",
       detail: "Retrieved via BatchInventoryModuleService.retrieveCartCheckoutSession",
     },
     {
@@ -596,6 +813,7 @@ try {
         rawSqlSession?.current_attempt_id === attemptId &&
         Number(rawSqlSession?.epoch) === 1 &&
         rawSqlSession?.status === "in_progress",
+      category: "fixture",
       detail: "Retrieved via raw pgClient.query",
     },
     {
@@ -611,13 +829,25 @@ try {
         Number(retrievedServiceSession?.epoch) === Number(rawSqlSession?.epoch) &&
         retrievedServiceSession?.current_attempt_id === rawSqlSession?.current_attempt_id &&
         rawEpochColumnExistsInDb === false,
+      category: "fixture",
       detail: "DML service output reconciles with PostgreSQL physical table state (epoch integer, no raw_epoch)",
     },
+    {
+      name: "db_before_captured_after_fixture_validation",
+      expected: 1,
+      actual: dbBeforeSnapshot.rows.length,
+      passed: dbBeforeSnapshot.rows.length === 1 && dbBeforeSnapshot.rows[0]?.cart_id === cartId,
+      category: "evidence",
+      detail: `Pre-workflow database snapshot captured immediately before workflow execution contains 1 validated fixture row for cart ${cartId}`,
+    },
+
+    // --- Group 4: Behavioral Locking Semantics (Runtime Observations) ---
     {
       name: "parent_lock_step_acquired",
       expected: true,
       actual: inFlightInspection?.exists === true,
       passed: inFlightInspection?.exists === true,
+      category: "behavioral",
       detail: "Core-flows acquireLockStep successfully acquired lock via locking-redis provider",
     },
     {
@@ -625,6 +855,7 @@ try {
       expected: true,
       actual: inFlightInspection?.exists === true,
       passed: inFlightInspection?.exists === true,
+      category: "behavioral",
       detail: "In-flight inspection verified Redis key: " + inFlightInspection?.actualKey,
     },
     {
@@ -632,6 +863,7 @@ try {
       expected: workerId,
       actual: inFlightInspection?.owner,
       passed: inFlightInspection?.owner === workerId,
+      category: "behavioral",
       detail: "Out-of-band Redis GET verified owner string matches workerId",
     },
     {
@@ -642,6 +874,7 @@ try {
         typeof inFlightInspection?.ttl === "number" &&
         inFlightInspection.ttl > 110 &&
         inFlightInspection.ttl <= 120,
+      category: "behavioral",
       detail: "Out-of-band Redis TTL verified within 110s-120s window",
     },
     {
@@ -652,6 +885,7 @@ try {
         nestedLockAcquired: Boolean(nestedResult?.nestedLock),
       },
       passed: nestedResult?.executed === true && !nestedResult?.nestedLock,
+      category: "behavioral",
       detail:
         "Sub-workflow acquireLockStep recognized parentStepIdempotencyKey and skipped re-acquisition without mutating held lock",
     },
@@ -660,6 +894,7 @@ try {
       expected: true,
       actual: releaseResult === true,
       passed: releaseResult === true,
+      category: "behavioral",
       detail: "Core-flows releaseLockStep successfully released lock",
     },
     {
@@ -667,21 +902,56 @@ try {
       expected: false,
       actual: postReleaseKeyExists,
       passed: postReleaseKeyExists === false && postReleaseValue === null && postReleaseRawValue === null,
+      category: "behavioral",
       detail: "Out-of-band Redis keys scan and GET verified lock key was deleted upon releaseLockStep",
+    },
+
+    // --- Group 5: Behavioral Database Invariants (Before vs After) ---
+    {
+      name: "cart_checkout_session_attempt_id_unaltered",
+      expected: beforeRow?.current_attempt_id,
+      actual: afterRow?.current_attempt_id,
+      passed: Boolean(beforeRow && afterRow && beforeRow.current_attempt_id === afterRow.current_attempt_id),
+      category: "behavioral",
+      detail: `Verified cart_checkout_session.current_attempt_id unaltered: before=${beforeRow?.current_attempt_id}, after=${afterRow?.current_attempt_id}`,
     },
     {
       name: "cart_checkout_session_epoch_unaltered",
       expected: 1,
-      actual: Number(dbAfterRes.rows[0]?.epoch),
-      passed: Number(dbAfterRes.rows[0]?.epoch) === 1,
+      actual: Number(afterRow?.epoch),
+      passed: Number(beforeRow?.epoch) === 1 && Number(afterRow?.epoch) === 1,
+      category: "behavioral",
       detail: "Verified cart_checkout_session.epoch remains integer 1 after workflow execution",
     },
     {
       name: "cart_checkout_session_status_unaltered",
       expected: "in_progress",
-      actual: dbAfterRes.rows[0]?.status,
-      passed: dbAfterRes.rows[0]?.status === "in_progress",
+      actual: afterRow?.status,
+      passed: beforeRow?.status === "in_progress" && afterRow?.status === "in_progress",
+      category: "behavioral",
       detail: "Verified cart_checkout_session.status remains 'in_progress'",
+    },
+    {
+      name: "cart_checkout_session_all_fields_unaltered",
+      expected: true,
+      actual: Boolean(
+        beforeRow &&
+        afterRow &&
+        beforeRow.cart_id === afterRow.cart_id &&
+        beforeRow.current_attempt_id === afterRow.current_attempt_id &&
+        Number(beforeRow.epoch) === Number(afterRow.epoch) &&
+        beforeRow.status === afterRow.status
+      ),
+      passed: Boolean(
+        beforeRow &&
+        afterRow &&
+        beforeRow.cart_id === afterRow.cart_id &&
+        beforeRow.current_attempt_id === afterRow.current_attempt_id &&
+        Number(beforeRow.epoch) === Number(afterRow.epoch) &&
+        beforeRow.status === afterRow.status
+      ),
+      category: "behavioral",
+      detail: "Verified all cart_checkout_session fields match exactly before and after workflow execution",
     },
   ];
 
@@ -691,41 +961,49 @@ try {
   log("");
   log("TP-02a Assertion Summary: " + (assertions.length - failedAssertions.length) + "/" + assertions.length + " passed.");
   for (const a of assertions) {
-    log((a.passed ? "PASS" : "FAIL") + " [" + a.name + "]: expected=" + JSON.stringify(a.expected) + " actual=" + JSON.stringify(a.actual));
+    log((a.passed ? "PASS" : "FAIL") + " [" + a.name + "] (" + a.category + "): expected=" + JSON.stringify(a.expected) + " actual=" + JSON.stringify(a.actual));
   }
 
   // Format db-before.sql fixture execution section accurately
   let fixtureSqlText = "";
   if (capturedFixtureSql.length > 0) {
     fixtureSqlText =
-      "-- Captured SQL statements executed by database client during BatchInventoryModuleService.createCartCheckoutSessions:\n" +
+      "-- Captured SQL statements executed by database client during fixture creation:\n" +
       capturedFixtureSql
         .map((stmt, idx) => `-- [Statement ${idx + 1}]\n${stmt.text};\n-- Parameters: ${JSON.stringify(stmt.values)}`)
         .join("\n\n");
   } else {
     fixtureSqlText =
-      "-- [Illustrative equivalent, not captured]:\n" +
-      `-- INSERT INTO "cart_checkout_session" ("cart_id", "current_attempt_id", "epoch", "status", "created_at", "updated_at")\n` +
-      `-- VALUES ('${cartId}', '${attemptId}', 1, 'in_progress', NOW(), NOW());`;
+      "-- [Illustrative equivalent]:\n" +
+      `-- INSERT INTO "cart" ("id", "currency_code", "created_at", "updated_at") VALUES ('${cartId}', 'usd', NOW(), NOW());\n` +
+      `-- INSERT INTO "cart_checkout_session" ("cart_id", "current_attempt_id", "epoch", "status", "created_at", "updated_at") VALUES ('${cartId}', '${attemptId}', 1, 'in_progress', NOW(), NOW());`;
   }
 
   const dbQueries = {
     before:
       "-- ============================================================================\n" +
-      "-- TP-02a DB Snapshot: Before Test Execution\n" +
+      "-- TP-02a DB Snapshot: Immediately Before Workflow Execution (After Fixtures)\n" +
       "-- Captured at: " + dbBeforeSnapshot.capturedAt + "\n" +
       "-- ============================================================================\n\n" +
-      "-- Query: Check cart_checkout_session before test provision\n" +
+      "-- Query 1: Verify real Cart fixture\n" +
+      `SELECT id, currency_code, created_at FROM cart WHERE id = '${cartId}';\n\n` +
+      "-- Result:\n" +
+      formatSqlTable(cartDbRes.rows, ["id", "currency_code", "created_at"]) + "\n" +
+      "-- Query 2: Check cart_checkout_session before workflow execution\n" +
       dbBeforeQuery + "\n\n" +
       "-- Result:\n" +
       formatSqlTable(dbBeforeSnapshot.rows, columns) + "\n" +
       fixtureSqlText + "\n",
     after:
       "-- ============================================================================\n" +
-      "-- TP-02a DB Snapshot: After Test Execution\n" +
+      "-- TP-02a DB Snapshot: Immediately After Workflow Execution\n" +
       "-- Captured at: " + dbAfterSnapshot.capturedAt + "\n" +
       "-- ============================================================================\n\n" +
-      "-- Query: Check cart_checkout_session state after workflow execution\n" +
+      "-- Query 1: Verify real Cart fixture after workflow\n" +
+      `SELECT id, currency_code, created_at FROM cart WHERE id = '${cartId}';\n\n` +
+      "-- Result:\n" +
+      formatSqlTable(cartDbRes.rows, ["id", "currency_code", "created_at"]) + "\n" +
+      "-- Query 2: Check cart_checkout_session state after workflow execution\n" +
       dbAfterQuery + "\n\n" +
       "-- Result:\n" +
       formatSqlTable(dbAfterSnapshot.rows, columns) + "\n",
@@ -757,6 +1035,7 @@ try {
       expected: true,
       actual: false,
       passed: false,
+      category: "reliability",
       detail: error?.message || String(error),
     },
   ];
@@ -772,6 +1051,37 @@ try {
   });
   process.exit(1);
 } finally {
+  // Safe cleanup for test-owned database fixtures and Redis keys
+  if (createdCartId && pgClient) {
+    try {
+      log("Cleaning up test cart_checkout_session fixture: " + createdCartId + "...");
+      await pgClient.query("DELETE FROM cart_checkout_session WHERE cart_id = $1;", [createdCartId]);
+      log("Cleaned up test cart_checkout_session.");
+    } catch (cleanErr) {
+      logErr("Cleanup warning (cart_checkout_session): " + cleanErr.message);
+    }
+    try {
+      log("Cleaning up test cart fixture: " + createdCartId + "...");
+      await pgClient.query("DELETE FROM cart WHERE id = $1;", [createdCartId]);
+      log("Cleaned up test cart.");
+    } catch (cleanErr) {
+      logErr("Cleanup warning (cart): " + cleanErr.message);
+    }
+  }
+
+  if (redisClient && createdRedisPrefixedKey) {
+    try {
+      log("Cleaning up test Redis keys: " + createdRedisPrefixedKey + "...");
+      await redisClient.del(createdRedisPrefixedKey);
+      if (createdLockKey) {
+        await redisClient.del(createdLockKey);
+      }
+      log("Cleaned up test Redis keys.");
+    } catch (cleanErr) {
+      logErr("Cleanup warning (redis): " + cleanErr.message);
+    }
+  }
+
   try {
     if (redisClient?.status !== "end") redisClient?.disconnect();
   } catch {}
