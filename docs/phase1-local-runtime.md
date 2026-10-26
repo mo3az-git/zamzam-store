@@ -72,7 +72,13 @@ modified sources are not treated as clean-commit evidence.
   conversion. No fallback HTTP cleanup can hide a broken workflow timeout CAS.
 - TP-04a/TP-04b use the real native line-item/cart mutation routes. An active or
   completed session rejects mutation; old timestamps do not unlock the cart.
-  The mutation lock spans the downstream response. An aborted-state fixture
+  Native route delegates hold the lock until the actual controller promise
+  settles, including after a client disconnect. The test gates a real update,
+  aborts its HTTP client, observes the server-side close, rejects a competitor
+  and then verifies the original update completes before release. A static
+  inventory checks all nine pinned native cart mutation methods are delegated
+  through this guard; it does not claim runtime execution of all nine methods.
+  An aborted-state fixture
   permits a real native cart update; it does not implement or test recovery.
 - TP-21c invokes `system_security.prepareRefundIdentity` in the real Medusa
   container, with PostgreSQL/Redis running. It checks stable HMAC/request hashes,

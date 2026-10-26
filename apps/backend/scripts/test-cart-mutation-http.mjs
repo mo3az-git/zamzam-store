@@ -18,6 +18,12 @@ const check = (name, expected, actual, passed) => {
   console.log(`${passed ? "PASS" : "FAIL"} ${name}: ${JSON.stringify(actual)}`);
   if (!passed) throw new Error("Assertion failed: " + name);
 };
+const bounded = async (promise, label) => {
+  let timer;
+  try { return await Promise.race([promise, new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("Timed out: " + label)), 5000);
+  })]); } finally { clearTimeout(timer); }
+};
 let runtime, server, pg, redis, cart, apiKey, cartService, apiKeyService, locking, physicalKey;
 let regionService, salesChannelService, region, salesChannel;
 let dbBefore, dbAfter, containerDetails;
@@ -136,6 +142,66 @@ try {
     allowed.status === 200 && allowed.body.cart?.metadata?.after_abort === true);
   const persisted = await pg.query("SELECT metadata FROM cart WHERE id=$1", [cart.id]);
   check("allowed_native_mutation_persisted", true, persisted.rows[0]?.metadata?.after_abort, persisted.rows[0]?.metadata?.after_abort === true);
+  if (id === "TP-04a") {
+    const engine = runtime.container.resolve(Modules.WORKFLOW_ENGINE), originalRun = engine.run;
+    let enter, release, done, closed;
+    const entered = new Promise((resolve) => { enter = resolve; });
+    const gate = new Promise((resolve) => { release = resolve; });
+    const completed = new Promise((resolve) => { done = resolve; });
+    const serverClosed = new Promise((resolve) => { closed = resolve; });
+    const probe = randomUUID();
+    const observeClose = (req, res) => {
+      if (req.headers["x-phase1-disconnect-probe"] === probe) res.once("close", () => closed());
+    };
+    server.on("request", observeClose);
+    let firstCall = true;
+    engine.run = async function(workflowId, args) {
+      if (firstCall && workflowId === "update-cart" && args?.input?.id === cart.id) {
+        firstCall = false; enter(); await gate;
+        try { return await originalRun.call(this, workflowId, args); } finally { done(); }
+      }
+      return originalRun.call(this, workflowId, args);
+    };
+    const client = new AbortController();
+    const response = fetch(base + "/store/carts/" + cart.id, {
+      method: "POST", headers: { "content-type": "application/json", "x-publishable-api-key": apiKey.token,
+        "x-phase1-disconnect-probe": probe },
+      body: JSON.stringify({ metadata: { fixture: id, disconnected_update: true } }), signal: client.signal,
+    }).then(() => "unexpected_response", (error) => error.name);
+    try {
+      await bounded(entered, "disconnected native workflow entry");
+      client.abort();
+      await bounded(serverClosed, "server-side response close");
+      const disconnectReason = await response;
+      check("client_disconnected_during_native_workflow", "AbortError", disconnectReason, disconnectReason === "AbortError");
+      events.push({ event: "client_disconnected_while_native_update_waited", at: new Date().toISOString() });
+      const contender = await request("", { metadata: { contender_after_disconnect: true } });
+      check("disconnect_does_not_release_inflight_mutation_lock", 409, contender, contender.status === 409 && contender.body.type === "conflict");
+      const observedOwner = await redis.get(physicalKey);
+      check("mutation_lock_still_owned_after_client_close", "execute owner", observedOwner, observedOwner?.startsWith("execute:"));
+      const during = await pg.query("SELECT metadata FROM cart WHERE id=$1", [cart.id]);
+      check("disconnect_contender_caused_zero_database_writes", persisted.rows[0].metadata, during.rows[0]?.metadata,
+        JSON.stringify(persisted.rows[0].metadata) === JSON.stringify(during.rows[0]?.metadata));
+    } finally {
+      release(); client.abort();
+      try {
+        if (!firstCall) await bounded(completed, "native update after disconnect");
+      } finally {
+        engine.run = originalRun; server.off("request", observeClose);
+      }
+    }
+    let remaining;
+    for (let poll=0; poll<100; poll++) {
+      remaining = await redis.get(physicalKey);
+      if (remaining === null) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const afterDisconnect = await pg.query("SELECT metadata FROM cart WHERE id=$1", [cart.id]);
+    check("disconnected_native_update_completed_then_lock_released", { completed: true, lock: null },
+      { completed: afterDisconnect.rows[0]?.metadata?.disconnected_update, lock: remaining },
+      afterDisconnect.rows[0]?.metadata?.disconnected_update === true && remaining === null);
+    events.push({ event: "disconnected_native_update_finished_and_lock_released", at: new Date().toISOString() });
+  }
   status = "passed";
 } catch (error) {
   blocker = error.stack || String(error);
