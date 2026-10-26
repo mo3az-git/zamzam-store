@@ -10,6 +10,17 @@ export interface Stage2CheckoutLockWorkflowInput {
   retryInterval?: number
 }
 
+export function isLockContentionError(err: unknown): boolean {
+  if (!err) return false
+  const isMedusaConflict =
+    (err instanceof MedusaError || (err as { name?: string }).name === "MedusaError") &&
+    (err as { type?: string }).type === MedusaError.Types.CONFLICT
+  const message = (err as { message?: string }).message
+  const isAcquisitionFailure =
+    typeof message === "string" && message.startsWith("Failed to acquire lock for key ")
+  return Boolean(isMedusaConflict && isAcquisitionFailure)
+}
+
 export const stage2AcquireLockStep = createStep<
   Stage2CheckoutLockWorkflowInput,
   { key: string; ownerId: string },
@@ -32,7 +43,10 @@ export const stage2AcquireLockStep = createStep<
           ownerId: input.ownerId,
         })
         acquired = true
-      } catch {
+      } catch (err) {
+        if (!isLockContentionError(err)) {
+          throw err
+        }
         if (Date.now() >= tryUntil) {
           throw new MedusaError(
             MedusaError.Types.CONFLICT,

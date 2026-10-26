@@ -11,6 +11,7 @@
     "spike:locking-redis": "node scripts/check-locking-redis.mjs && node scripts/check-locking-redis-edge-cases.mjs",
     "spike:target-validator": "node scripts/test-disposable-target-validator.mjs",
     "spike:tp02a": "node scripts/test-tp02a-distributed-lock.mjs",
+    "spike:tp03-negative-control": "node scripts/check-stage2-lock-negative-control.mjs",
     "spike:tp03": "node scripts/test-tp03-concurrent-lock-rejection.mjs"
   },
   "dependencies": {

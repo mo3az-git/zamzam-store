@@ -156,6 +156,12 @@ jobs:
           set -o pipefail
           node apps/backend/scripts/test-tp02a-distributed-lock.mjs 2>&1 | tee artifacts/tp-02a-distributed-lock.log
 
+      - name: Verify TP-03 negative control (non-contention error propagation)
+        shell: bash
+        run: |
+          set -o pipefail
+          node apps/backend/scripts/check-stage2-lock-negative-control.mjs 2>&1 | tee artifacts/tp-03-negative-control.log
+
       - name: Run TP-03 concurrent cart lock rejection test
         shell: bash
         env:
