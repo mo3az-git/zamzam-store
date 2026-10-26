@@ -116,9 +116,10 @@ async function runTp03Test() {
     const sessionTablePresent = await checkTable("cart_checkout_session");
     const cartTablePresent = await checkTable("cart");
     const reservationTablePresent = await checkTable("cart_batch_reservation");
+    const nativeReservationTablePresent = await checkTable("reservation_item");
 
-    if (!sessionTablePresent || !cartTablePresent || !reservationTablePresent) {
-      blockerReason = `Required tables missing: cart_checkout_session=${sessionTablePresent}, cart=${cartTablePresent}, cart_batch_reservation=${reservationTablePresent}`;
+    if (!sessionTablePresent || !cartTablePresent || !reservationTablePresent || !nativeReservationTablePresent) {
+      blockerReason = `Required tables missing: cart_checkout_session=${sessionTablePresent}, cart=${cartTablePresent}, cart_batch_reservation=${reservationTablePresent}, reservation_item=${nativeReservationTablePresent}`;
       logErr("BLOCKED TP-03: " + blockerReason);
       testStatus = "blocked";
     } else {
@@ -193,15 +194,16 @@ async function runTp03Test() {
       const ccsCols = ["cart_id", "current_attempt_id", "epoch", "status", "created_at", "updated_at", "deleted_at"];
       const ccsBeforeRes = await pgClient.query("SELECT cart_id, current_attempt_id, epoch, status, created_at, updated_at, deleted_at FROM cart_checkout_session WHERE cart_id = $1", [cartId]);
       const cbrBeforeRes = await pgClient.query("SELECT * FROM cart_batch_reservation WHERE cart_id = $1", [cartId]);
-      let nativeResBeforeCount = 0;
-      if (await checkTable("reservation_item")) {
+      let nativeResBeforeCount = null;
+      if (nativeReservationTablePresent) {
         const nativeRes = await pgClient.query("SELECT COUNT(*)::int AS cnt FROM reservation_item");
-        nativeResBeforeCount = nativeRes.rows[0]?.cnt ?? 0;
+        nativeResBeforeCount = Number(nativeRes.rows[0]?.cnt ?? 0);
       }
       dbBeforeSnapshot = {
         capturedAt: new Date().toISOString(),
         cartCheckoutSession: ccsBeforeRes.rows,
         cartBatchReservation: cbrBeforeRes.rows,
+        nativeReservationItemTablePresent,
         nativeReservationItemCount: nativeResBeforeCount,
       };
 
@@ -226,15 +228,16 @@ async function runTp03Test() {
       // 7. Capture genuine post-workflow database snapshot
       const ccsAfterRes = await pgClient.query("SELECT cart_id, current_attempt_id, epoch, status, created_at, updated_at, deleted_at FROM cart_checkout_session WHERE cart_id = $1", [cartId]);
       const cbrAfterRes = await pgClient.query("SELECT * FROM cart_batch_reservation WHERE cart_id = $1", [cartId]);
-      let nativeResAfterCount = 0;
-      if (await checkTable("reservation_item")) {
+      let nativeResAfterCount = null;
+      if (nativeReservationTablePresent) {
         const nativeRes = await pgClient.query("SELECT COUNT(*)::int AS cnt FROM reservation_item");
-        nativeResAfterCount = nativeRes.rows[0]?.cnt ?? 0;
+        nativeResAfterCount = Number(nativeRes.rows[0]?.cnt ?? 0);
       }
       dbAfterSnapshot = {
         capturedAt: new Date().toISOString(),
         cartCheckoutSession: ccsAfterRes.rows,
         cartBatchReservation: cbrAfterRes.rows,
+        nativeReservationItemTablePresent,
         nativeReservationItemCount: nativeResAfterCount,
       };
 
@@ -242,18 +245,25 @@ async function runTp03Test() {
       const cbrColsRes = await pgClient.query("SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'cart_batch_reservation'");
       const physicalCbrCols = cbrColsRes.rows.map((r) => r.column_name);
 
-      const beforeCcs = dbBeforeSnapshot.cartCheckoutSession[0];
-      const afterCcs = dbAfterSnapshot.cartCheckoutSession[0];
+      const beforeCcsRows = dbBeforeSnapshot.cartCheckoutSession || [];
+      const afterCcsRows = dbAfterSnapshot.cartCheckoutSession || [];
+      const hasExactlyOneBefore = beforeCcsRows.length === 1;
+      const hasExactlyOneAfter = afterCcsRows.length === 1;
+      const beforeCcs = hasExactlyOneBefore ? beforeCcsRows[0] : null;
+      const afterCcs = hasExactlyOneAfter ? afterCcsRows[0] : null;
+
+      const nativeBeforeLabel = `\nSELECT COUNT(*) FROM reservation_item;\n-- Count: ${dbBeforeSnapshot.nativeReservationItemCount}\n`;
+      const nativeAfterLabel = `\nSELECT COUNT(*) FROM reservation_item;\n-- Count: ${dbAfterSnapshot.nativeReservationItemCount}\n`;
 
       dbQueries = {
         before: `-- TP-03 DB Snapshot: Before Worker B\nSELECT * FROM cart_checkout_session WHERE cart_id = '${cartId}';\n` +
           formatSqlTable(dbBeforeSnapshot.cartCheckoutSession, ccsCols) +
           `\nSELECT * FROM cart_batch_reservation WHERE cart_id = '${cartId}';\n` +
-          formatSqlTable(dbBeforeSnapshot.cartBatchReservation) + "\n",
+          formatSqlTable(dbBeforeSnapshot.cartBatchReservation) + nativeBeforeLabel,
         after: `-- TP-03 DB Snapshot: After Worker B Rejection\nSELECT * FROM cart_checkout_session WHERE cart_id = '${cartId}';\n` +
           formatSqlTable(dbAfterSnapshot.cartCheckoutSession, ccsCols) +
           `\nSELECT * FROM cart_batch_reservation WHERE cart_id = '${cartId}';\n` +
-          formatSqlTable(dbAfterSnapshot.cartBatchReservation) + "\n",
+          formatSqlTable(dbAfterSnapshot.cartBatchReservation) + nativeAfterLabel,
       };
 
       // 9. Assertions compilation
@@ -267,6 +277,7 @@ async function runTp03Test() {
       add("cart_checkout_session_table_present", "schema", true, sessionTablePresent, sessionTablePresent === true, "Session table present");
       add("cart_table_present", "schema", true, cartTablePresent, cartTablePresent === true, "Cart table present");
       add("cart_batch_reservation_table_present", "schema", true, reservationTablePresent, reservationTablePresent === true, "Reservation table present");
+      add("reservation_item_table_present", "schema", true, nativeReservationTablePresent, nativeReservationTablePresent === true, "Native Medusa reservation_item table present in public schema");
 
       add("real_medusa_container_booted", "configuration", true, Boolean(container), Boolean(container), "Medusa container booted");
       add("locking_module_resolved_from_container", "configuration", true, Boolean(lockingService?.acquire), Boolean(lockingService?.acquire), "Modules.LOCKING resolved");
@@ -292,19 +303,45 @@ async function runTp03Test() {
       add("worker_a_lock_preserved_owner_matches", "behavioral", workerAId, postWorkerAVal, postWorkerAVal === workerAId, "Worker A owner preserved");
       add("worker_a_lock_preserved_ttl_positive", "behavioral", true, postWorkerATtl > 0, postWorkerATtl > 0, `TTL: ${postWorkerATtl}s`);
 
-      add("cart_checkout_session_attempt_id_unaltered", "behavioral", beforeCcs?.current_attempt_id, afterCcs?.current_attempt_id, Boolean(beforeCcs && afterCcs && beforeCcs.current_attempt_id === afterCcs.current_attempt_id), "attempt_id unaltered");
-      add("cart_checkout_session_epoch_unaltered", "behavioral", 1, Number(afterCcs?.epoch), Number(beforeCcs?.epoch) === 1 && Number(afterCcs?.epoch) === 1, "epoch 1 unaltered");
-      add("cart_checkout_session_status_unaltered", "behavioral", "in_progress", afterCcs?.status, beforeCcs?.status === "in_progress" && afterCcs?.status === "in_progress", "status unaltered");
+      add("cart_checkout_session_row_cardinality_exactly_one", "behavioral", { before: 1, after: 1 }, { before: beforeCcsRows.length, after: afterCcsRows.length }, hasExactlyOneBefore && hasExactlyOneAfter, `Cart checkout session has exactly 1 row before (${beforeCcsRows.length}) and after (${afterCcsRows.length})`);
+      add("cart_checkout_session_attempt_id_unaltered", "behavioral", beforeCcs?.current_attempt_id, afterCcs?.current_attempt_id, Boolean(hasExactlyOneBefore && hasExactlyOneAfter && beforeCcs && afterCcs && beforeCcs.current_attempt_id === afterCcs.current_attempt_id), "attempt_id unaltered");
+      add("cart_checkout_session_epoch_unaltered", "behavioral", 1, Number(afterCcs?.epoch), hasExactlyOneBefore && hasExactlyOneAfter && Number(beforeCcs?.epoch) === 1 && Number(afterCcs?.epoch) === 1, "epoch 1 unaltered");
+      add("cart_checkout_session_status_unaltered", "behavioral", "in_progress", afterCcs?.status, hasExactlyOneBefore && hasExactlyOneAfter && beforeCcs?.status === "in_progress" && afterCcs?.status === "in_progress", "status unaltered");
+      const deletedAtMatches = Boolean(
+        hasExactlyOneBefore && hasExactlyOneAfter && beforeCcs && afterCcs &&
+        ((beforeCcs.deleted_at === null && afterCcs.deleted_at === null) ||
+         (beforeCcs.deleted_at && afterCcs.deleted_at && new Date(beforeCcs.deleted_at).toISOString() === new Date(afterCcs.deleted_at).toISOString()) ||
+         beforeCcs.deleted_at === afterCcs.deleted_at)
+      );
+      add("cart_checkout_session_deleted_at_unaltered", "behavioral", beforeCcs?.deleted_at ?? null, afterCcs?.deleted_at ?? null, deletedAtMatches, `deleted_at unaltered: before=${beforeCcs?.deleted_at}, after=${afterCcs?.deleted_at}`);
+
       const allSessionFieldsMatch = Boolean(
-        beforeCcs && afterCcs && beforeCcs.cart_id === afterCcs.cart_id && beforeCcs.current_attempt_id === afterCcs.current_attempt_id &&
+        hasExactlyOneBefore && hasExactlyOneAfter && beforeCcs && afterCcs &&
+        beforeCcs.cart_id === afterCcs.cart_id && beforeCcs.current_attempt_id === afterCcs.current_attempt_id &&
         Number(beforeCcs.epoch) === Number(afterCcs.epoch) && beforeCcs.status === afterCcs.status &&
         new Date(beforeCcs.created_at).toISOString() === new Date(afterCcs.created_at).toISOString() &&
-        new Date(beforeCcs.updated_at).toISOString() === new Date(afterCcs.updated_at).toISOString()
+        new Date(beforeCcs.updated_at).toISOString() === new Date(afterCcs.updated_at).toISOString() &&
+        deletedAtMatches
       );
-      add("cart_checkout_session_all_fields_unaltered", "behavioral", true, allSessionFieldsMatch, allSessionFieldsMatch, "All session columns unaltered");
+      add("cart_checkout_session_all_fields_unaltered", "behavioral", true, allSessionFieldsMatch, allSessionFieldsMatch, "All 7 session columns (cart_id, current_attempt_id, epoch, status, created_at, updated_at, deleted_at) unaltered with exactly 1 row before and after");
 
       add("cart_batch_reservation_zero_rows_before_and_after", "behavioral", { before: 0, after: 0 }, { before: dbBeforeSnapshot.cartBatchReservation.length, after: dbAfterSnapshot.cartBatchReservation.length }, dbBeforeSnapshot.cartBatchReservation.length === 0 && dbAfterSnapshot.cartBatchReservation.length === 0, "Zero reservations");
-      add("native_inventory_reservation_item_count_unchanged_before_and_after", "behavioral", dbBeforeSnapshot.nativeReservationItemCount, dbAfterSnapshot.nativeReservationItemCount, dbBeforeSnapshot.nativeReservationItemCount === dbAfterSnapshot.nativeReservationItemCount, "Native Medusa reservation_item table count is table-wide on the disposable database and remained unchanged before and after Worker B rejection");
+
+      const nativeCountsValid = nativeReservationTablePresent === true &&
+        typeof dbBeforeSnapshot.nativeReservationItemCount === "number" &&
+        typeof dbAfterSnapshot.nativeReservationItemCount === "number" &&
+        dbBeforeSnapshot.nativeReservationItemCount === dbAfterSnapshot.nativeReservationItemCount;
+
+      add(
+        "native_inventory_reservation_item_count_unchanged_before_and_after",
+        "behavioral",
+        nativeReservationTablePresent ? dbBeforeSnapshot.nativeReservationItemCount : "table reservation_item present",
+        nativeReservationTablePresent ? dbAfterSnapshot.nativeReservationItemCount : "table reservation_item missing",
+        nativeCountsValid,
+        nativeCountsValid
+          ? `Native Medusa reservation_item table count verified table-wide on disposable database (${dbBeforeSnapshot.nativeReservationItemCount} -> ${dbAfterSnapshot.nativeReservationItemCount}). Documented limitation: target cart has no line items in Stage 2 lock test; count proves zero rows created table-wide, not cart-scoped query filtering.`
+          : "FAIL: reservation_item table missing or count unavailable; cannot assume zero or pass invariant."
+      );
 
       const hasRequiredCols = ["id", "checkout_attempt_id", "cart_id", "checkout_line_key", "checkout_epoch", "batch_id", "quantity", "unit_cost_snapshot", "status", "expires_at"].every((c) => physicalCbrCols.includes(c));
       add("cart_batch_reservation_schema_reconciled", "schema", true, hasRequiredCols, hasRequiredCols, `Columns: [${physicalCbrCols.join(", ")}]`);
