@@ -192,8 +192,8 @@ This section documents the concrete implementation plan for the first three cano
 **Execution status:**
 - **TP-02a (Distributed Cart Lock Acquisition):** executed once against the real Medusa container and disposable PostgreSQL/Redis; evidence is awaiting independent review.
 - **TP-01 (Cart Creation with Batch Variant):** not executed.
-- **TP-03 (Concurrent Cart Lock Rejection):** not executed.
-- All 59 canonical TP rows in `docs/implementation-plan.md` remain strictly unchecked `[ ]`. The implementation plans below for TP-01 and TP-03 are specifications, not executed tests.
+- **TP-03 (Concurrent Cart Lock Rejection):** executed once against the real Medusa container and disposable PostgreSQL/Redis (workflow-level only, partial; HTTP-level 409 is NOT exercised); evidence is awaiting independent review.
+- All 59 canonical TP rows in `docs/implementation-plan.md` remain strictly unchecked `[ ]`. The implementation plan below for TP-01 is a specification, not an executed test.
 
 ### Canonical TP-01: Cart Creation with Batch Variant
 - **Canonical row definition (quoted verbatim from `docs/implementation-plan.md`):**
@@ -336,6 +336,12 @@ The following concrete requirements define the execution contract for TP-03 (pla
    - **Decision 3 — Worker A lock holding mechanism:** Worker A acquires `cart:<cartId>` through the real locking module resolved from the real Medusa container (`Modules.LOCKING`, same provider, distinct `workerAId`, `ttl = 120`) and holds it until the test ends; Worker B runs the real TP-03 workflow with `timeout: 5` on the same cart.
    - **Decision 4 — Custom table creation & assertion scope:** Create the real `cart_batch_reservation` table exactly per `docs/data-model.md` §3.1 (its own migration, DML model aligned with the table following the same model/migration reconciliation approach as `cart_checkout_session`, plus a reconciliation assertion). Remove `order_batch_allocation` from TP-03's assertions (it is written at order conversion, covered by TP-09/10). Assert unchanged: `cart_checkout_session` (`epoch`, `current_attempt_id`, `status`, `created_at`, `updated_at`, `deleted_at`), `cart_batch_reservation` has 0 rows for the cart, and native `reservation_item` has 0 rows for the cart's variants.
 
+7. **Step Architecture, Discrimination, and Controls:**
+   - **Step Selection (`stage2AcquireLockStep` vs `acquireLockStep`):** TP-02a exercises `@medusajs/medusa/core-flows` `acquireLockStep` to validate standard framework locking and nested sub-workflow lock inheritance. In contrast, TP-03 exercises a custom `stage2AcquireLockStep` (in `stage2CheckoutLockWorkflow`) because Stage 2 checkout specifications require wrapping lock acquisition in a retry loop with a 5-second timeout and mapping the contention error specifically to `MedusaError(CONFLICT, "Cart checkout lock timeout", "LOCK_TIMEOUT")`. Core-flows `acquireLockStep` does not provide this contention retry or domain error mapping.
+   - **Contention Error Discrimination (`isLockContentionError`):** To prevent false-positive passes from non-contention failures (connection errors, signature bugs, provider faults), `stage2AcquireLockStep` catches and retries only genuine lock contention errors (`MedusaError` with type `conflict` and message starting with `Failed to acquire lock for key `). All other errors are immediately rethrown as-is without delay.
+   - **Supplementary Negative Control:** Proved via `apps/backend/scripts/check-stage2-lock-negative-control.mjs`, which registers simulated locking failures (plain `Error` and `TypeError`) in a Medusa container and verifies immediate rethrow (< 1.0s) as-is without timeout or conversion to `LOCK_TIMEOUT`.
+   - **Positive Control in Runner:** Before Worker A acquires the contention lock, Worker B executes `stage2CheckoutLockWorkflow` on the free cart, verifies lock ownership in Redis with TTL in `(110, 120]`, releases the lock via owner-checked release, and verifies its complete deletion. Asserted by: `control_worker_b_acquires_free_lock`, `control_redis_owner_is_worker_b`, and `control_lock_released_before_contention`.
+
 - **Fixtures needed:**
   - Disposable PostgreSQL container (`postgres:16.15-alpine`).
   - Disposable Redis container (`redis:7.2.16-alpine`).
@@ -401,7 +407,7 @@ These baseline diagnostic checks were used during early scaffold validation. The
 ### Current execution status for initial compatibility tests
 - **TP-02a (Distributed Cart Lock Acquisition):** Executed once against the real Medusa container and disposable PostgreSQL/Redis services; hardened runtime evidence pending independent review. Implementation plan checkbox remains strictly unchecked `[ ]`.
 - **TP-01 (Cart Creation with Batch Variant):** Not yet executed. Checkbox remains strictly unchecked `[ ]`.
-- **TP-03 (Concurrent Cart Lock Rejection):** Not yet executed. Checkbox remains strictly unchecked `[ ]`.
+- **TP-03 (Concurrent Cart Lock Rejection):** Executed once against the real Medusa container and disposable PostgreSQL/Redis services (workflow-level only, partial; HTTP-level 409 is NOT exercised); evidence pending independent review. Implementation plan checkbox remains strictly unchecked `[ ]`.
 - **Canonical TP Checkboxes:** All 59 TP rows in `docs/implementation-plan.md` remain strictly `[ ]`.
 
 ### Referenced repository paths summary
@@ -414,11 +420,13 @@ These baseline diagnostic checks were used during early scaffold validation. The
   - `apps/backend/src/modules/batch-inventory/` (exists)
   - `apps/backend/src/workflows/steps/acquire-lock.ts` (exists)
   - `apps/backend/src/workflows/test-tp02a-workflow.ts` (exists)
+  - `apps/backend/src/workflows/stage2-checkout-lock-workflow.ts` (exists)
   - `apps/backend/scripts/check-locking-redis.mjs` (exists)
   - `apps/backend/scripts/check-locking-redis-edge-cases.mjs` (exists)
+  - `apps/backend/scripts/check-stage2-lock-negative-control.mjs` (exists)
   - `apps/backend/scripts/test-tp02a-distributed-lock.mjs` (exists)
+  - `apps/backend/scripts/test-tp03-concurrent-lock-rejection.mjs` (exists)
 - Files to be created for subsequent TP execution:
   - `apps/backend/scripts/test-tp01-cart-creation.mjs` (to be created)
-  - `apps/backend/scripts/test-tp03-concurrent-lock-rejection.mjs` (to be created)
   - `apps/backend/scripts/check-framework-boot.mjs` (to be created)
   - `apps/backend/scripts/check-dml-crud.mjs` (to be created)
