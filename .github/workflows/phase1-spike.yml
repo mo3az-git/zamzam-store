@@ -148,6 +148,8 @@ jobs:
 
       - name: Verify Migration 3 rollback on isolated PostgreSQL database
         shell: bash
+        env:
+          PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
         run: |
           set -o pipefail
           npm run spike:migration-rollback 2>&1 | tee artifacts/migration-rollback-isolated.log

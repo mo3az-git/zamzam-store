@@ -1,4 +1,5 @@
 import path from "node:path";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -39,7 +40,11 @@ function logErr(msg) {
 }
 
 const databaseUrl = process.env.DATABASE_URL;
-const isolatedDbName = "zamzam_rollback_isolated";
+
+// Generate unique isolated database name with fixed safe prefix and UUID-derived suffix
+const DB_PREFIX = "zamzam_rollback_";
+const uuidSuffix = crypto.randomUUID().replace(/-/g, "_");
+const isolatedDbName = `${DB_PREFIX}${uuidSuffix}`;
 
 async function executeMigrationQueries(pgClient, migrationInstance, direction) {
   migrationInstance.reset();
@@ -68,13 +73,34 @@ async function run() {
   if (!databaseUrl) {
     log("DATABASE_URL not set. Disposable PostgreSQL service required. Reporting blocked status.");
     const summary = {
-      test: "Migration 3 Isolated Rollback Lifecycle",
+      test: "Migration 3 Isolated Rollback & Re-Up Lifecycle",
       status: "blocked",
       reason: "DATABASE_URL not configured. Disposable PostgreSQL service required.",
       timestamp: new Date().toISOString(),
     };
     await writeFile(path.join(artifactsDir, "migration-rollback-isolated.json"), JSON.stringify(summary, null, 2) + "\n");
     process.exit(0);
+  }
+
+  // Safety check 1: Require explicit opt-in environment variable before allowing database creation/deletion
+  if (process.env.PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP !== "true") {
+    const refusalMsg = "Refusing to create or drop databases without explicit opt-in: PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP must be set to 'true'.";
+    logErr(refusalMsg);
+    const summary = {
+      test: "Migration 3 Isolated Rollback & Re-Up Lifecycle",
+      status: "refused",
+      reason: refusalMsg,
+      timestamp: new Date().toISOString(),
+    };
+    await writeFile(path.join(artifactsDir, "migration-rollback-isolated.json"), JSON.stringify(summary, null, 2) + "\n");
+    process.exit(1);
+  }
+
+  // Validate the generated identifier
+  if (!/^zamzam_rollback_[a-f0-9_]{16,64}$/.test(isolatedDbName)) {
+    const invalidNameMsg = `Generated isolated database name is invalid or unsafe: ${isolatedDbName}`;
+    logErr(invalidNameMsg);
+    process.exit(1);
   }
 
   const parsedUrl = new URL(databaseUrl);
@@ -91,17 +117,11 @@ async function run() {
     await adminClient.connect();
   }
 
-  log("Recreating completely isolated disposable database: " + isolatedDbName + "...");
-  await adminClient.query(`DROP DATABASE IF EXISTS ${isolatedDbName} WITH (FORCE);`);
-  await adminClient.query(`CREATE DATABASE ${isolatedDbName};`);
-  log("Isolated database created successfully.");
-
-  const isolatedUrl = new URL(databaseUrl);
-  isolatedUrl.pathname = "/" + isolatedDbName;
-
-  const testClient = new PgClient({ connectionString: isolatedUrl.toString() });
-  await testClient.connect();
-  log("Connected to isolated test database: " + isolatedDbName);
+  let dbCreated = false;
+  let testClient = null;
+  let cleanupError = null;
+  let runError = null;
+  let testEvidence = null;
 
   const assertions = [];
   function assert(name, expected, actual, condition, detail) {
@@ -113,7 +133,24 @@ async function run() {
     }
   }
 
+  let rowsDown = [];
+  let rowsReUp = [];
+
   try {
+    // Safety check 3: Create isolated database with unique name without dropping existing DB
+    log(`Creating isolated disposable database: "${isolatedDbName}"...`);
+    const safeDbIdentifier = `"${isolatedDbName.replace(/"/g, '""')}"`;
+    await adminClient.query(`CREATE DATABASE ${safeDbIdentifier};`);
+    dbCreated = true;
+    log(`Isolated database ${safeDbIdentifier} created successfully.`);
+
+    const isolatedUrl = new URL(databaseUrl);
+    isolatedUrl.pathname = "/" + isolatedDbName;
+
+    testClient = new PgClient({ connectionString: isolatedUrl.toString() });
+    await testClient.connect();
+    log("Connected to isolated test database: " + isolatedDbName);
+
     const mockDriver = {};
     const mockEm = {};
 
@@ -223,10 +260,11 @@ async function run() {
     const rowsDownRes = await testClient.query(
       `SELECT cart_id, current_attempt_id, epoch, raw_epoch, status FROM cart_checkout_session ORDER BY epoch ASC;`
     );
-    log("Rows after Migration 3 DOWN: " + JSON.stringify(rowsDownRes.rows));
+    rowsDown = rowsDownRes.rows;
+    log("Rows after Migration 3 DOWN: " + JSON.stringify(rowsDown));
 
-    const row1 = rowsDownRes.rows.find((r) => r.cart_id === "cart_test_epoch_1");
-    const row42 = rowsDownRes.rows.find((r) => r.cart_id === "cart_test_epoch_42");
+    const row1 = rowsDown.find((r) => r.cart_id === "cart_test_epoch_1");
+    const row42 = rowsDown.find((r) => r.cart_id === "cart_test_epoch_42");
 
     assert(
       "down_row1_epoch_preserved",
@@ -331,10 +369,11 @@ async function run() {
     const rowsReUpRes = await testClient.query(
       `SELECT cart_id, current_attempt_id, epoch, status FROM cart_checkout_session ORDER BY epoch ASC;`
     );
-    log("Rows after re-applying Migration 3 UP: " + JSON.stringify(rowsReUpRes.rows));
+    rowsReUp = rowsReUpRes.rows;
+    log("Rows after re-applying Migration 3 UP: " + JSON.stringify(rowsReUp));
 
-    const reUpRow1 = rowsReUpRes.rows.find((r) => r.cart_id === "cart_test_epoch_1");
-    const reUpRow42 = rowsReUpRes.rows.find((r) => r.cart_id === "cart_test_epoch_42");
+    const reUpRow1 = rowsReUp.find((r) => r.cart_id === "cart_test_epoch_1");
+    const reUpRow42 = rowsReUp.find((r) => r.cart_id === "cart_test_epoch_42");
 
     assert(
       "reup_row1_epoch_value",
@@ -366,33 +405,96 @@ async function run() {
 
     log("\nAll Migration 3 rollback and re-apply assertions PASSED successfully.");
 
-    const evidence = {
+    testEvidence = {
       test: "Migration 3 Isolated Rollback & Re-Up Lifecycle",
       status: "passed",
       mechanism: "MikroORM Migration class instances executed against isolated disposable PostgreSQL database",
       runnerNote: "Medusa CLI 'db:rollback --modules <module>' operates at batch granularity (reverts entire initial batch of all 3 migrations). Isolated lifecycle verification of single migration 3 down() and subsequent up() executed the compiled migration class methods directly against an isolated disposable database.",
       isolatedDatabase: isolatedDbName,
       assertions,
-      sampleRowsAfterDown: rowsDownRes.rows,
-      sampleRowsAfterReUp: rowsReUpRes.rows,
+      sampleRowsAfterDown: rowsDown,
+      sampleRowsAfterReUp: rowsReUp,
       timestamp: new Date().toISOString(),
     };
+  } catch (err) {
+    runError = err;
+    logErr("Error during rollback test execution: " + (err.stack || String(err)));
+  } finally {
+    if (testClient) {
+      try {
+        await testClient.end();
+      } catch (err) {
+        logErr("Failed to close testClient connection: " + (err.message || String(err)));
+      }
+    }
+    // Safety check 4: Drop only the database created by this invocation
+    if (dbCreated && adminClient) {
+      if (!/^zamzam_rollback_[a-f0-9_]{16,64}$/.test(isolatedDbName)) {
+        const unsafeErr = new Error(`Refusing to drop database with unsafe identifier: ${isolatedDbName}`);
+        logErr(unsafeErr.message);
+        cleanupError = unsafeErr;
+      } else {
+        try {
+          log(`Dropping isolated test database created by this run: "${isolatedDbName}"...`);
+          const safeIdentifier = `"${isolatedDbName.replace(/"/g, '""')}"`;
+          try {
+            await adminClient.query(`DROP DATABASE IF EXISTS ${safeIdentifier} WITH (FORCE);`);
+          } catch (forceErr) {
+            await adminClient.query(`DROP DATABASE IF EXISTS ${safeIdentifier};`);
+          }
+          log(`Isolated test database ${safeIdentifier} dropped cleanly.`);
+        } catch (err) {
+          cleanupError = err;
+          // Safety check 5: Do not silently swallow cleanup failures
+          logErr(`FAILED to drop isolated test database ${isolatedDbName}: ` + (err.message || String(err)));
+        }
+      }
+    }
+    if (adminClient) {
+      try {
+        await adminClient.end();
+      } catch (err) {
+        logErr("Failed to close adminClient connection: " + (err.message || String(err)));
+      }
+    }
+  }
 
+  // Handle results and write evidence
+  if (runError || cleanupError) {
+    const failureSummary = testEvidence || {
+      test: "Migration 3 Isolated Rollback & Re-Up Lifecycle",
+      status: "failed",
+      isolatedDatabase: isolatedDbName,
+      assertions,
+      sampleRowsAfterDown: rowsDown,
+      sampleRowsAfterReUp: rowsReUp,
+      timestamp: new Date().toISOString(),
+    };
+    failureSummary.status = "failed";
+    if (runError) failureSummary.error = runError.message || String(runError);
+    if (cleanupError) {
+      failureSummary.cleanupStatus = "failed";
+      failureSummary.cleanupError = cleanupError.message || String(cleanupError);
+    } else if (dbCreated) {
+      failureSummary.cleanupStatus = "cleaned";
+      failureSummary.dbDropped = true;
+    }
     await writeFile(
       path.join(artifactsDir, "migration-rollback-isolated.json"),
-      JSON.stringify(evidence, null, 2) + "\n"
+      JSON.stringify(failureSummary, null, 2) + "\n"
+    );
+    logErr("Test execution or cleanup failed. Written failure summary to artifacts/migration-rollback-isolated.json");
+    process.exit(1);
+  }
+
+  if (testEvidence) {
+    testEvidence.cleanupStatus = "cleaned";
+    testEvidence.dbDropped = true;
+    await writeFile(
+      path.join(artifactsDir, "migration-rollback-isolated.json"),
+      JSON.stringify(testEvidence, null, 2) + "\n"
     );
     log("Wrote evidence to artifacts/migration-rollback-isolated.json");
-  } finally {
-    try {
-      await testClient.end();
-    } catch {}
-    try {
-      log("Dropping isolated test database: " + isolatedDbName + "...");
-      await adminClient.query(`DROP DATABASE IF EXISTS ${isolatedDbName} WITH (FORCE);`);
-      await adminClient.end();
-      log("Isolated test database dropped cleanly.");
-    } catch {}
   }
 
   process.exit(0);
