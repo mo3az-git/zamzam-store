@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { copyFile, readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import path from "node:path";
@@ -19,6 +19,18 @@ const evidenceDir = path.join(repositoryRoot, "artifacts/tp-evidence", id);
 const json = async (file) => JSON.parse(await readFile(path.join(evidenceDir, file), "utf8"));
 const priorResult = await json("result.json"), assertions = await json("assertions.json");
 const dbBefore = { workflow: await json("db-before.json") }, dbAfter = { workflow: await json("db-after.json") };
+// The combined HTTP evidence must not overwrite the original workflow's
+// metadata, streams, SQL or deterministic schedule.
+for (const name of ["result.json", "assertions.json", "db-before.json", "db-after.json", "db-before.sql", "db-after.sql"]) {
+  await copyFile(path.join(evidenceDir, name), path.join(evidenceDir, "workflow-" + name));
+}
+await writeFile(path.join(evidenceDir, "workflow-stdout.log"), original.stdout || "");
+await writeFile(path.join(evidenceDir, "workflow-stderr.log"), original.stderr || "");
+let workflowInterleaving = [];
+try {
+  workflowInterleaving = await json("interleaving.json");
+  await copyFile(path.join(evidenceDir, "interleaving.json"), path.join(evidenceDir, "workflow-interleaving.json"));
+} catch (error) { if (error.code !== "ENOENT") throw error; }
 const metadata = await getSystemMetadata();
 const { Modules } = registerTsNode()("@medusajs/framework/utils");
 const events = [], cleanupErrors = [];
@@ -118,10 +130,11 @@ assertions.push({ name: "http_fixture_cleanup_succeeded", expected: [], actual: 
 if (cleanupErrors.length) { status = "failed"; blocker = (blocker || "") + " cleanup: " + cleanupErrors.join("; "); console.error(blocker); }
 console.log(`${id} Assertion Summary: ${assertions.filter((item) => item.passed).length}/${assertions.length} passed (original workflow + real HTTP).`);
 await writeTpEvidence({ evidenceDir, tpId: id, title: priorResult.title, batch: priorResult.batch, startedAt: priorResult.startedAt,
-  ...metadata, status, blocker, assertions, exitCode: status === "passed" ? 0 : 1, dbBefore, dbAfter, interleaving: events,
+  ...metadata, status, blocker, assertions, exitCode: status === "passed" ? 0 : 1, dbBefore, dbAfter,
+  interleaving: [...workflowInterleaving.map((event) => ({ ...event, boundary: "workflow" })), ...events.map((event) => ({ ...event, boundary: "http" }))],
   containerDetails: { workflow: priorResult.containerDetails, http: { nativeMedusaApi: true, route: "POST /store/carts/:id/checkout-lock" } },
   testCommand: "node apps/backend/scripts/test-checkout-lock-http.mjs " + id,
   assessmentType: "original workflow assertions plus real prototype checkout-lock HTTP stage; no full checkout/order conversion",
-  note: "The HTTP seam is explicitly enabled only for the prototype. Native reservation counts remain table-wide on an empty cart. No full inventory/checkout or TP-01 acceptance is claimed.",
+  note: "Original workflow files are preserved with a workflow- prefix. The HTTP seam is explicitly enabled only for the prototype. Native reservation counts remain table-wide on an empty cart. No full inventory/checkout or TP-01 acceptance is claimed.",
 });
 process.exit(status === "passed" ? 0 : 1);
