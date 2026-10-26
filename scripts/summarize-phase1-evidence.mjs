@@ -24,6 +24,7 @@ for (const requirement of canonical) {
   let status = currentResult ? result.status : readiness?.status === "blocked" ? "blocked" : "not_executed";
   const integrityIssues = [];
   if (currentResult && status === "passed") {
+    if (result.sourceWorkingTreeDirty) integrityIssues.push("Source worktree was dirty; the passing run cannot qualify as exact-commit evidence.");
     if (result.processExitCode !== 0) integrityIssues.push("Nonzero/missing process exit code.");
     if (!result.rawStreamsCaptured) integrityIssues.push("Raw process streams were not captured.");
     if (!assertions?.length || assertions.some((item) => item.passed !== true)) integrityIssues.push("Missing or failing assertions.");
@@ -55,7 +56,7 @@ const summary = {
   commitSha: sha, capturedAt: new Date().toISOString(),
   gate: "NOT READY — BLOCKERS REMAIN", formallyAccepted: 0,
   counts: Object.fromEntries(["passed", "failed", "blocked", "not_executed"].map((status) => [status, cases.filter((item) => item.status === status).length])),
-  note: "Passed means only the recorded runner boundary passed. TP-02c/TP-03 do not exercise HTTP 409; TP-03 inventory counts are table-wide on an empty cart. Independent review and formal acceptance are separate. TP-01 remains unauthorized.",
+  note: "Passed means only the recorded runner boundary passed. TP-02c/TP-03 exercise the real prototype checkout-lock HTTP stage, not full commerce checkout; TP-03 inventory counts remain table-wide on an empty cart. TP-04b's aborted-state fixture is not a recovery-controller test. TP-21c covers cryptography, not refund/payout persistence. Independent review and formal acceptance are separate. TP-01 remains unauthorized.",
   cases,
 };
 await mkdir("artifacts", { recursive: true });

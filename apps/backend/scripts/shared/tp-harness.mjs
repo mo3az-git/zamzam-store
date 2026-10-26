@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { existsSync } from "node:fs";
 import {
   verifyDisposableTargetServices,
   runDisposableValidatorSelfChecks,
@@ -27,6 +28,10 @@ export function registerTsNode() {
 
 export function captureVersion(cmd, args) {
   try {
+    if (cmd === "npm") {
+      const cli = process.env.npm_execpath || path.join(path.dirname(process.execPath), "node_modules/npm/bin/npm-cli.js");
+      if (existsSync(cli)) return execFileSync(process.execPath, [cli, ...args], { encoding: "utf8" }).trim();
+    }
     const executable =
       process.platform === "win32" && !cmd.endsWith(".cmd") && !cmd.endsWith(".exe")
         ? `${cmd}.cmd`
@@ -62,7 +67,7 @@ export function formatSqlTable(rows, columns) {
 }
 
 export async function getSystemMetadata() {
-  const commitSha = process.env.GITHUB_SHA || "local-head";
+  const commitSha = process.env.GITHUB_SHA || execFileSync("git", ["rev-parse", "HEAD"], { cwd: repositoryRoot, encoding: "utf8" }).trim();
   const nodeVersion = process.version;
   const npmVersion = captureVersion("npm", ["--version"]);
   let packageLockSha256 = null;
@@ -75,7 +80,7 @@ export async function getSystemMetadata() {
   return { commitSha, nodeVersion, npmVersion, packageLockSha256 };
 }
 
-export async function loadMedusaContainer() {
+export async function loadMedusaRuntime({ entryPoints = false } = {}) {
   const originalCwd = process.cwd();
   if (process.cwd() !== backendRoot) {
     process.chdir(backendRoot);
@@ -87,17 +92,21 @@ export async function loadMedusaContainer() {
   const express = (await import("express")).default;
   const expressApp = express();
 
-  const { container } = await loaders({
+  const runtime = await loaders({
     directory: backendRoot,
     expressApp,
-    skipLoadingEntryPoints: true,
+    skipLoadingEntryPoints: !entryPoints,
   });
 
   if (process.cwd() !== originalCwd) {
     process.chdir(originalCwd);
   }
 
-  return container;
+  return runtime;
+}
+
+export async function loadMedusaContainer() {
+  return (await loadMedusaRuntime()).container;
 }
 
 export function createPgClient(databaseUrl, options = {}) {
@@ -238,6 +247,7 @@ export async function writeTpEvidence({
     dbAfter: "db-after.json",
     containerDetails: containerDetails || null,
     note,
+    sourceWorkingTreeDirty: execFileSync("git", ["status", "--porcelain"], { cwd: repositoryRoot, encoding: "utf8" }).trim().length > 0,
   };
 
   await writeFile(path.join(evidenceDir, "result.json"), JSON.stringify(result, null, 2) + "\n");

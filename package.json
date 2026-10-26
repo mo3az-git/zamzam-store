@@ -26,7 +26,11 @@
     "spike:tp02b-unit": "node apps/backend/scripts/check-tp02b-heartbeat-unit.mjs",
     "spike:tp02b": "node apps/backend/scripts/test-tp02b-lock-heartbeat.mjs",
     "spike:tp02c-unit": "node apps/backend/scripts/check-tp02c-cas-abort-unit.mjs",
-    "spike:tp02c": "node apps/backend/scripts/test-tp02c-lock-timeout-cas-abort.mjs",
+    "spike:tp02c": "node scripts/run-tp-with-evidence.mjs TP-02c",
+    "spike:tp03": "node scripts/run-tp-with-evidence.mjs TP-03",
+    "spike:tp04a": "node scripts/run-tp-with-evidence.mjs TP-04a",
+    "spike:tp04b": "node scripts/run-tp-with-evidence.mjs TP-04b",
+    "spike:tp21c": "node scripts/run-tp-with-evidence.mjs TP-21c",
     "spike:tp03-negative-control": "node apps/backend/scripts/check-stage2-lock-negative-control.mjs",
     "spike:migration-rollback": "node apps/backend/scripts/test-migration-rollback-isolated.mjs"
   },

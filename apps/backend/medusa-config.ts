@@ -29,6 +29,8 @@ function requireSecret(name: string, localFallback: string): string {
 }
 
 export default defineConfig({
+  // The disposable HTTP harness does not need an admin UI development server.
+  admin: { disable: process.env.PHASE1_DISABLE_ADMIN === "true" },
   projectConfig: {
     databaseUrl: process.env.DATABASE_URL,
     redisUrl,

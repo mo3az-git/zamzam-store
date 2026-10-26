@@ -13,8 +13,11 @@ const evidenceRoot = path.join(root, "artifacts", "tp-readiness");
 const runnableBoundaries = {
   "TP-02a": "Real Medusa distributed lock workflow runner exists; behavioral execution and independent review are separate.",
   "TP-02b": "Real-service heartbeat worker runner exists; HTTP checkout integration is absent.",
-  "TP-02c": "Real-service lease CAS/lock-timeout workflow runner exists; HTTP 409 route is absent.",
-  "TP-03": "Real-service lock-contention workflow runner exists; HTTP 409 route is absent; inventory count is table-wide and the cart has no lines.",
+  "TP-02c": "Original real-service lease CAS workflow assertions plus real prototype checkout-lock HTTP 409 are exercised; full commerce checkout is absent.",
+  "TP-03": "Original real-service lock contention assertions plus real prototype checkout-lock HTTP 409 are exercised; inventory count remains table-wide on an empty cart.",
+  "TP-04a": "Real native Store API mutation guard and disposable HTTP runner exist.",
+  "TP-04b": "Native HTTP guard rejects stale in-progress sessions; the recovery-controller protocol remains unimplemented and is not claimed by the aborted-state fixture control.",
+  "TP-21c": "Real Medusa system_security refund fingerprint/hash/encryption component and real-service harness exist; refund persistence and payout behavior remain absent.",
 };
 const customTables = [
   "cart_batch_reservation", "cart_checkout_session", "cart_checkout_attempt",
@@ -39,8 +42,8 @@ const requiredTokensById = {
   "TP-03": ["LockTimeoutError", "cart_checkout_session"],
   "TP-02b": ["last_heartbeat_at", "extendLock"],
   "TP-02c": ["lease_owner_id", "idempotency_key"],
-  "TP-04a": ["cart_checkout_session", "in_progress"],
-  "TP-04b": ["last_heartbeat_at", "recovery"],
+  "TP-04a": ["cartMutationGuard", "cart_checkout_session", "in_progress"],
+  "TP-04b": ["cartMutationGuard", "cart_checkout_session", "in_progress"],
   "TP-05": ["electronic_payment_attempt", "cod_collection_record"],
   "TP-06a": ["cart_batch_reservation", "inventory_movement"],
   "TP-06b": ["cart_batch_reservation", "inventory_movement"],

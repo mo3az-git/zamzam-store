@@ -212,6 +212,33 @@ jobs:
           set -o pipefail
           node scripts/run-tp-with-evidence.mjs TP-03 2>&1 | tee artifacts/tp-03-concurrent-lock-rejection.log
 
+      - name: Run TP-04a native HTTP mutation guard
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-04a 2>&1 | tee artifacts/tp-04a-native-http.log
+
+      - name: Run TP-04b stale heartbeat HTTP mutation guard
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-04b 2>&1 | tee artifacts/tp-04b-native-http.log
+
+      - name: Run TP-21c refund identity and encryption test
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-21c 2>&1 | tee artifacts/tp-21c-refund-identity.log
+
       - name: Verify Migration 3 rollback on isolated PostgreSQL database
         if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
         shell: bash

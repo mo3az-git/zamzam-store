@@ -7,8 +7,11 @@ import { createHash } from "node:crypto";
 const runners = {
   "TP-02a": "test-tp02a-distributed-lock.mjs",
   "TP-02b": "test-tp02b-lock-heartbeat.mjs",
-  "TP-02c": "test-tp02c-lock-timeout-cas-abort.mjs",
-  "TP-03": "test-tp03-concurrent-lock-rejection.mjs",
+  "TP-02c": "test-checkout-lock-http.mjs",
+  "TP-03": "test-checkout-lock-http.mjs",
+  "TP-04a": "test-cart-mutation-http.mjs",
+  "TP-04b": "test-cart-mutation-http.mjs",
+  "TP-21c": "test-tp21c-refund-identity.mjs",
 };
 const id = process.argv[2];
 if (!Object.hasOwn(runners, id)) throw new Error("TP runner is not authorized: " + id);
@@ -21,7 +24,8 @@ try { await rename(directory, history); }
 catch (error) { if (error.code !== "ENOENT") throw error; }
 await mkdir(directory, { recursive: true });
 const script = "apps/backend/scripts/" + runners[id];
-const child = spawnSync(process.execPath, [script], {
+const args = ["TP-02c", "TP-03", "TP-04a", "TP-04b"].includes(id) ? [id] : [];
+const child = spawnSync(process.execPath, [script, ...args], {
   cwd: root, env: process.env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
 });
 const stdout = child.stdout || "";
@@ -52,7 +56,7 @@ if (result.status !== "passed" && exitCode === 0) {
 }
 Object.assign(result, {
   commandStartedAt: startedAt, commandEndedAt: new Date().toISOString(),
-  testCommand: "node " + script,
+  testCommand: ["node", script, ...args].join(" "),
   evidenceCommand: "node scripts/run-tp-with-evidence.mjs " + id,
   processExitCode: exitCode, processSignal: child.signal,
   rawStreamsCaptured: true,
