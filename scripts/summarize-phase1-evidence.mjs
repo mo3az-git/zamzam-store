@@ -46,7 +46,7 @@ for (const requirement of canonical) {
     readinessPath: readiness ? readinessPath : null,
     implementationFiles: implementation?.sourceInventory?.files ?? [],
     blocker: currentResult ? result.blocker : readiness?.blocker || "No current-commit runtime evidence.",
-    independentReview: "pending",
+    independentReview: status === "passed" ? "pending" : "not_ready",
     formallyAccepted: false,
     evidenceIntegrityIssues: integrityIssues,
     nextAction: "See the individual dependency and next action in docs/phase1-tp-case-matrix.md.",
@@ -65,7 +65,7 @@ const markdown = [
   "# Phase 1 observed execution matrix", "", `Tested commit: \`${sha}\`. ${summary.gate}.`, "", summary.note, "",
   "| ID | Runtime status | Exit | Boundary | Evidence | Review / acceptance |",
   "|---|---|---|---|---|---|",
-  ...cases.map((item) => `| ${item.id} | ${item.status} | ${item.exitCode ?? "—"} | ${item.boundary.replaceAll("|", "\\|")} | [files](${item.evidencePath ? `tp-evidence/${item.id}` : `tp-readiness/${item.id}`}/result.json) | Pending / unaccepted |`),
+  ...cases.map((item) => `| ${item.id} | ${item.status} | ${item.exitCode ?? "—"} | ${item.boundary.replaceAll("|", "\\|")} | [files](${item.evidencePath ? `tp-evidence/${item.id}` : `tp-readiness/${item.id}`}/result.json) | ${item.independentReview} / unaccepted |`),
   "", "Full canonical criteria, source inventory and blockers are retained per case in tp-execution-matrix.json.", "",
 ].join("\n");
 await writeFile("artifacts/tp-execution-matrix.md", markdown);
