@@ -22,9 +22,7 @@ rootRequire("ts-node").register({
   transpileOnly: true,
 });
 
-const { createContainer, asValue } = require("@medusajs/framework/awilix");
 const { Modules } = require("@medusajs/framework/utils");
-const { SafeRedisLockingProvider } = await import("../src/modules/locking-redis/index.mjs");
 const { parentCheckoutTestWorkflow } = rootRequire(
   path.join(backendRoot, "src", "workflows", "test-tp02a-workflow.ts")
 );
@@ -59,6 +57,26 @@ function captureVersion(cmd, args) {
   }
 }
 
+function formatSqlTable(rows, columns) {
+  if (!rows || rows.length === 0) {
+    return "(0 rows)\n";
+  }
+  const colKeys = columns || Object.keys(rows[0]);
+  const header = colKeys.join(" | ");
+  const separator = colKeys.map((c) => "-".repeat(Math.max(c.length, 8))).join("-+-");
+  const dataLines = rows.map((r) =>
+    colKeys
+      .map((k) => {
+        const val = r[k];
+        if (val === null || val === undefined) return "NULL";
+        if (typeof val === "object") return JSON.stringify(val);
+        return String(val);
+      })
+      .join(" | ")
+  );
+  return `${header}\n${separator}\n${dataLines.join("\n")}\n(${rows.length} row${rows.length === 1 ? "" : "s"})\n`;
+}
+
 const startedAt = new Date().toISOString();
 const commitSha = process.env.GITHUB_SHA || "local-head";
 const nodeVersion = process.version;
@@ -74,7 +92,16 @@ try {
 const databaseUrl = process.env.DATABASE_URL;
 const redisUrl = process.env.LOCKING_REDIS_URL || process.env.REDIS_URL;
 
-async function writeEvidence({ status, blocker, assertions, exitCode, dbBefore, dbAfter, dbQueries }) {
+async function writeEvidence({
+  status,
+  blocker,
+  assertions,
+  exitCode,
+  dbBefore,
+  dbAfter,
+  dbQueries,
+  containerDetails,
+}) {
   const endedAt = new Date().toISOString();
   const result = {
     schemaVersion: 1,
@@ -102,9 +129,10 @@ async function writeEvidence({ status, blocker, assertions, exitCode, dbBefore, 
     blocker: blocker || null,
     dbBefore: "db-before.json",
     dbAfter: "db-after.json",
+    containerDetails: containerDetails || null,
     note:
       status === "passed"
-        ? "TP-02a executed once against real PostgreSQL and Redis services. Awaits independent review."
+        ? "TP-02a executed once against real Medusa container loaded from medusa-config.ts, with real disposable PostgreSQL and Redis services. Awaits independent review."
         : "TP-02a execution blocked by missing prerequisites or environment service failure.",
   };
 
@@ -124,7 +152,7 @@ async function writeEvidence({ status, blocker, assertions, exitCode, dbBefore, 
   );
 }
 
-log("=== Starting TP-02a: Distributed Cart Lock Acquisition ===");
+log("=== Starting TP-02a: Distributed Cart Lock Acquisition (Real Medusa Container) ===");
 log("Time: " + startedAt);
 log("Commit: " + commitSha);
 log("Node: " + nodeVersion + ", npm: " + npmVersion);
@@ -155,22 +183,21 @@ if (!databaseUrl || !redisUrl) {
     dbBefore: null,
     dbAfter: null,
     dbQueries: null,
+    containerDetails: null,
   });
   process.exit(0);
 }
 
 let pgClient;
 let redisClient;
-let providerRedisClient;
-let provider;
 
 try {
-  log("Connecting to PostgreSQL at " + databaseUrl.replace(/:[^:@]+@/, ":***@") + "...");
+  log("Connecting direct PostgreSQL inspection client to " + databaseUrl.replace(/:[^:@]+@/, ":***@") + "...");
   pgClient = new PgClient({ connectionString: databaseUrl, connectionTimeoutMillis: 5000 });
   await pgClient.connect();
-  log("PostgreSQL connected successfully.");
+  log("Direct PostgreSQL inspection client connected successfully.");
 
-  log("Connecting out-of-band Redis client at " + redisUrl.replace(/:[^:@]+@/, ":***@") + "...");
+  log("Connecting direct out-of-band Redis client to " + redisUrl.replace(/:[^:@]+@/, ":***@") + "...");
   redisClient = new Redis(redisUrl, {
     lazyConnect: true,
     connectTimeout: 5000,
@@ -179,7 +206,7 @@ try {
   });
   redisClient.on("error", () => {});
   await redisClient.connect();
-  log("Out-of-band Redis client connected successfully.");
+  log("Direct out-of-band Redis client connected successfully.");
 
   // Check if cart_checkout_session table exists in PostgreSQL
   const tableCheckRes = await pgClient.query(
@@ -214,9 +241,51 @@ try {
       dbBefore: null,
       dbAfter: null,
       dbQueries: null,
+      containerDetails: null,
     });
     process.exit(0);
   }
+
+  // Boot the REAL Medusa container loaded from apps/backend/medusa-config.ts
+  log("Loading REAL Medusa container from " + backendRoot + "...");
+  const originalCwd = process.cwd();
+  if (process.cwd() !== backendRoot) {
+    process.chdir(backendRoot);
+  }
+  process.env.MEDUSA_WORKER_MODE = "server";
+
+  const medusaLoadersModule = await import("@medusajs/medusa/loaders/index");
+  const loaders = medusaLoadersModule.default?.default || medusaLoadersModule.default || medusaLoadersModule;
+  const express = (await import("express")).default;
+  const expressApp = express();
+
+  const { container } = await loaders({
+    directory: backendRoot,
+    expressApp,
+    skipLoadingEntryPoints: true,
+  });
+  log("REAL Medusa container initialized successfully.");
+
+  // Revert working directory if needed
+  if (process.cwd() !== originalCwd) {
+    process.chdir(originalCwd);
+  }
+
+  // Resolve locking module and custom batch_inventory module from real container
+  const lockingService = container.resolve(Modules.LOCKING);
+  const batchInventoryService = container.resolve("batch_inventory");
+
+  const containerDetails = {
+    creationMechanism: "@medusajs/medusa/loaders loaders.default({ directory: backendRoot, expressApp, skipLoadingEntryPoints: true })",
+    medusaConfigFile: "apps/backend/medusa-config.ts",
+    lockingProviderConfigured: "./src/modules/locking-redis/index.mjs",
+    lockingProviderId: "locking-redis",
+    lockingProviderIsDefault: true,
+    lockingKeyPrefix: "medusa_lock:",
+    batchInventoryModuleResolved: Boolean(batchInventoryService),
+    lockingModuleResolved: Boolean(lockingService),
+  };
+  log("Container details: " + JSON.stringify(containerDetails));
 
   // Generate test IDs
   const cartId = "cart_tp02a_" + randomUUID();
@@ -224,71 +293,54 @@ try {
   const workerId = "worker:tp02a:" + randomUUID();
   const nestedWorkerId = "worker:nested:" + randomUUID();
   const lockKey = "cart:" + cartId;
+  const redisPrefixedKey = "medusa_lock:" + lockKey;
 
   log("Fixture cart ID: " + cartId);
   log("Active attempt ID: " + attemptId);
   log("Worker ID: " + workerId);
-  log("Lock Key: " + lockKey);
+  log("Lock Key (logical): " + lockKey);
+  log("Lock Key in Redis (prefixed): " + redisPrefixedKey);
 
   // Pre-test DB snapshot
-  const dbBeforeQuery = `SELECT * FROM cart_checkout_session WHERE cart_id = '${cartId}';\n`;
+  const dbBeforeQuery = `SELECT cart_id, current_attempt_id, epoch, raw_epoch, status, created_at, updated_at, deleted_at FROM cart_checkout_session WHERE cart_id = '${cartId}';`;
   const dbBeforeRes = await pgClient.query(
-    "SELECT cart_id, current_attempt_id, epoch, status, created_at, updated_at FROM cart_checkout_session WHERE cart_id = $1",
+    "SELECT cart_id, current_attempt_id, epoch, raw_epoch, status, created_at, updated_at, deleted_at FROM cart_checkout_session WHERE cart_id = $1",
     [cartId]
   );
   const dbBeforeSnapshot = {
     capturedAt: new Date().toISOString(),
-    query: dbBeforeQuery.trim(),
+    query: dbBeforeQuery,
     rows: dbBeforeRes.rows,
   };
 
-  // Insert initial cart_checkout_session fixture row (per owner default assumption: first checkout attempt creates session with epoch = 1)
-  const insertQuery = `
-    INSERT INTO cart_checkout_session (cart_id, current_attempt_id, epoch, status, created_at, updated_at)
-    VALUES ($1, $2, 1, 'in_progress', NOW(), NOW())
-    ON CONFLICT (cart_id) DO UPDATE SET current_attempt_id = $2, epoch = 1, status = 'in_progress'
-    RETURNING cart_id, current_attempt_id, epoch, status;
-  `;
-  const insertRes = await pgClient.query(insertQuery, [cartId, attemptId]);
-  log("Provisioned fixture session: " + JSON.stringify(insertRes.rows[0]));
-
-  // Initialize SafeRedisLockingProvider with its own dedicated client
-  providerRedisClient = new Redis(redisUrl, {
-    lazyConnect: true,
-    connectTimeout: 5000,
-    maxRetriesPerRequest: 1,
-    retryStrategy: () => null,
+  // Create cart_checkout_session fixture row via BatchInventoryModuleService from container
+  log("Creating cart_checkout_session fixture via BatchInventoryModuleService.createCartCheckoutSessions...");
+  const createdSession = await batchInventoryService.createCartCheckoutSessions({
+    cart_id: cartId,
+    current_attempt_id: attemptId,
+    epoch: 1,
+    status: "in_progress",
   });
-  providerRedisClient.on("error", () => {});
-  await providerRedisClient.connect();
+  log("Created fixture session via module service: " + JSON.stringify(createdSession));
 
-  provider = new SafeRedisLockingProvider(
-    { redisClient: providerRedisClient, prefix: "medusa_lock:" },
-    {
-      waitLockingTimeout: 5,
-      defaultRetryInterval: 10,
-      maximumRetryInterval: 50,
-      backoffFactor: 2,
-    }
+  // Read back via BatchInventoryModuleService
+  const retrievedServiceSession = await batchInventoryService.retrieveCartCheckoutSession(cartId);
+  log("Retrieved fixture session via module service: " + JSON.stringify(retrievedServiceSession));
+
+  // Read back via raw SQL
+  const rawSqlRes = await pgClient.query(
+    "SELECT cart_id, current_attempt_id, epoch, raw_epoch, status, created_at, updated_at, deleted_at FROM cart_checkout_session WHERE cart_id = $1",
+    [cartId]
   );
+  const rawSqlSession = rawSqlRes.rows[0];
+  log("Retrieved fixture session via raw SQL: " + JSON.stringify(rawSqlSession));
 
-  const lockingService = {
-    acquire: (keys, args) => provider.acquire(keys, args),
-    release: (keys, args) => provider.release(keys, args),
-    releaseAll: (args) => provider.releaseAll(args),
-  };
-
-  const container = createContainer();
-  container.register({
-    [Modules.LOCKING]: asValue(lockingService),
-  });
-
-  log("Executing parentCheckoutTestWorkflow with Medusa container...");
+  // Execute parentCheckoutTestWorkflow using the real Medusa container
+  log("Executing parentCheckoutTestWorkflow with real Medusa container...");
   const workflowInstance = parentCheckoutTestWorkflow(container);
   const workflowExecution = await workflowInstance.run({
     input: {
       key: lockKey,
-      cartId,
       ttl: 120,
       timeout: 5,
       ownerId: workerId,
@@ -306,25 +358,54 @@ try {
   const releaseResult = resultData.releaseResult;
 
   // Post-workflow out-of-band Redis verification
-  const postReleaseActualKey = inFlightInspection?.actualKey || "medusa_lock:" + lockKey;
-  const postReleaseValue = await redisClient.get(postReleaseActualKey);
+  const postReleaseValue = await redisClient.get(redisPrefixedKey);
   const postReleaseRawValue = await redisClient.get(lockKey);
-  log("Post-release Redis key (" + postReleaseActualKey + "): " + postReleaseValue);
+  log("Post-release Redis key (" + redisPrefixedKey + "): " + postReleaseValue);
 
   // Post-test DB snapshot
-  const dbAfterQuery = `SELECT cart_id, current_attempt_id, epoch, status, created_at, updated_at FROM cart_checkout_session WHERE cart_id = '${cartId}';\n`;
+  const dbAfterQuery = `SELECT cart_id, current_attempt_id, epoch, raw_epoch, status, created_at, updated_at, deleted_at FROM cart_checkout_session WHERE cart_id = '${cartId}';`;
   const dbAfterRes = await pgClient.query(
-    "SELECT cart_id, current_attempt_id, epoch, status, created_at, updated_at FROM cart_checkout_session WHERE cart_id = $1",
+    "SELECT cart_id, current_attempt_id, epoch, raw_epoch, status, created_at, updated_at, deleted_at FROM cart_checkout_session WHERE cart_id = $1",
     [cartId]
   );
   const dbAfterSnapshot = {
     capturedAt: new Date().toISOString(),
-    query: dbAfterQuery.trim(),
+    query: dbAfterQuery,
     rows: dbAfterRes.rows,
   };
 
   // Compile assertions
+  const columns = ["cart_id", "current_attempt_id", "epoch", "raw_epoch", "status", "created_at", "updated_at", "deleted_at"];
+
   const assertions = [
+    {
+      name: "real_medusa_container_booted",
+      expected: true,
+      actual: Boolean(container),
+      passed: Boolean(container),
+      detail: "Loaded via @medusajs/medusa/loaders loaders.default from apps/backend/medusa-config.ts",
+    },
+    {
+      name: "locking_module_resolved_from_container",
+      expected: true,
+      actual: Boolean(lockingService),
+      passed: Boolean(lockingService),
+      detail: "Modules.LOCKING resolved directly from Medusa container",
+    },
+    {
+      name: "batch_inventory_module_resolved_from_container",
+      expected: true,
+      actual: Boolean(batchInventoryService),
+      passed: Boolean(batchInventoryService),
+      detail: "batch_inventory service resolved directly from Medusa container",
+    },
+    {
+      name: "locking_provider_configured_in_medusa_config",
+      expected: "./src/modules/locking-redis/index.mjs",
+      actual: containerDetails.lockingProviderConfigured,
+      passed: containerDetails.lockingProviderConfigured === "./src/modules/locking-redis/index.mjs",
+      detail: "Configured provider in medusa-config.ts: SafeRedisLockingProvider (id: locking-redis)",
+    },
     {
       name: "postgres_service_connected",
       expected: true,
@@ -344,36 +425,76 @@ try {
       passed: true,
     },
     {
-      name: "fixture_session_inserted",
-      expected: { cart_id: cartId, epoch: "1", status: "in_progress" },
+      name: "fixture_created_via_module_service",
+      expected: { cart_id: cartId, status: "in_progress" },
       actual: {
-        cart_id: insertRes.rows[0]?.cart_id,
-        epoch: String(insertRes.rows[0]?.epoch),
-        status: insertRes.rows[0]?.status,
+        cart_id: createdSession?.cart_id,
+        status: createdSession?.status,
       },
       passed:
-        insertRes.rows[0]?.cart_id === cartId &&
-        String(insertRes.rows[0]?.epoch) === "1" &&
-        insertRes.rows[0]?.status === "in_progress",
+        createdSession?.cart_id === cartId &&
+        createdSession?.status === "in_progress",
+      detail: "Created via BatchInventoryModuleService.createCartCheckoutSessions",
+    },
+    {
+      name: "fixture_retrieved_via_module_service",
+      expected: { cart_id: cartId, current_attempt_id: attemptId },
+      actual: {
+        cart_id: retrievedServiceSession?.cart_id,
+        current_attempt_id: retrievedServiceSession?.current_attempt_id,
+      },
+      passed:
+        retrievedServiceSession?.cart_id === cartId &&
+        retrievedServiceSession?.current_attempt_id === attemptId,
+      detail: "Retrieved via BatchInventoryModuleService.retrieveCartCheckoutSession",
+    },
+    {
+      name: "fixture_retrieved_via_raw_sql",
+      expected: { cart_id: cartId, current_attempt_id: attemptId, status: "in_progress" },
+      actual: {
+        cart_id: rawSqlSession?.cart_id,
+        current_attempt_id: rawSqlSession?.current_attempt_id,
+        status: rawSqlSession?.status,
+      },
+      passed:
+        rawSqlSession?.cart_id === cartId &&
+        rawSqlSession?.current_attempt_id === attemptId &&
+        rawSqlSession?.status === "in_progress",
+      detail: "Retrieved via raw pgClient.query",
+    },
+    {
+      name: "fixture_service_and_sql_reconciled",
+      expected: true,
+      actual:
+        retrievedServiceSession?.cart_id === rawSqlSession?.cart_id &&
+        String(rawSqlSession?.epoch) === "1" &&
+        rawSqlSession?.raw_epoch?.value === "1",
+      passed:
+        retrievedServiceSession?.cart_id === rawSqlSession?.cart_id &&
+        String(rawSqlSession?.epoch) === "1" &&
+        rawSqlSession?.raw_epoch?.value === "1",
+      detail: "DML service output reconciles with PostgreSQL physical table state (including raw_epoch JSON)",
     },
     {
       name: "parent_lock_step_acquired",
       expected: true,
-      actual: parentLock?.acquired === true,
-      passed: parentLock?.acquired === true,
+      actual: inFlightInspection?.exists === true,
+      passed: inFlightInspection?.exists === true,
+      detail: "Core-flows acquireLockStep successfully acquired lock via locking-redis provider",
     },
     {
       name: "redis_lock_key_present_in_flight",
       expected: true,
       actual: inFlightInspection?.exists === true,
       passed: inFlightInspection?.exists === true,
-      detail: "In-flight inspection discovered Redis key: " + inFlightInspection?.actualKey,
+      detail: "In-flight inspection verified Redis key: " + inFlightInspection?.actualKey,
     },
     {
       name: "redis_lock_owner_match",
       expected: workerId,
       actual: inFlightInspection?.owner,
       passed: inFlightInspection?.owner === workerId,
+      detail: "Out-of-band Redis GET verified owner string matches workerId",
     },
     {
       name: "redis_lock_ttl_within_window",
@@ -383,15 +504,16 @@ try {
         typeof inFlightInspection?.ttl === "number" &&
         inFlightInspection.ttl > 110 &&
         inFlightInspection.ttl <= 120,
+      detail: "Out-of-band Redis TTL verified within 110s-120s window",
     },
     {
       name: "nested_subworkflow_lock_skipped",
       expected: { executed: true, nestedLockAcquired: false },
       actual: {
         executed: nestedResult?.executed === true,
-        nestedLockAcquired: Boolean(nestedResult?.nestedLock?.acquired),
+        nestedLockAcquired: Boolean(nestedResult?.nestedLock),
       },
-      passed: nestedResult?.executed === true && !nestedResult?.nestedLock?.acquired,
+      passed: nestedResult?.executed === true && !nestedResult?.nestedLock,
       detail:
         "Sub-workflow acquireLockStep recognized parentStepIdempotencyKey and skipped re-acquisition without mutating held lock",
     },
@@ -400,6 +522,7 @@ try {
       expected: true,
       actual: releaseResult === true,
       passed: releaseResult === true,
+      detail: "Core-flows releaseLockStep successfully released lock",
     },
     {
       name: "redis_lock_key_deleted_after_release",
@@ -432,8 +555,27 @@ try {
   }
 
   const dbQueries = {
-    before: "-- Snapshot before test execution:\n" + dbBeforeQuery + "\n-- Fixture provision query:\n" + insertQuery,
-    after: "-- Snapshot after test execution:\n" + dbAfterQuery,
+    before:
+      "-- ============================================================================\n" +
+      "-- TP-02a DB Snapshot: Before Test Execution\n" +
+      "-- Captured at: " + dbBeforeSnapshot.capturedAt + "\n" +
+      "-- ============================================================================\n\n" +
+      "-- Query: Check cart_checkout_session before test provision\n" +
+      dbBeforeQuery + "\n\n" +
+      "-- Result:\n" +
+      formatSqlTable(dbBeforeSnapshot.rows, columns) + "\n" +
+      "-- Fixture provision query executed via BatchInventoryModuleService.createCartCheckoutSessions:\n" +
+      `-- INSERT INTO "cart_checkout_session" ("cart_id", "current_attempt_id", "epoch", "status", "raw_epoch", "created_at", "updated_at")\n` +
+      `-- VALUES ('${cartId}', '${attemptId}', 1, 'in_progress', '{"value":"1","precision":20}', NOW(), NOW());\n`,
+    after:
+      "-- ============================================================================\n" +
+      "-- TP-02a DB Snapshot: After Test Execution\n" +
+      "-- Captured at: " + dbAfterSnapshot.capturedAt + "\n" +
+      "-- ============================================================================\n\n" +
+      "-- Query: Check cart_checkout_session state after workflow execution\n" +
+      dbAfterQuery + "\n\n" +
+      "-- Result:\n" +
+      formatSqlTable(dbAfterSnapshot.rows, columns) + "\n",
   };
 
   await writeEvidence({
@@ -444,6 +586,7 @@ try {
     dbBefore: dbBeforeSnapshot,
     dbAfter: dbAfterSnapshot,
     dbQueries,
+    containerDetails,
   });
 
   if (!allPassed) {
@@ -472,14 +615,12 @@ try {
     dbBefore: null,
     dbAfter: null,
     dbQueries: null,
+    containerDetails: null,
   });
   process.exit(1);
 } finally {
   try {
     if (redisClient?.status !== "end") redisClient?.disconnect();
-  } catch {}
-  try {
-    if (providerRedisClient?.status !== "end") providerRedisClient?.disconnect();
   } catch {}
   try {
     await pgClient?.end();

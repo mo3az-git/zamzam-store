@@ -5,8 +5,7 @@ import RedisModule from "ioredis"
 const Redis = (RedisModule as unknown as { default?: typeof RedisModule }).default ?? RedisModule
 
 export interface TestTp02aWorkflowInput {
-  key?: string
-  cartId?: string
+  key: string
   ttl?: number
   timeout?: number
   ownerId: string
@@ -44,6 +43,7 @@ export const inspectRedisLockStep = createStep<
     await client.connect()
 
     try {
+      // SafeRedisLockingProvider prefixes all keys with "medusa_lock:"
       const prefixedKey = "medusa_lock:" + input.key
       let actualKey = prefixedKey
       let exists = await client.exists(prefixedKey)
@@ -67,10 +67,9 @@ export const inspectRedisLockStep = createStep<
 
 export const nestedCartTestWorkflow = createWorkflow(
   "nestedCartTestWorkflow",
-  (input: { key?: string; cartId?: string; ownerId: string }) => {
+  (input: { key: string; ownerId: string }) => {
     const lock = acquireLockStep({
       key: input.key,
-      cartId: input.cartId,
       ownerId: input.ownerId,
       ttl: 120,
       timeout: 5,
@@ -87,7 +86,6 @@ export const parentCheckoutTestWorkflow = createWorkflow(
   (input: TestTp02aWorkflowInput) => {
     const parentLock = acquireLockStep({
       key: input.key,
-      cartId: input.cartId,
       ttl: input.ttl ?? 120,
       timeout: input.timeout ?? 5,
       ownerId: input.ownerId,
@@ -96,20 +94,18 @@ export const parentCheckoutTestWorkflow = createWorkflow(
     const nestedResult = nestedCartTestWorkflow.runAsStep({
       input: {
         key: input.key,
-        cartId: input.cartId,
         ownerId: input.nestedOwnerId ?? "worker-nested-sub-workflow",
       },
     })
 
     const inFlightInspection = inspectRedisLockStep({
-      key: input.key ?? ("cart:" + (input.cartId ?? "")),
+      key: input.key,
       expectedOwner: input.ownerId,
       redisUrl: input.redisUrl,
     })
 
     const releaseResult = releaseLockStep({
       key: input.key,
-      cartId: input.cartId,
       ownerId: input.ownerId,
     })
 
