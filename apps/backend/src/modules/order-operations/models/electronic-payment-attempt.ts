@@ -6,7 +6,7 @@ export const ElectronicPaymentAttempt = model.define("electronic_payment_attempt
   cart_id: model.text(),
   checkout_attempt_id: model.text().unique(),
   provider_key: model.text(),
-  provider_payment_id: model.text().nullable().unique(),
+  provider_payment_id: model.text().unique().nullable(),
   amount: model.bigNumber(),
   currency_code: model.text(),
   status: model.enum(["initiated","authorized","paid","failed","abandoned","partially_refunded","refunded","outcome_unknown","void_pending","voided"]).default("initiated"),
