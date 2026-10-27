@@ -69,6 +69,10 @@ jobs:
         run: node apps/backend/scripts/check-egypt-shipping-configuration.mjs
       - name: Internal batch availability projection tests (not formal TP)
         run: node --experimental-strip-types --test apps/backend/scripts/test-batch-availability.mjs
+      - name: FEFO lock-key validation unit test (not formal TP)
+        run: node apps/backend/scripts/check-locking-empty-keys-unit.mjs
+      - name: Disposable Redis locking edge checks (not formal TP)
+        run: node apps/backend/scripts/check-locking-redis-edge-cases.mjs
       - name: Scoped product visibility authorization tests (not formal TP)
         run: node --experimental-strip-types --test apps/backend/scripts/test-store-visibility.mjs
       - name: Lint both workspaces
