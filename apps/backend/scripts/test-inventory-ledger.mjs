@@ -194,10 +194,16 @@ try {
     const batch = await makeBatch(25, 90, "payable-order-binding")
     dbBefore = await saveSnapshot([batch.id])
     const money = (value) => {
+      // Medusa BigNumber/decimal values can serialize with trailing zeros
+      // (e.g. 2000.0000000000000000). Normalize without Number/float.
+      // Only exact hundredths are allowed: non-zero digits after the
+      // second decimal place are rejected, never rounded.
       const raw = String(value ?? "")
-      if (!/^(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,2})?$/.test(raw)) throw new Error("NATIVE_TOTAL_NOT_CANONICAL: " + raw)
-      const [whole,frac = ""] = raw.split(".")
-      return whole + "." + frac.padEnd(2,"0")
+      const match = /^(0|[1-9][0-9]*)(?:\\.([0-9]+))?$/.exec(raw)
+      if (!match || match[1].length>10) throw new Error("NATIVE_TOTAL_NOT_CANONICAL: "+raw)
+      const fraction = match[2] ?? ""
+      if (fraction.slice(2).replace(/0/g,"") !== "") throw new Error("NATIVE_TOTAL_PRECISION_LOSS: "+raw)
+      return match[1]+"."+fraction.slice(0,2).padEnd(2,"0")
     }
     for (const method of ["cod","electronic"]) {
       const fixture = await makeCart([{ quantity: 2 }], "real-payable-"+method)
