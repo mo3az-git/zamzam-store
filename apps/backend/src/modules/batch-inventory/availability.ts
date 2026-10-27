@@ -4,17 +4,23 @@
  * This module is deliberately NOT mounted on a Store API route. Only a
  * publishable-key / sales-channel-scoped caller may expose these statuses
  * after it validates that each requested variant is visible to that channel.
- * It is not a stock reservation, checkout authorization, or quantity quote.
+ * It is not a stock reservation or checkout authorization.
  */
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import type { MedusaContainer } from "@medusajs/framework/types"
+
 export type AvailabilityStatus = "available" | "unavailable" | "unknown"
 export type AvailabilityRequest = Readonly<{
   variantId: string
+  /** Trusted, already-aggregated demand for this variant; positive integer units. */
+  requestedQuantity: number
   /** Explicit per-variant minimum remaining shelf life; unknown => fail closed. */
   minShelfLifeDays: number | null
 }>
+export type AvailabilityItem = Readonly<{ variantId: string; status: AvailabilityStatus }>
 export type AvailabilityResponse = Readonly<{
   authority: "batch_inventory"
-  items: Array<{ variantId: string; status: AvailabilityStatus }>
+  items: readonly AvailabilityItem[]
 }>
 type Row = { variant_id?: unknown; eligible_units?: unknown }
 export interface AvailabilitySql {
@@ -25,6 +31,8 @@ const validId = (s: unknown): s is string =>
   typeof s === "string" && s.length > 0 && s.length <= 255 && /^[A-Za-z0-9_-]+$/.test(s)
 const validDays = (d: number | null): d is number =>
   Number.isSafeInteger(d) && d !== null && d >= 0 && d <= 365
+const validRequestedQuantity = (value: unknown): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= 1_000_000
 
 /**
  * Produces a presentational status only. A positive read is provisional:
@@ -53,6 +61,7 @@ export async function readBatchAvailability(
   const seen = new Set<string>()
   for (const request of requests) {
     if (!request || !validId(request.variantId) || seen.has(request.variantId) ||
+      !validRequestedQuantity(request.requestedQuantity) ||
       !(request.minShelfLifeDays === null || validDays(request.minShelfLifeDays))) {
       throw new TypeError("Invalid or duplicate availability request")
     }
@@ -115,11 +124,33 @@ export async function readBatchAvailability(
         variantId: request.variantId,
         status: !validDays(request.minShelfLifeDays) || !quantities.has(request.variantId)
           ? "unknown"
-          : quantities.get(request.variantId)! > 0n ? "available" : "unavailable",
+          : quantities.get(request.variantId)! >= BigInt(request.requestedQuantity) ? "available" : "unavailable",
       })),
     }
   } catch {
     // Missing migration or transient DB problem must not claim "out of stock".
     return unknown()
   }
+}
+
+/**
+ * Internal backend entry point for trusted coordinators. The caller must derive
+ * authorized inventory locations and visible variants server-side; never pass
+ * browser-supplied IDs. This read is advisory: reservation must still be
+ * enforced atomically by InventoryLedger.
+ */
+export async function readAuthoritativeBatchAvailability(
+  container: MedusaContainer,
+  requests: readonly AvailabilityRequest[],
+  authorizedLocationIds: readonly string[]
+): Promise<AvailabilityResponse> {
+  let db: AvailabilitySql
+  try {
+    db = container.resolve(ContainerRegistrationKeys.PG_CONNECTION) as unknown as AvailabilitySql
+  } catch {
+    // Route configuration failures through the same fail-closed unknown result
+    // as query outages while retaining request validation in the core reader.
+    db = { raw: async () => { throw new Error("Inventory database is unavailable") } }
+  }
+  return readBatchAvailability(db, requests, authorizedLocationIds)
 }
