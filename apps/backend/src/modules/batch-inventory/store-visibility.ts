@@ -32,7 +32,7 @@ const policy = (metadata: unknown): number | null => {
   // Preserve the ledger-compatible canonical numeric-string policy, but keep
   // this display-only projection conservatively bounded at 365 days.
   const days = typeof raw === "number" ? raw :
-    typeof raw === "string" && /^(0|[1-9]\\d*)$/.test(raw) ? Number(raw) : NaN
+    typeof raw === "string" && /^(0|[1-9]\d*)$/.test(raw) ? Number(raw) : NaN
   return Number.isSafeInteger(days) && days >= 0 && days <= 365 ? days : null
 }
 
