@@ -230,6 +230,15 @@ jobs:
           set -o pipefail
           node scripts/run-tp-with-evidence.mjs TP-04b 2>&1 | tee artifacts/tp-04b-native-http.log
 
+      - name: Run native cart mutation security HTTP integration
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+        run: |
+          set -o pipefail
+          node apps/backend/scripts/test-cart-mutation-http-integration.mjs 2>&1 | tee artifacts/cart-mutation-http-integration.log
+
       - name: Run TP-06a same-batch multi-line reservation
         if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
         shell: bash
