@@ -2,6 +2,7 @@ import { defineMiddlewares, errorHandler } from "@medusajs/framework/http"
 import { MedusaError } from "@medusajs/framework/utils"
 import { cartMutationGuard } from "./cart-mutation-guard"
 import { guestCartOwnershipGuard } from "./guest-cart-ownership-guard"
+import { guestCartRequestSecurityGuard } from "./guest-cart-request-security-guard"
 import { OWNED_NATIVE_CART_ROUTE_MATCHER } from "./guest-cart-ownership-policy"
 
 const fallbackErrorHandler = errorHandler()
@@ -32,6 +33,6 @@ export default defineMiddlewares({
     // their own locking protocols. Cart creation is deliberately excluded.
     matcher: OWNED_NATIVE_CART_ROUTE_MATCHER,
     methods: ["POST", "PUT", "PATCH", "DELETE"],
-    middlewares: [guestCartOwnershipGuard, cartMutationGuard],
+    middlewares: [guestCartRequestSecurityGuard, guestCartOwnershipGuard, cartMutationGuard],
   }],
 })

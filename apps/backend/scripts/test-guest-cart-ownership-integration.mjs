@@ -14,6 +14,7 @@ const { ContainerRegistrationKeys, Modules } = rootRequire("@medusajs/framework/
 const { createRegionsWorkflow } = rootRequire("@medusajs/core-flows")
 const { createGuestCartWithOwnership, invalidateGuestCartOwnership, resolveGuestCartOwnership } =
   rootRequire("./apps/backend/src/modules/batch-inventory/guest-cart-ownership.ts")
+const { issueGuestCartSession } = rootRequire("./apps/backend/src/api/guest-cart-session-transport.ts")
 const { evaluateGuestCheckoutPreflight } = rootRequire("./apps/backend/src/modules/batch-inventory/guest-checkout-preflight.ts")
 const fixtureId = randomUUID()
 const passed = []
@@ -60,6 +61,19 @@ async function nativeCartSnapshot(cartId) {
   return result.data[0]
 }
 
+function cookieResponse() {
+  const headers = new Map()
+  return {
+    headers,
+    getHeader(name) { return headers.get(name) },
+    setHeader(name, value) { headers.set(name, value) },
+  }
+}
+const trustedIssueRequest = (cookieHeader) => ({ method: "POST", headers: {
+  origin: "https://storefront.example.invalid", "sec-fetch-site": "same-origin", "content-type": "application/json",
+  ...(cookieHeader ? { cookie: cookieHeader } : {}),
+} })
+
 try {
   // Reject unsafe targets before opening either client or creating any fixture.
   const target = verifyDisposableTargetServices(
@@ -103,6 +117,44 @@ try {
     countries: ["us"],
   }] } })).result[0]
   regions.push(usRegion.id)
+
+  const issueResponse = cookieResponse()
+  const issuerDependencies = {
+    createOwnedCart: async (scope, regionId, salesChannelId) => createGuestCartWithOwnership(scope, { regionId, ...(salesChannelId ? { salesChannelId } : {}) }),
+    resolveOwnership: resolveGuestCartOwnership,
+    revokeOwnership: invalidateGuestCartOwnership,
+  }
+  const issued = await issueGuestCartSession({ container, regionId: egRegion.id,
+    request: trustedIssueRequest(), response: issueResponse, storefrontOrigin: "https://storefront.example.invalid" }, issuerDependencies)
+  carts.push({ cartId: issued.cartId })
+  const issuedSetCookie = issueResponse.getHeader("Set-Cookie")?.find((value) => value.startsWith("zamzam_guest_cart="))
+  const issuedSecret = issuedSetCookie?.match(/^zamzam_guest_cart=([^;]+)/)?.[1]
+  check("trusted_issuer_sets_secure_http_only_same_origin_cookie_without_json_secret",
+    Boolean(issuedSecret) && issuedSetCookie.includes("Path=/api/cart") && issuedSetCookie.includes("HttpOnly") &&
+      issuedSetCookie.includes("Secure") && issuedSetCookie.includes("SameSite=Lax") &&
+      !JSON.stringify(issued).includes(decodeURIComponent(issuedSecret)) && issued.proof.status === "owned", {
+      cartIdInServerContextOnly: issued.cartId, cookieFlagsValid: true, rawProofInResult: false,
+    })
+  const issuedDigest = await pg.query("SELECT session_hash FROM guest_cart_ownership WHERE cart_id=$1", [issued.cartId])
+  check("issued_cookie_secret_is_digest_only_in_postgres",
+    issuedDigest.rows.length === 1 && issuedDigest.rows[0].session_hash === hash(decodeURIComponent(issuedSecret)) &&
+      issuedDigest.rows[0].session_hash !== decodeURIComponent(issuedSecret))
+  const issuedRetry = await issueGuestCartSession({ container, regionId: egRegion.id,
+    request: trustedIssueRequest(`zamzam_guest_cart=${issuedSecret}`), response: cookieResponse(),
+    storefrontOrigin: "https://storefront.example.invalid" }, issuerDependencies)
+  check("create_retry_with_received_cookie_reuses_one_cart_without_rotation",
+    issuedRetry.reused && issuedRetry.cartId === issued.cartId &&
+      (await pg.query("SELECT count(*)::int AS count FROM guest_cart_ownership WHERE cart_id=$1", [issued.cartId])).rows[0].count === 1)
+  const beforeCrossOriginIssue = await pg.query("SELECT count(*)::int AS count FROM guest_cart_ownership")
+  let crossOriginRejected = false
+  try {
+    await issueGuestCartSession({ container, regionId: egRegion.id,
+      request: { ...trustedIssueRequest(), headers: { ...trustedIssueRequest().headers, origin: "https://attacker.example.invalid" } },
+      response: cookieResponse(), storefrontOrigin: "https://storefront.example.invalid" }, issuerDependencies)
+  } catch { crossOriginRejected = true }
+  const afterCrossOriginIssue = await pg.query("SELECT count(*)::int AS count FROM guest_cart_ownership")
+  check("cross_origin_issuer_request_creates_no_owned_cart", crossOriginRejected &&
+    beforeCrossOriginIssue.rows[0].count === afterCrossOriginIssue.rows[0].count)
 
   const first = await createOwnedCart(egRegion.id)
   const second = await createOwnedCart(egRegion.id)
@@ -290,3 +342,4 @@ try {
     process.exitCode = 1
   }
 }
+

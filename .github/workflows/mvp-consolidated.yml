@@ -1,6 +1,10 @@
 name: Consolidated MVP — Targeted Compatibility Checks
 
 on:
+  pull_request:
+    branches:
+      - main
+      - "integration/**"
   push:
     branches:
       - "integration/mvp-consolidated-*"
@@ -53,6 +57,8 @@ jobs:
           cache: npm
       - name: Install pinned dependencies
         run: npm ci --strict-peer-deps --no-audit --no-fund
+      - name: Guest cart session transport tests
+        run: node --experimental-strip-types --test apps/backend/scripts/test-guest-cart-session-transport.mjs
       - name: Storefront unit tests (not formal TP)
         run: node --experimental-strip-types --test apps/storefront/tests/*.test.mjs
       - name: Read-only native payable quote unit tests (not formal TP)
