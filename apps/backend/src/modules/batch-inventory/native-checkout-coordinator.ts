@@ -17,7 +17,10 @@ type Locking = {
 }
 const conflict = (code: string) => new MedusaError(MedusaError.Types.CONFLICT, code, code)
 const rows = async (tx: Sql, sql: string, values: unknown[] = []) => (await tx.raw(sql, values)).rows
-export type NativeCheckoutFaultHooks = NativeCompletionHooks & Pick<LedgerHooks, "event" | "afterConversionAllocation">
+export type NativeCheckoutFaultHooks = NativeCompletionHooks & Pick<LedgerHooks, "event" | "afterConversionAllocation"> & {
+  afterCorrelationPersisted?: () => void | Promise<void>
+  afterConversionCommit?: () => void | Promise<void>
+}
 
 /**
  * Trusted server-side coordinator for a reserved Medusa cart. This module is
@@ -106,11 +109,13 @@ export async function completeReservedCartWithInventory(
     }
   }
 
+  await faultHooks.afterCorrelationPersisted?.()
   const conversion = await ledger.convertCartReservationsToAllocations({
     ...authority,
     orderId: correlation.orderId,
     validatedReservationIds: reservationIds,
   })
+  await faultHooks.afterConversionCommit?.()
   const result = {
     orderId: correlation.orderId,
     conversionStatus: "allocated" as const,
@@ -122,9 +127,10 @@ export async function completeReservedCartWithInventory(
   const attempt = (await rows(db, `SELECT idempotency_key FROM cart_checkout_attempt
     WHERE checkout_attempt_id=?::uuid AND cart_id=?`, [authority.attemptId, authority.cartId]))[0]
   if (!attempt) throw conflict("CHECKOUT_ATTEMPT_DISAPPEARED")
-  const priorResponse = (await rows(db, `SELECT status,order_id,response_body FROM idempotency_key
+  const readResponse = async () => (await rows(db, `SELECT status,order_id,response_body FROM idempotency_key
     WHERE key=? AND lease_owner_id=? AND deleted_at IS NULL`, [attempt.idempotency_key, authority.ownerId]))[0]
-  if (priorResponse?.status === "completed") {
+  const verifyResponse = (priorResponse: Row | undefined) => {
+    if (priorResponse?.status !== "completed") throw conflict("CHECKOUT_RESPONSE_PERSISTENCE_FAILED")
     const body = priorResponse.response_body as Row | null
     const sameIds = (key: string, expected: string[]) => Array.isArray(body?.[key]) &&
       [...(body[key] as string[])].sort().join("\n") === [...expected].sort().join("\n")
@@ -133,11 +139,15 @@ export async function completeReservedCartWithInventory(
         !sameIds("allocationIds", result.allocationIds) || !sameIds("movementIds", result.movementIds)) {
       throw conflict("CHECKOUT_RESPONSE_DIVERGENCE")
     }
+  }
+  const priorResponse = await readResponse()
+  if (priorResponse?.status === "completed") {
+    verifyResponse(priorResponse)
     return { ...result, replayed: true }
   }
   const persisted = await db.raw(`UPDATE idempotency_key SET status='completed',order_id=?,response_code=200,
-    response_body=?::jsonb,updated_at=NOW() WHERE key=? AND lease_owner_id=? AND status IN ('pending','completed')
-    AND deleted_at IS NULL RETURNING key`, [correlation.orderId, JSON.stringify({
+    response_body=?::jsonb,updated_at=NOW() WHERE key=? AND lease_owner_id=? AND status='pending'
+    AND last_heartbeat_at>NOW()-INTERVAL '120 seconds' AND deleted_at IS NULL RETURNING key`, [correlation.orderId, JSON.stringify({
       orderId: result.orderId,
       conversionStatus: result.conversionStatus,
       orderVersion: result.orderVersion,
@@ -145,6 +155,9 @@ export async function completeReservedCartWithInventory(
       movementIds: result.movementIds,
       replayed: false,
     }), attempt.idempotency_key, authority.ownerId])
-  if (persisted.rowCount !== 1) throw conflict("CHECKOUT_RESPONSE_PERSISTENCE_FAILED")
+  if (persisted.rowCount !== 1) {
+    verifyResponse(await readResponse())
+    return { ...result, replayed: true }
+  }
   return result
 }
