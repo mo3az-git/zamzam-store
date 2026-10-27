@@ -48,6 +48,8 @@ A known governorate therefore has three distinct blockers: `SHIPPING_COVERAGE_UN
 
 The ISO subdivision list is combined with official Egyptian records that the historic Helwan and 6 October governorates were abolished/merged in 2011; the current contract therefore contains 27 rows. Medusa requires a lower-case ISO 3166-2-style province code for province GeoZones. Its runtime validation checks that `province_code` is a string; it does not verify the code against an authoritative Egypt list. The application map performs that strict check and rejects uppercase, unknown, display-name, and alias inputs.
 
+Audit references: the [Egyptian Ministry of Local Development governorate directory](https://www.mld.gov.eg/en/governorates) lists the current 27-governorate roster. [ISO's subdivision-code overview](https://www.iso.org/iso-3166-country-codes.html) defines the country-plus-subdivision code format, and its [2010 Egypt bulletin](https://www.iso.org/iso/iso_3166-2_newsletter_ii-2_2010-06-30.pdf) records the Egypt codes but predates the return to 27 governorates. The official [CAPMAS statistical yearbook](https://www.capmas.gov.eg/pdf/new_Pdf/201893093532_2016.pdf) notes the 2011 abolition of Helwan and 6 October and subsequent administrative-boundary updates. The contract keeps the current Ministry roster and excludes those historic entries; transliteration differences remain display labels, not lookup aliases.
+
 ## Native Medusa contract verified
 
 The backend pins `@medusajs/medusa` and framework packages at 2.22.1. Native fulfillment supports:
