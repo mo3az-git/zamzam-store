@@ -1,0 +1,26 @@
+name: MVP Interface Contract Validation
+
+on:
+  push:
+    branches:
+      - "integration/mvp-interface-contract-v1-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  schema:
+    name: Validate proposed storefront/backend payloads (no TP execution)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install pinned dependencies
+        run: npm ci --strict-peer-deps --no-audit --no-fund
+      - name: Validate interface schema and fail-closed examples
+        run: node --test contracts/mvp-interface-v1.test.mjs
