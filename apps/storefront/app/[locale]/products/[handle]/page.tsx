@@ -1,3 +1,4 @@
+import { Suspense } from "react"
 import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
@@ -6,13 +7,13 @@ import { VariantSelector } from "../../../../components/variant-selector"
 import { ProductGallery } from "../../../../components/product-gallery"
 import { getDictionary, isLocale, localePath } from "../../../../lib/i18n"
 import {
+  buildProductStructuredData,
   listStoreProducts,
   productImageUrls,
-  productPriceAmount,
   type StoreError,
   type StoreProduct,
 } from "../../../../lib/medusa"
-import { absoluteUrl, localeAlternates } from "../../../../lib/site"
+import { absoluteUrl, localeAlternates, siteUrl } from "../../../../lib/site"
 
 export const dynamic = "force-dynamic"
 
@@ -95,29 +96,12 @@ export default async function ProductPage({ params }: { params: Promise<ProductP
   if (!product) notFound()
 
   const images = productImageUrls(product)
-  const mainImage = images[0]
-  const priceAmount = productPriceAmount(product)
-  const singleSku =
-    (product.variants ?? []).length === 1 ? (product.variants?.[0]?.sku?.trim() ?? "") : ""
 
-  const structuredData = {
-    "@context": "https://schema.org",
-    "@type": "Product",
-    name: product.title,
-    ...(product.description ? { description: product.description } : {}),
-    ...(mainImage ? { image: [absoluteUrl(mainImage)] } : {}),
-    ...(singleSku ? { sku: singleSku } : {}),
-    // Price is published only when the Store API returned a verified EGP amount.
-    ...(priceAmount !== null
-      ? {
-          offers: {
-            "@type": "Offer",
-            price: priceAmount.toFixed(2),
-            priceCurrency: "EGP",
-          },
-        }
-      : {}),
-  }
+  // DEF-06: Never expose an unsupported Offer while customer purchasing is disabled.
+  const structuredData = buildProductStructuredData(product, {
+    siteUrl: siteUrl().toString(),
+    isPurchasingEnabled: false,
+  })
 
   return (
     <main className="shell detail-page" id="main-content">
@@ -139,7 +123,9 @@ export default async function ProductPage({ params }: { params: Promise<ProductP
           <span className="lux-eyebrow">{dict.product.kicker}</span>
           <h1>{product.title}</h1>
           {product.subtitle ? <p className="detail-subtitle">{product.subtitle}</p> : null}
-          <VariantSelector variants={product.variants ?? []} locale={locale} />
+          <Suspense fallback={<div className="detail-variant-picker" />}>
+            <VariantSelector variants={product.variants ?? []} locale={locale} />
+          </Suspense>
           {product.description ? (
             <div className="detail-description">
               <h2>{dict.product.descriptionHeading}</h2>
@@ -158,7 +144,7 @@ export default async function ProductPage({ params }: { params: Promise<ProductP
       </div>
       <script
         type="application/ld+json"
-        // Only catalog values are serialised, and "<" is escaped.
+        // Only genuine catalog values are serialised, and "<" is escaped.
         dangerouslySetInnerHTML={{
           __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
         }}

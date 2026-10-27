@@ -1,11 +1,23 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { getDictionary, type Locale } from "../lib/i18n"
-import { formatVariantPrice, type StoreVariant } from "../lib/medusa"
+import {
+  formatVariantPrice,
+  resolveSelectedVariantId,
+  type StoreVariant,
+} from "../lib/medusa"
 import { AvailabilityDisplay } from "./availability-display"
 
-/** Catalog-only variant selector. Never treats a displayed price as checkout authority. */
+/**
+ * Catalog-only variant selector (DEF-04).
+ *
+ * Synchronizes the chosen variant with the `?variant=<id>` URL search parameter.
+ * Strictly validates that the variant ID belongs to the product.
+ * Preserves other search parameters and never treats a selected variant
+ * as inventory claim or checkout authority.
+ */
 export function VariantSelector({
   variants,
   locale,
@@ -20,11 +32,37 @@ export function VariantSelector({
   availabilityByVariant?: Record<string, unknown>
 }) {
   const dict = getDictionary(locale)
-  const [selectedId, setSelectedId] = useState(variants[0]?.id ?? "")
+  const searchParams = useSearchParams()
+
+  const initialVariantId = resolveSelectedVariantId(
+    variants,
+    searchParams?.get("variant")
+  )
+  const [selectedId, setSelectedId] = useState(initialVariantId)
+
+  // React to URL navigation changes (e.g. browser back/forward)
+  useEffect(() => {
+    const fromUrl = searchParams?.get("variant")
+    const validated = resolveSelectedVariantId(variants, fromUrl)
+    if (validated && validated !== selectedId) {
+      setSelectedId(validated)
+    }
+  }, [searchParams, variants, selectedId])
+
   const chosen = variants.find((variant) => variant.id === selectedId) ?? variants[0]
   const price = chosen ? formatVariantPrice(chosen, locale) : null
   const sku = chosen?.sku?.trim()
   const chosenAvailability = chosen ? availabilityByVariant?.[chosen.id] : undefined
+
+  const handleVariantChange = (newId: string) => {
+    setSelectedId(newId)
+    if (typeof window !== "undefined") {
+      const currentUrl = new URL(window.location.href)
+      currentUrl.searchParams.set("variant", newId)
+      window.history.replaceState(null, "", currentUrl.toString())
+      window.dispatchEvent(new Event("popstate"))
+    }
+  }
 
   if (!chosen) {
     return (
@@ -46,7 +84,7 @@ export function VariantSelector({
           className="detail-variant-select"
           id="product-variant"
           value={chosen.id}
-          onChange={(event) => setSelectedId(event.target.value)}
+          onChange={(event) => handleVariantChange(event.target.value)}
         >
           {variants.map((variant, index) => (
             <option key={variant.id} value={variant.id}>
