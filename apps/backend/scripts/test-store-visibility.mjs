@@ -32,7 +32,7 @@ test("different sales channel and draft/unpublished products are denied",async()
  }
 })
 test("missing/invalid trusted shelf-life is unknown while visible remains true",async()=>{
- for(const days of [undefined,"30",-1,366,1.5]) {
+ for(const days of [null,"30",-1,366,1.5]) {
    const result=await resolveScopedVariantPolicies(query([visible("variant_1","published",["sc_public"],days)]),["variant_1"],["sc_public"])
    assert.deepEqual(result,[{variantId:"variant_1",visible:true,minShelfLifeDays:null}])
  }
