@@ -86,7 +86,7 @@ const baseInput = {
 const deps = { isVerifiedGuestCartOwnership: (proof, id) => proof === ownerProof && id === owner.cartId }
 
 let result = evaluateCheckoutPreflight(baseInput, deps)
-assert.equal(result.status, "ready_for_review")
+assert.equal(result.status, "ready_for_review", JSON.stringify(result.blockers))
 assert.equal(result.orderCompletionAllowed, false)
 assert.equal(result.paymentExecutionAllowed, false)
 assert.equal(result.inventoryReservationRequired, true)
