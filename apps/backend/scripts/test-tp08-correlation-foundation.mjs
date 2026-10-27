@@ -88,7 +88,7 @@ try {
   const b=await register()
   await markOrderCreationStarted(db,b)
   const ambiguousOrders=[candidate(b),candidate(b)]
-  result=await reconcileOrderCreation(db,b,async()=>ambiguousOrders
+  result=await reconcileOrderCreation(db,b,async()=>ambiguousOrders)
   s=await state(b.attemptId)
   check("multiple_distinct_orders_fenced",result.status==="ambiguous"&&s.order_id===null&&s.attempt_status==="needs_reconciliation",{result,s})
   let lookupFailure
