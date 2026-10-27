@@ -6,7 +6,13 @@ export class Migration20261027000002_ImmutableCheckoutCompletion extends Migrati
       CREATE OR REPLACE FUNCTION protect_completed_checkout_identity() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
         IF OLD.status='completed' AND OLD.request_path LIKE '/store/carts/%/complete' THEN
-          IF TG_OP='DELETE' THEN RAISE EXCEPTION 'COMPLETED_CHECKOUT_IDENTITY_IMMUTABLE'; END IF;
+          IF TG_OP='DELETE' THEN
+            -- An orphaned synthetic completed lease with no order, response,
+            -- or attempt is not a checkout completion identity.
+            IF OLD.order_id IS NULL AND OLD.response_body IS NULL AND NOT EXISTS
+              (SELECT 1 FROM cart_checkout_attempt WHERE idempotency_key=OLD.key) THEN RETURN OLD; END IF;
+            RAISE EXCEPTION 'COMPLETED_CHECKOUT_IDENTITY_IMMUTABLE';
+          END IF;
           IF NEW.key IS DISTINCT FROM OLD.key OR NEW.status IS DISTINCT FROM OLD.status OR
              NEW.request_path IS DISTINCT FROM OLD.request_path OR NEW.request_hash IS DISTINCT FROM OLD.request_hash OR
              NEW.lease_owner_id IS DISTINCT FROM OLD.lease_owner_id OR NEW.order_id IS DISTINCT FROM OLD.order_id OR
