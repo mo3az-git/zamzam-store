@@ -8,7 +8,7 @@ import {
 } from "./shared/tp-harness.mjs"
 
 const tpId = process.argv[2]
-if (!["TP-06a", "TP-06b", "TP-07a", "TP-07b", "TP-09", "TP-10", "TP-24c", "TP-08-native-integration"].includes(tpId)) throw new Error("Unsupported inventory TP: " + tpId)
+if (!["TP-06a", "TP-06b", "TP-07a", "TP-07b", "TP-09", "TP-10", "TP-24c", "TP-08-native-integration", "TP-08-recovery"].includes(tpId)) throw new Error("Unsupported inventory TP: " + tpId)
 if (process.env.PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP !== "true") throw new Error("Disposable database create/drop opt-in is required")
 const rootRequire = registerTsNode()
 const { Modules, ContainerRegistrationKeys } = await import("@medusajs/framework/utils")
@@ -146,7 +146,7 @@ try {
   }
   const makeCart = async (items, label = "inventory", nativeUnitPrice = 0) => {
     const cart = await cartService.createCarts({ currency_code: "egp", metadata: { disposable_fixture: tpId, label } })
-    const nativeCheckout = tpId === "TP-08-native-integration"
+    const nativeCheckout = ["TP-08-native-integration", "TP-08-recovery"].includes(tpId)
     const lineItems = items.map(({ quantity, key = randomUUID() }) => ({ title: "Native checkout batch line", product_title: "Disposable product",
       variant_title: "Batch tracked test variant", variant_id: variantId, quantity, unit_price: nativeCheckout ? nativeUnitPrice : 1000,
       requires_shipping: !nativeCheckout, metadata: { checkout_line_key: key } }))
@@ -162,7 +162,7 @@ try {
     if (redisOwner !== ownerId) throw new Error("Fixture Redis cart lock was not acquired")
     return { cart, lines, authority: { cartId: cart.id, attemptId, epoch: 1, ownerId }, ownerId }
   }
-  const makeNativeOrder = async (fixture, { lineKeys, lineQuantities, omitKey = [], duplicateKey, bindAttempt = true } = {}) => {
+  const makeNativeOrder = async (fixture, { lineKeys, lineQuantities, lineVariant, omitKey = [], duplicateKey, bindAttempt = true } = {}) => {
     const orderService = runtime.container.resolve(Modules.ORDER)
     const linkService = runtime.container.resolve(ContainerRegistrationKeys.LINK)
     const items = fixture.lines.map((line, index) => {
@@ -170,7 +170,7 @@ try {
       const metadata = { ...(line.metadata || {}) }
       if (omitKey.includes(index)) delete metadata.checkout_line_key
       else if (key) metadata.checkout_line_key = key
-      return { title: line.title, variant_id: line.variant_id, quantity: lineQuantities?.[index] ?? Number(line.quantity),
+      return { title: line.title, variant_id: lineVariant ?? line.variant_id, quantity: lineQuantities?.[index] ?? Number(line.quantity),
         unit_price: 1000, metadata }
     })
     const order = await orderService.createOrders({ currency_code: "egp", items })
@@ -183,6 +183,17 @@ try {
   const conversionInput = (fixture, order, reservationIds) => ({ ...fixture.authority, orderId: order.id, validatedReservationIds: reservationIds })
   const convert = (fixture, order, ids, hooks) => new InventoryLedger(runtime.container, hooks).convertCartReservationsToAllocations(conversionInput(fixture, order, ids))
   const saveSnapshot = async (batchIds) => snapshotTables(adminPg, batchIds)
+
+  if (tpId === "TP-08-recovery") {
+    const { runNativeRecoveryScenarios } = await import("./test-native-recovery-scenarios.mjs")
+    const batch = await makeBatch(200, 90, "native-recovery")
+    dbBefore = await saveSnapshot([batch.id])
+    await runNativeRecoveryScenarios({ runtime, knex, adminPg, batch, makeCart, makeNativeOrder,
+      reservationsFor, convert, saveSnapshot, check, expectCode, events, InventoryLedger,
+      completeReservedCartWithInventory, findNativeOrdersByCart, isolatedUrl, createPgClient })
+    dbAfter = await saveSnapshot([batch.id])
+    status = "passed"
+  }
 
   if (tpId === "TP-08-native-integration") {
     const batch = await makeBatch(40, 90, "native-checkout")
@@ -797,6 +808,6 @@ await writeTpEvidence({ evidenceDir, tpId, title: tpId === "TP-08-native-integra
   ...metadata, blocker, exitCode: status==="passed"?0:1, assertions, dbBefore, dbAfter,
   containerDetails: { medusaRuntime: true, isolatedDatabase: dbName, runtimeUser: tpId==="TP-24c"?"medusa_app":"migration owner", disposableServices: targetDetails },
   testCommand: `node apps/backend/scripts/test-inventory-ledger.mjs ${tpId}`,
-  assessmentType: tpId==="TP-24c"?"real PostgreSQL privilege and immutability-trigger enforcement; no production role changes": tpId==="TP-08-native-integration"?"real Medusa CartService cart, completeCartWorkflow native order and order_cart link, PostgreSQL correlation and allocation; no Store API cart creation or TP-01 execution; component evidence, not formal TP acceptance": ["TP-07b","TP-09","TP-10"].includes(tpId)?"authoritatively-correlated native Medusa order, real PostgreSQL conversion and concurrency behavior": "real Medusa modules and PostgreSQL transaction behavior; pre-order inventory scope only",
+  assessmentType: tpId==="TP-24c"?"real PostgreSQL privilege and immutability-trigger enforcement; no production role changes": ["TP-08-native-integration","TP-08-recovery"].includes(tpId)?"real Medusa CartService cart, completeCartWorkflow native order and order_cart link, PostgreSQL correlation and allocation; no Store API cart creation or TP-01 execution; component evidence, not formal TP acceptance": ["TP-07b","TP-09","TP-10"].includes(tpId)?"authoritatively-correlated native Medusa order, real PostgreSQL conversion and concurrency behavior": "real Medusa modules and PostgreSQL transaction behavior; pre-order inventory scope only",
 })
 process.exit(status==="passed"?0:1)
