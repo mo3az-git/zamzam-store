@@ -19,6 +19,9 @@ jobs:
       NEXT_PUBLIC_MEDUSA_BACKEND_URL: http://127.0.0.1:9091
       NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: pk_qa_read_only
       NEXT_PUBLIC_SITE_URL: http://127.0.0.1:8000
+      # Synthetic checkout is enabled only inside this disposable CI preview.
+      VERCEL_ENV: preview
+      ZAMZAM_SYNTHETIC_PREVIEW: "true"
       CI: "true"
     steps:
       - uses: actions/checkout@v4
