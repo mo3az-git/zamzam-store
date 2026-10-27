@@ -35,7 +35,7 @@ On the resulting candidate tree, before the final evidence commit:
 - `node apps/backend/scripts/check-shipping-quote-readiness-contract.mjs` — 10 passed.
 - `git diff --check` — passed after normalizing the admitted FEFO files.
 
-The consolidated GitHub Actions run on the final pushed SHA is required to replace this local evidence. No claim of a remote pass is made by this register before that run completes.
+GitHub Actions run `40581728070` (`Consolidated MVP — Targeted Compatibility Checks`) passed for candidate SHA `5a1deb009f5e5bba285fdbd93cc14547f67b0770`. The independent Vercel status was rate-limited (`upgradeToPro=build-rate-limit`), which is not a test or build failure; it is not treated as combined CI evidence. The final documentation SHA requires the same combined CI gate.
 
 ## Release blockers and owner decisions
 
