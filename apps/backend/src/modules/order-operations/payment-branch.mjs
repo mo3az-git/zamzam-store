@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto"
  * The advisory lock serializes competing branch selections for the same order,
  * making the chosen payment method immutable and suppressing cross-branch writes.
  */
-export async function initializePaymentBranch(db, input) {
+export async function initializePaymentBranch(db, input, { verifyWithinTransaction } = {}) {
   const { method, orderId, cartId, checkoutAttemptId, amount, claimCodeHash, idempotencyKey } = input
   if (method !== "electronic" && method !== "cod") throw new Error("INVALID_PAYMENT_METHOD")
   for (const [key, val] of Object.entries({orderId, cartId, checkoutAttemptId, idempotencyKey})) {
@@ -23,7 +23,12 @@ export async function initializePaymentBranch(db, input) {
 
   await db.query("BEGIN")
   try {
+    // Revision 18: root lock precedes any order-scoped child locks.
+    await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", ["phase0:order:" + orderId])
     await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", ["tp05:order:" + orderId])
+    // Production-facing callers must validate native order/cart/attempt
+    // association within this transaction, before any payment write.
+    if (verifyWithinTransaction) await verifyWithinTransaction(db)
     const existing = await db.query(
       "SELECT id, payment_method, claim_code_hash FROM order_operational_state WHERE order_id = $1 AND deleted_at IS NULL FOR UPDATE",
       [orderId]
