@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - "integration/mvp-consolidated-*"
+  pull_request:
+    branches:
+      - "integration/**"
   workflow_dispatch:
 
 permissions:
