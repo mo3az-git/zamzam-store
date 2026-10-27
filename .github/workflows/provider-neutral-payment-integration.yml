@@ -1,23 +1,11 @@
 name: Provider-Neutral Payment Foundation — Disposable Integration
 on:
-  push:
-    branches:
-      - "phase-1/same-order-native-payment-integration-spike"
-    paths:
-      - "apps/backend/src/modules/order-operations/**"
-      - "apps/backend/src/modules/batch-inventory/**"
-      - "apps/backend/scripts/test-inventory-ledger.mjs"
-      - "apps/backend/scripts/test-same-order-payment.mjs"
-      - "apps/backend/scripts/test-same-order-payment-worker.mjs"
-      - "scripts/run-tp-with-evidence.mjs"
-      - ".github/workflows/provider-neutral-payment-integration.yml"
   pull_request:
     branches:
       - "phase-1/checkout-payment-integration-preview"
     paths:
       - "apps/backend/src/modules/order-operations/**"
-      - "apps/backend/src/modules/batch-inventory/**"
-      - "apps/backend/scripts/test-inventory-ledger.mjs"
+      - "apps/backend/scripts/test-electronic-payment-event-inbox.mjs"
       - "apps/backend/scripts/test-same-order-payment.mjs"
       - "apps/backend/scripts/test-same-order-payment-worker.mjs"
       - "scripts/run-tp-with-evidence.mjs"
@@ -74,6 +62,14 @@ jobs:
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: ci_ephemeral_service
         run: node apps/backend/scripts/test-disposable-target-validator.mjs
+      - name: Apply migrations to the validated ephemeral database
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: ci_ephemeral_service
+        run: npm run db:migrate
+      - name: Run provider-neutral event inbox cases
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: ci_ephemeral_service
+        run: node apps/backend/scripts/test-electronic-payment-event-inbox.mjs
       - name: Run isolated same-order COD and simulated electronic cases
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: ci_ephemeral_service

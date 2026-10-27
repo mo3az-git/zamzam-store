@@ -42,7 +42,7 @@ paid -> void_pending (refund/void pending; resolve from provider evidence)
 - paid requires an authenticated provider result bound to the exact attempt, order, provider payment ID, EGP amount and currency. Native order creation and a Medusa local system-provider session are not proof of settlement.
 - A timeout after a provider request is outcome_unknown; do not create a new charge attempt until a provider status lookup or reconciliation resolves the old one.
 - Duplicate/replayed event identity must be idempotent. Reusing a provider event ID with different normalized content is an integrity alert. Older events cannot regress a later terminal state; contradictory money-moving events require reconciliation.
-- The current enum can represent these states, but PR #19 does not yet provide a provider event inbox/consumer, a durable provider-event ID ledger, or a generic transition-enforcing application service. These transitions are **contract**, not implemented provider behavior.
+- The internal event ledger now enforces transitions for normalized events returned by a trusted adapter. It records a durable inbox keyed by provider and event ID, serializes updates on the electronic attempt, checks exact EGP amount and attempt/provider identity, makes exact replay idempotent, rejects event-ID/content conflicts, and retains stale or ambiguous events for reconciliation. It does not authenticate provider callbacks, call a provider, or update native Medusa payment records.
 
 ## Provider-neutral electronic adapter contract
 
@@ -57,7 +57,7 @@ An adapter implementation must:
 5. Support an authoritative status lookup for outcome_unknown; absence of this capability must leave payment blocked/unknown.
 6. Keep authorization/capture/void/refund semantics provider-specific behind the adapter. No provider is selected, so no implementation may claim charge/capture/refund/settlement capability.
 
-Before accepting events in production, a follow-up must add a durable inbox keyed by (provider_key, provider_event_id), transactional event application with row locking, exact attempt/order/amount checks, replay/conflict handling, monotonic transition rules, out-of-order policy, reconciliation records, and disposable tests. The current adapter interface alone does not provide these guarantees.
+The internal inbox is not a public event consumer. A future provider adapter must verify raw-body signatures, freshness, account/environment and provider identity before calling this ledger. It must resolve uncertain outcomes through an authoritative status lookup. Missing or ambiguous ordering is retained for reconciliation. Refund events remain reconciliation-only until amount-specific refund accounting exists. The ledger updates only the internal attempt status; synchronization with native Medusa payment collections and sessions remains a production requirement.
 
 ## Exact monetary identity and COD paid-state guard
 
@@ -67,7 +67,7 @@ The COD integration assertion must remain collection_status === "unpaid"; the el
 
 ## Focused disposable verification
 
-.github/workflows/provider-neutral-payment-integration.yml runs only the existing positive-value same-native-order COD/electronic component suite against ephemeral PostgreSQL and Redis. It does not run TP-01, summarize/change canonical acceptance markers, invoke a real provider, or expose an endpoint. The suite covers:
+The focused workflow applies migrations only after disposable-target validation, then runs event-ledger cases and the positive-value same-native-order COD/electronic component suite against ephemeral PostgreSQL and Redis. It does not run TP-01, change canonical acceptance markers, invoke a real provider, or expose an endpoint. The suite covers:
 
 - Both methods use their same native Medusa order and exact EGP amount.
 - COD stays unpaid; electronic remains initiated/simulated.
@@ -75,8 +75,9 @@ The COD integration assertion must remain collection_status === "unpaid"; the el
 - Exact replay creates no duplicate branch/allocation/movement.
 - Wrong method/owner/cart/order/attempt/epoch/total/version, expired pending lease, and cart/payment mismatch fail closed.
 - Checkout interruption and committed-allocation-before-response recovery resolve to the same order without duplicate allocation or payment record.
+- Simulator event cases cover exact replay, event-ID content conflict, amount rejection, unknown-outcome resolution, stale revision retention, concurrent duplicate delivery, and provider mismatch.
 
-**Not covered by the current suite:** authentic provider callbacks, duplicate provider events, provider sequence ordering, event inbox durability, provider status lookup after an uncertain network result, COD courier settlement/remittance, or real charge/refund. Those require the event ledger and an owner-selected provider/operations contract. No evidence is fabricated for those cases.
+**Not covered by the current suite:** authentic provider callback/signature verification, real provider status lookup, synchronization with native Medusa payment records, COD courier settlement/remittance, or real charge/refund. No provider or COD operational workflow is activated.
 
 ## Production integration blockers
 
