@@ -1,0 +1,132 @@
+name: FEFO inventory integrity
+
+on:
+  push:
+    branches:
+      - "codex/fefo-inventory-integrity"
+  pull_request:
+    branches:
+      - integration/mvp-consolidated-20261027
+    paths:
+      - "apps/backend/src/modules/batch-inventory/**"
+      - "apps/backend/scripts/test-batch-availability*.mjs"
+      - "apps/backend/scripts/test-store-visibility*.mjs"
+      - "apps/backend/src/modules/locking-redis/**"
+      - "apps/backend/scripts/test-inventory-ledger.mjs"
+      - "apps/backend/scripts/test-reconciliation-operations.mjs"
+      - "apps/backend/scripts/check-locking-redis-*.mjs"
+      - "apps/backend/scripts/check-locking-empty-keys-unit.mjs"
+      - "docs/inventory-integrity-report.md"
+      - ".github/workflows/inventory-integrity.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    name: Disposable FEFO and concurrency (${{ matrix.case }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        case:
+          - TP-06a
+          - TP-06b
+          - TP-07a
+          - TP-07b
+          - TP-09
+          - TP-10
+          - TP-24c
+          - TP-08-recovery
+          - availability
+          - redis-locks
+    services:
+      postgres:
+        image: postgres:16.15@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+        env:
+          POSTGRES_DB: zamzam_spike
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: spike-only-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d zamzam_spike"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7.2.16@sha256:1009f15ccd9ed271996d1c65745a1ab1dadedea188feb3f1ab938602a32e50a3
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:spike-only-password@127.0.0.1:5432/zamzam_spike
+      REDIS_URL: redis://127.0.0.1:6379
+      LOCKING_REDIS_URL: redis://127.0.0.1:6379
+      PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
+      PHASE1_DISPOSABLE_TEST_PROFILE: ci_ephemeral_service
+      PHASE1_POSTGRES_IMAGE_REF: postgres:16.15@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+      PHASE1_REDIS_IMAGE_REF: redis:7.2.16@sha256:1009f15ccd9ed271996d1c65745a1ab1dadedea188feb3f1ab938602a32e50a3
+      TS_NODE_PROJECT: ${{ github.workspace }}/apps/backend/tsconfig.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --strict-peer-deps --no-audit --no-fund
+      - name: Typecheck authoritative availability contract
+        if: matrix.case == 'availability'
+        run: npx tsc --noEmit --skipLibCheck --target ES2021 --module Node16 --moduleResolution Node16 --esModuleInterop apps/backend/src/modules/batch-inventory/availability.ts
+      - name: Lint availability contract and regressions
+        if: matrix.case == 'availability'
+        run: npx eslint apps/backend/src/modules/batch-inventory/availability.ts apps/backend/scripts/test-batch-availability.mjs apps/backend/scripts/test-batch-availability-postgres.mjs
+      - name: Verify empty-key rejection without Redis
+        if: matrix.case == 'redis-locks'
+        run: node apps/backend/scripts/check-locking-empty-keys-unit.mjs
+      - name: Verify Redis ownership, leases, and release races
+        if: matrix.case == 'redis-locks'
+        run: node apps/backend/scripts/check-locking-redis.mjs && node apps/backend/scripts/check-locking-redis-edge-cases.mjs
+      - name: Run disposable Medusa and PostgreSQL inventory scenario
+        if: matrix.case != 'redis-locks' && matrix.case != 'availability'
+        run: node apps/backend/scripts/test-inventory-ledger.mjs "${{ matrix.case }}"
+      - name: Create isolated availability database
+        if: matrix.case == 'availability'
+        run: |
+          node --input-type=module -e 'import pg from "pg"; const c = new pg.Client({connectionString: process.env.DATABASE_URL}); await c.connect(); try { const r = await c.query("SELECT 1 FROM pg_database WHERE datname=$1", ["zamzam_consolidation"]); if (!r.rowCount) await c.query("CREATE DATABASE zamzam_consolidation"); } finally { await c.end(); }'
+        env:
+          DATABASE_URL: postgres://postgres:spike-only-password@127.0.0.1:5432/zamzam_spike
+      - name: Migrate disposable database for availability projection
+        if: matrix.case == 'availability'
+        run: npm run db:migrate
+        env:
+          DATABASE_URL: postgres://postgres:spike-only-password@127.0.0.1:5432/zamzam_consolidation
+          TS_NODE_PROJECT: ${{ github.workspace }}/apps/backend/tsconfig.json
+      - name: Verify availability projection and scoped variant policy
+        if: matrix.case == 'availability'
+        run: |
+          node --experimental-strip-types --test apps/backend/scripts/test-batch-availability.mjs
+          node --experimental-strip-types --test apps/backend/scripts/test-store-visibility.mjs
+          node --experimental-strip-types --test apps/backend/scripts/test-batch-availability-postgres.mjs
+        env:
+          DATABASE_URL: postgres://postgres:spike-only-password@127.0.0.1:5432/zamzam_consolidation
+          REDIS_URL: redis://127.0.0.1:6379
+          PHASE3_INVENTORY_DISPOSABLE_TEST: "true"
+      - name: Verify Medusa storefront visibility boundary
+        if: matrix.case == 'availability'
+        run: node apps/backend/scripts/test-store-visibility-medusa.mjs
+        env:
+          DATABASE_URL: postgres://postgres:spike-only-password@127.0.0.1:5432/zamzam_consolidation
+          REDIS_URL: redis://127.0.0.1:6379
+          PHASE3_MEDUSA_VISIBILITY_CI: "true"
+      - name: Preserve disposable run evidence
+        if: always() && matrix.case != 'redis-locks' && matrix.case != 'availability'
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-evidence-${{ matrix.case }}
+          path: artifacts/tp-evidence/${{ matrix.case }}/
+          if-no-files-found: warn

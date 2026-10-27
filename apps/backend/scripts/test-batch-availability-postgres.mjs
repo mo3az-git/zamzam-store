@@ -41,7 +41,7 @@ const readAdapter = (client) => ({
     }
   },
 })
-const req=(variantId,minShelfLifeDays=30)=>({variantId,minShelfLifeDays})
+const req=(variantId,minShelfLifeDays=30,requestedQuantity=1)=>({variantId,minShelfLifeDays,requestedQuantity})
 test("FEFO query against real migrated PostgreSQL ledger tables (disposable)",async(t)=>{
  enforceCiBoundary()
  const db = new Client({connectionString:process.env.DATABASE_URL,connectionTimeoutMillis:5000})
@@ -51,12 +51,12 @@ test("FEFO query against real migrated PostgreSQL ledger tables (disposable)",as
   const marker=randomUUID().replaceAll("-","").slice(0,16)
   const loc="loc_qa_"+marker, otherLoc="loc_other_"+marker, inactiveLoc="loc_off_"+marker
   const supplier="supplier_qa_"+marker, inactiveSupplier="supplier_off_"+marker
-  const good="var_good_"+marker, sold="var_sold_"+marker, boundary="var_edge_"+marker
+  const good="var_good_"+marker, demanded="var_demanded_"+marker, sold="var_sold_"+marker, boundary="var_edge_"+marker
   for(const [id,active] of [[supplier,true],[inactiveSupplier,false]])
    await db.query("INSERT INTO supplier (id,name,country_code,is_active) VALUES($1,'QA synthetic','eg',$2)",[id,active])
   for(const [id,active] of [[loc,true],[otherLoc,true],[inactiveLoc,false]])
    await db.query("INSERT INTO inventory_location (id,name,address_line1,governorate_code,is_active) VALUES($1,'QA synthetic','Disposable','Cairo',$2)",[id,active])
-  async function batch({variant=good,location=loc,source=supplier,status="available",onhand=10,reserved=0,quarantined=0,days=90}={}){
+  const batch = async ({variant=good,location=loc,source=supplier,status="available",onhand=10,reserved=0,quarantined=0,days=90}={}) => {
    await db.query([
     "INSERT INTO inventory_batch",
     "(id,variant_id,location_id,supplier_id,batch_number,supplier_invoice_reference,receipt_operation_id,expiration_date,status,",
@@ -67,6 +67,7 @@ test("FEFO query against real migrated PostgreSQL ledger tables (disposable)",as
    ].join(" "),[ "batch_qa_"+randomUUID(),variant,location,source,randomUUID(),days,status,onhand,reserved,quarantined ])
   }
   await batch({reserved:6,quarantined:3}) // exactly one eligible unit
+  await batch({variant:demanded,reserved:6,quarantined:3}) // one eligible unit, insufficient for demand=2
   await batch({location:otherLoc,onhand:500})
   await batch({location:inactiveLoc,onhand:500})
   await batch({source:inactiveSupplier,onhand:500})
@@ -78,11 +79,12 @@ test("FEFO query against real migrated PostgreSQL ledger tables (disposable)",as
   await batch({variant:sold,onhand:4,reserved:4})
   const read=readAdapter(db)
   await t.test("positive eligible remainder, fully reserved, strict shelf-life cutoff",async()=>{
-   const output=await readBatchAvailability(read,[req(good),req(sold),req(boundary)],[loc])
+   const output=await readBatchAvailability(read,[req(good),req(sold),req(boundary),req(demanded,30,2)],[loc])
    assert.deepEqual(output.items,[
      {variantId:good,status:"available"},
      {variantId:sold,status:"unavailable"},
-     {variantId:boundary,status:"unavailable"}
+     {variantId:boundary,status:"unavailable"},
+     {variantId:demanded,status:"unavailable"}
    ])
   })
   await t.test("scoping never includes out-of-channel or inactive warehouses",async()=>{
@@ -110,3 +112,4 @@ test("FEFO query against real migrated PostgreSQL ledger tables (disposable)",as
   try {await db.query("ROLLBACK")} finally {await db.end()}
  }
 })
+

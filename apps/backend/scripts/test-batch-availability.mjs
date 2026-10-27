@@ -1,8 +1,12 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { readBatchAvailability } from "../src/modules/batch-inventory/availability.ts"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import {
+  readAuthoritativeBatchAvailability,
+  readBatchAvailability,
+} from "../src/modules/batch-inventory/availability.ts"
 
-const req = (id, days = 30) => ({ variantId: id, minShelfLifeDays: days })
+const req = (id, days = 30, requestedQuantity = 1) => ({ variantId: id, minShelfLifeDays: days, requestedQuantity })
 function db(rows, options = {}) {
   const calls = []
   return {
@@ -14,20 +18,24 @@ function db(rows, options = {}) {
     },
   }
 }
-test("positive eligible remainder is available, zero is unavailable; no sensitive fields escape", async () => {
+test("availability requires enough eligible units for requested demand; no quantities escape", async () => {
   const source = db([
     { variant_id: "variant_1", eligible_units: "12" },
-    { variant_id: "variant_2", eligible_units: "0" },
+    { variant_id: "variant_2", eligible_units: "12" },
+    { variant_id: "variant_3", eligible_units: "0" },
   ])
-  const output = await readBatchAvailability(source, [req("variant_1"), req("variant_2", 42)], ["loc_authorized"])
+  const output = await readBatchAvailability(source, [
+    req("variant_1", 30, 12), req("variant_2", 42, 13), req("variant_3", 30, 1),
+  ], ["loc_authorized"])
   assert.deepEqual(output, {
     authority: "batch_inventory",
     items: [
       { variantId: "variant_1", status: "available" },
       { variantId: "variant_2", status: "unavailable" },
+      { variantId: "variant_3", status: "unavailable" },
     ],
   })
-  assert.deepEqual(source.calls[0].params, ["variant_1", 30, "variant_2", 42, ["loc_authorized"]])
+  assert.deepEqual(source.calls[0].params, ["variant_1", 30, "variant_2", 42, "variant_3", 30, ["loc_authorized"]])
   assert.match(source.calls[0].sql, /quantity_on_hand - batch\.quantity_reserved/)
   assert.match(source.calls[0].sql, /batch\.quantity_quarantined/)
   assert.match(source.calls[0].sql, /batch\.status = 'available'/)
@@ -36,6 +44,7 @@ test("positive eligible remainder is available, zero is unavailable; no sensitiv
   assert.match(source.calls[0].sql, /location\.id = ANY\(\?::text\[\]\)/)
   assert.match(source.calls[0].sql, /Africa\/Cairo/)
   assert.match(source.calls[0].sql, /expiration_date >/)
+  assert.doesNotMatch(source.calls[0].sql, /\b(?:inventory_level|stock_location|inventory_item)\b/i)
   assert.ok(!JSON.stringify(output).includes("quantity"))
   assert.ok(output.items.every((item) => !Object.keys(item).some((key) => /batch|quantity|supplier|expiry|cost/i.test(key))))
 })
@@ -69,6 +78,8 @@ test("never accepts malformed variant IDs, missing/malformed policies or more th
     [req(" variant_1")], [req("variant_1;DROP")],
     [req("variant_1",-1)], [req("variant_1",1.5)],
     [req("variant_1",366)], [{ variantId: "variant_1" }],
+    [req("variant_1",30,0)], [req("variant_1",30,-1)], [req("variant_1",30,1.5)],
+    [req("variant_1",30,1_000_001)], [{ variantId: "variant_1", minShelfLifeDays: 30 }],
   ]) await assert.rejects(readBatchAvailability(source,list, ["loc_authorized"]), /availability request/)
   assert.equal(source.calls.length,0)
 })
@@ -93,3 +104,24 @@ test("custom location scope is mandatory, fail-closed and never read from unscop
   assert.deepEqual(source.calls[0].params,["variant_1",30,["loc_scoped_1","loc_scoped_2"]])
   assert.match(source.calls[0].sql,/location\.id = ANY\(\?::text\[\]\)/)
 })
+
+test("internal contract resolves PostgreSQL through the trusted backend container", async () => {
+  const source = db([{ variant_id: "variant_1", eligible_units: "2" }])
+  const resolvedKeys = []
+  const container = {
+    resolve(key) {
+      resolvedKeys.push(key)
+      return source
+    },
+  }
+  const result = await readAuthoritativeBatchAvailability(container, [req("variant_1", 30, 2)], ["loc_authorized"])
+  assert.deepEqual(resolvedKeys, [ContainerRegistrationKeys.PG_CONNECTION])
+  assert.deepEqual(result.items, [{ variantId: "variant_1", status: "available" }])
+})
+
+test("internal contract fails closed when PostgreSQL is not registered", async () => {
+  const container = { resolve() { throw new Error("no database registration") } }
+  const result = await readAuthoritativeBatchAvailability(container, [req("variant_1")], ["loc_authorized"])
+  assert.deepEqual(result.items, [{ variantId: "variant_1", status: "unknown" }])
+})
+
