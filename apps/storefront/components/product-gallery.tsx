@@ -7,11 +7,13 @@ export function ProductGallery({
   images,
   title,
   galleryLabel,
+  imagePosition,
   noImageText,
 }: {
   images: string[]
   title: string
   galleryLabel: string
+  imagePosition: (current: number, total: number) => string
   noImageText: string
 }) {
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -19,14 +21,14 @@ export function ProductGallery({
 
   if (!images.length || !activeImage) {
     return (
-      <div className="detail-gallery" aria-label={galleryLabel}>
+      <section className="detail-gallery" aria-label={galleryLabel}>
         <div className="detail-no-photo">{noImageText}</div>
-      </div>
+      </section>
     )
   }
 
   return (
-    <div className="detail-gallery" aria-label={galleryLabel}>
+    <section className="detail-gallery" aria-label={galleryLabel}>
       <div className="detail-main-wrapper">
         <Image
           src={activeImage}
@@ -38,16 +40,18 @@ export function ProductGallery({
           priority={selectedIndex === 0}
         />
       </div>
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        {imagePosition(selectedIndex + 1, images.length)}
+      </span>
       {images.length > 1 ? (
-        <div className="detail-thumbs" role="tablist" aria-label={galleryLabel}>
+        <div className="detail-thumbs" role="group" aria-label={galleryLabel}>
           {images.slice(0, 5).map((url, index) => {
             const isSelected = index === selectedIndex
             return (
               <button
                 key={url}
                 type="button"
-                role="tab"
-                aria-selected={isSelected}
+                aria-pressed={isSelected}
                 aria-label={`${title} — ${index + 1}`}
                 className={`detail-thumb-button ${isSelected ? "is-active" : ""}`}
                 onClick={() => setSelectedIndex(index)}
@@ -65,6 +69,7 @@ export function ProductGallery({
           })}
         </div>
       ) : null}
-    </div>
+    </section>
   )
 }
+
