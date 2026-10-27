@@ -1,4 +1,5 @@
 import { validateCartBffRequest, type CartBffOperation, type CartBffResponse, type CartBffSnapshot, type CartBffBlocker, type ContractValidation } from "./cart-bff-contract"
+import type { CheckoutPreflightResult } from "./checkout-preflight-readiness"
 
 export type GuestCartAuthority = Readonly<{
   status: "owned" | "not_owned" | "expired" | "unavailable"
@@ -33,16 +34,15 @@ export interface CartBffDependencies {
   executeIdempotently<T>(input: { ownerKey: string; requestId: string; fingerprint: string }, work: () => Promise<T>): Promise<T>
   /** Set a Secure, HttpOnly, SameSite cookie in the trusted HTTP adapter; never return the secret in JSON. */
   issueGuestSessionCookie(sessionSecret: string): void
-  /** Agent 3 interface. Unknown and errors must remain unknown. */
-  readAvailability(lines: CartOrchestrationSnapshot["lines"]): Promise<readonly { variantId: string; status: "available" | "unavailable" | "unknown" }[]>
-  /** Agent 5 interface; provider/tariff configuration is server-owned. */
-  shippingReadiness(governorateId: string | null, snapshot: CartOrchestrationSnapshot): Promise<readonly CartBffBlocker[]>
-  /** Agent 4 interface; describes readiness only, never creates payment or order state. */
-  paymentReadiness(method: "cod" | "electronic", snapshot: CartOrchestrationSnapshot): Promise<boolean>
-  checkoutReadiness(snapshot: CartOrchestrationSnapshot, proof: unknown): Promise<{
-    blockers: readonly CartBffBlocker[]
-    status: "blocked" | "ready_for_review"
-  }>
+  /** Server-only composition of ownership, native totals/version, FEFO, shipping, payment and attempt state. */
+  checkoutReadiness(input: Readonly<{
+    snapshot: CartOrchestrationSnapshot
+    ownershipProof: unknown
+    ownerKey: string
+    requestId: string
+    expectedVersion: string
+    paymentMethod: "cod" | "electronic"
+  }>): Promise<CheckoutPreflightResult>
 }
 
 export type CartBffExecution = Readonly<{
@@ -102,24 +102,24 @@ export async function executeCartBffRequest(input: {
   if (operation.operation === "checkout_preflight") {
     if (operation.expectedVersion !== current.version) return fail(operation.operation, "CART_VERSION_CONFLICT", current.public)
     try {
-      const [availability, shippingBlockers, paymentReady, checkout] = await Promise.all([
-        deps.readAvailability(current.lines),
-        deps.shippingReadiness(current.governorateId, current),
-        deps.paymentReadiness(operation.paymentMethod, current),
-        deps.checkoutReadiness(current, authority.proof),
-      ])
-      const blockers = new Set<CartBffBlocker>(checkout.blockers)
-      for (const item of availability) {
-        if (item.status === "unknown") blockers.add("INVENTORY_UNKNOWN")
-        else if (item.status === "unavailable") blockers.add("INVENTORY_UNAVAILABLE")
+      const readiness = await deps.checkoutReadiness({
+        snapshot: current, ownershipProof: authority.proof, ownerKey: authority.ownerKey,
+        requestId: operation.requestId, expectedVersion: operation.expectedVersion,
+        paymentMethod: operation.paymentMethod,
+      })
+      if (!readiness || readiness.selectedMethod !== operation.paymentMethod ||
+          readiness.cartVersion !== current.version || readiness.orderCompletionAllowed !== false ||
+          readiness.paymentExecutionAllowed !== false ||
+          !Array.isArray(readiness.blockers) || !readiness.payment ||
+          readiness.payment.cod.publicMethodEnabled !== false || readiness.payment.electronic.publicMethodEnabled !== false) {
+        return fail(operation.operation, "PREFLIGHT_STATE_UNAVAILABLE", current.public)
       }
-      shippingBlockers.forEach((blocker) => blockers.add(blocker))
-      if (!paymentReady) blockers.add("PAYMENT_METHOD_UNAVAILABLE")
-      const status = blockers.size ? "blocked" : checkout.status
-      return { response: { ok: status !== "blocked", operation: operation.operation, cart: current.public,
-        blockers: [...blockers], checkout: { status, paymentMethod: operation.paymentMethod } }, rejectedBeforeMutation: true }
+      const blockers = readiness.blockers.map((item) => item.code)
+      return { response: { ok: readiness.status === "ready_for_review", operation: operation.operation, cart: current.public,
+        blockers, checkout: { status: readiness.status, paymentMethod: readiness.selectedMethod,
+          blockers: readiness.blockers } }, rejectedBeforeMutation: true }
     } catch {
-      return fail(operation.operation, "UPSTREAM_UNAVAILABLE", current.public)
+      return fail(operation.operation, "PREFLIGHT_STATE_UNAVAILABLE", current.public)
     }
   }
 
