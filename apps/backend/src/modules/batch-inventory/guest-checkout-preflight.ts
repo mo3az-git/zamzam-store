@@ -60,6 +60,12 @@ const moneyValue = (value: NativeMoney): string | number | null => {
   if (typeof raw === "string") return /^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(raw) ? raw : null
   return null
 }
+// Preserve Medusa decimal strings; determine positivity from their digits without Number() coercion.
+const isPositiveMoney = (value: NativeMoney): boolean => {
+  const normalized = moneyValue(value)
+  if (typeof normalized === "number") return normalized > 0
+  return typeof normalized === "string" && /[1-9]/.test(normalized)
+}
 
 /** Allowlist and sanitize Medusa-compatible CartAddress/cart email fields. */
 export function validateGuestDeliveryInput(input: GuestDeliveryInput | null | undefined): { valid: boolean; address: Record<string, string> | null; email: string | null } {
@@ -127,8 +133,7 @@ export function evaluateGuestCheckoutPreflight(input: {
   const shippingPrice = Boolean(method && moneyValue(method.raw_amount ?? method.amount) !== null &&
     moneyValue(cart?.raw_shipping_total ?? cart?.shipping_total) !== null)
   if (shippingMethod && !shippingPrice) blockers.add("SHIPPING_PRICE_UNAVAILABLE")
-  const payableTotal = moneyValue(cart?.raw_total ?? cart?.total) !== null &&
-    Number(moneyValue(cart?.raw_total ?? cart?.total)) > 0
+  const payableTotal = isPositiveMoney(cart?.raw_total ?? cart?.total)
   if (!payableTotal) blockers.add("PAYABLE_TOTAL_UNAVAILABLE")
   const sessionStatus: CheckoutSessionStatus = ownershipVerified
     ? (input.ownership as Extract<GuestCartOwnershipResult, { status: "owned" }>).sessionStatus
