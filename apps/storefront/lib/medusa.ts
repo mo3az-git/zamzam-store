@@ -81,7 +81,7 @@ const REQUEST_TIMEOUT_MS = 8000
 const REGION_TTL_MS = 5 * 60 * 1000
 const REGION_FAILURE_TTL_MS = 30 * 1000
 
-function storeBase(): string | null {
+export function storeBase(): string | null {
   const raw = process.env.MEDUSA_BACKEND_URL || process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL
   if (!raw) return null
   try {
@@ -92,7 +92,7 @@ function storeBase(): string | null {
   }
 }
 
-function storeKey(): string | null {
+export function storeKey(): string | null {
   const key = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY
   return key?.trim() ? key.trim() : null
 }
@@ -155,7 +155,7 @@ async function fetchJson(endpoint: URL): Promise<unknown> {
  * Resolve the store region priced in EGP. `MEDUSA_REGION_ID` overrides the
  * lookup for stores with several EGP regions.
  */
-async function resolveEgpRegionId(): Promise<string | null> {
+export async function resolveEgpRegionId(): Promise<string | null> {
   const configured = process.env.MEDUSA_REGION_ID?.trim()
   if (configured) return configured
 
