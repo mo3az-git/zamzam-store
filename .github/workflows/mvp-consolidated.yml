@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - "integration/mvp-consolidated-*"
+  pull_request:
+    branches:
+      - main
+      - "integration/**"
   workflow_dispatch:
 
 permissions:
@@ -53,6 +57,8 @@ jobs:
           cache: npm
       - name: Install pinned dependencies
         run: npm ci --strict-peer-deps --no-audit --no-fund
+      - name: Validate operational configuration preflight
+        run: npm run ops:readiness
       - name: Storefront unit tests (not formal TP)
         run: node --experimental-strip-types --test apps/storefront/tests/*.test.mjs
       - name: Read-only native payable quote unit tests (not formal TP)
