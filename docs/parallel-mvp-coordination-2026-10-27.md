@@ -111,3 +111,12 @@ All listed PRs are open Drafts. Their heads are retained unchanged. GitHub compa
 - P1: cross-cart IDOR/BOLA, replay/stale-state, rate limiting, sensitive error redaction, and server-only bundle checks still require dedicated negative tests.
 - P1: shipping rates/provider and payment gateway are undecided; all 27 governorates remain unconfigured for launch fulfillment.
 - P2: storefront accessibility, canonical-origin, bilingual navigation and responsive checks need selective PR #35 integration plus browser validation.
+
+
+## PR #37 candidate validation update
+
+- Draft integration PR: https://github.com/mo3az-git/zamzam-store/pull/37; base is PR #26 source branch `integration/mvp-consolidated-20261027`, preserving the fixed baseline and source PR.
+- Candidate code/workflow SHA `f0cd789b61fe898cfdca258b800dc7ac917286e0` passed GitHub Actions run `40576803126` / job `122445289846` (2026-10-27). Passed steps: storefront unit suite, read-only payable quote, cart mutation boundary, cart completion disabled negative test, guest preflight, governorate/province contract, 27-governorate policy, internal availability, scoped visibility, lint, disposable DB migration, guest ownership integration, PostgreSQL FEFO integration, Medusa visibility integration, backend build, storefront build, and API-boundary schema tests.
+- Vercel preview status also succeeded. This is preview status only; GitHub Actions is the combined CI evidence.
+- No candidate workflow run or test mutates production orders, captures COD, charges a gateway, configures actual shipping rates, or runs TP-01.
+- Current code remains intentionally blocked at guest cart ownership wiring, authoritative checkout readiness/completion, payment-provider selection, and approved shipping tariffs. PR #37 remains Draft.
