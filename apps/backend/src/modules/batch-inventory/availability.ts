@@ -74,7 +74,7 @@ export async function readBatchAvailability(
       authorizedLocationIds.some((id) => !validId(id))) return unknown()
   if (!qualified.length) return unknown()
 
-  const placeholders = qualified.map(() => "(?, ?)").join(",")
+  const placeholders = qualified.map(() => "(?::text, ?::integer)").join(",")
   // Never return quantities, lot identities, expiry dates or supplier details.
   // The query reads a snapshot. It DOES NOT lock or claim batch stock.
   const sql = `WITH requested (variant_id, shelf_days) AS (VALUES ${placeholders})
