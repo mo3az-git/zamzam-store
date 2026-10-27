@@ -26,10 +26,10 @@ Money crosses the boundary as decimal EGP strings. Native Medusa pricing and tot
 
 ## Orchestration contracts
 
-Implementation: `apps/backend/src/modules/batch-inventory/cart-bff-orchestrator.ts`.
+Implementation: `apps/backend/src/modules/batch-inventory/cart-bff-orchestrator.ts`; guest binding: `apps/backend/src/modules/batch-inventory/cart-bff-guest-ownership.ts`.
 
-- `createOwnedEgpCart` must call the existing `createGuestCartWithOwnership` flow with a server-selected Egypt/EGP region. It must not accept a cart or customer ID. The generated session secret is delivered only to a Secure, HttpOnly, SameSite cookie setter.
-- Every later operation resolves the cookie secret with `resolveGuestCartOwnership`; the returned process-local proof and server-resolved cart ID are passed to server-side Medusa reads. Caller-supplied cart IDs are rejected by schema validation.
+- `createCartBffGuestOwnershipAdapter` calls the existing `createGuestCartWithOwnership` flow with an injected server-selected Egypt/EGP region, then resolves the new session with `resolveGuestCartOwnership`. It does not accept a cart or customer ID. Its idempotency owner key is the SHA-256 digest of the cookie secret, matching the stored ownership digest. The generated session secret is delivered only to a Secure, HttpOnly, SameSite cookie setter.
+- Every later operation resolves the cookie secret with `resolveGuestCartOwnership`; the returned exact process-local proof and server-resolved cart ID are passed to server-side Medusa reads. Caller-supplied cart IDs are rejected by schema validation.
 - Native writes must use Medusa's existing cart lock and checkout-session guard and compare `expectedVersion` again under the lock. Timeouts or ambiguous POSTs are not automatically retried.
 - Mutation `requestId` is scoped to the ownership key by a durable idempotency journal. The adapter must replay the saved response for an exact duplicate, reject a changed body under the same key, and fail closed if the journal is unavailable. A server-side journal implementation and version derivation are still required before mounting.
 - Preflight composes the existing `evaluateGuestCheckoutPreflight` ownership/address/EGP/native-total result, Agent 3's read-only FEFO interface, Agent 5's server-owned governorate shipping readiness, and Agent 4's payment-method readiness. An `unknown` inventory status blocks; a native shipping method and positive total must already be present; unavailable shipping/payment readiness blocks.
