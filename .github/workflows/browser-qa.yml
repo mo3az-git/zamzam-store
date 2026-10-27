@@ -19,9 +19,6 @@ jobs:
       NEXT_PUBLIC_MEDUSA_BACKEND_URL: http://127.0.0.1:9091
       NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: pk_qa_read_only
       NEXT_PUBLIC_SITE_URL: http://127.0.0.1:8000
-      # Synthetic checkout is enabled only inside this disposable CI preview.
-      VERCEL_ENV: preview
-      ZAMZAM_SYNTHETIC_PREVIEW: "true"
       CI: "true"
     steps:
       - uses: actions/checkout@v4
@@ -51,12 +48,59 @@ jobs:
           cat /tmp/zamzam-mock.log
           exit 1
       - name: Browser smoke ARG-B01 through ARG-B05
-        run: npx playwright test --config scripts/browser-qa/playwright.config.mjs
+        run: npx playwright test --config scripts/browser-qa/playwright.config.mjs scripts/browser-qa/storefront-smoke.spec.mjs
       - name: Upload evidence on success or failure
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: argon-prep-browser-qa
+          path: |
+            scripts/browser-qa/browser-qa-results/
+            scripts/browser-qa/browser-qa-report/
+          retention-days: 7
+          if-no-files-found: warn
+
+  checkout-preview-smoke:
+    name: Synthetic guest checkout preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      NEXT_PUBLIC_SITE_URL: http://127.0.0.1:8000
+      VERCEL_ENV: preview
+      ZAMZAM_SYNTHETIC_PREVIEW: "true"
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install pinned dependencies
+        run: npm ci --strict-peer-deps --no-audit --no-fund
+      - name: Build isolated synthetic checkout preview
+        run: npm run build:storefront
+      - name: Install ephemeral Playwright (no lockfile changes)
+        run: |
+          npm install --no-save --package-lock=false --ignore-scripts @playwright/test@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Start synthetic Next preview
+        run: |
+          npm run start --workspace @zamzam/storefront > /tmp/zamzam-checkout-next.log 2>&1 &
+          for attempt in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:8000/en/checkout > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/zamzam-checkout-next.log
+          exit 1
+      - name: Guest checkout preview E2E
+        run: npx playwright test --config scripts/browser-qa/playwright.config.mjs scripts/browser-qa/checkout-smoke.spec.mjs
+      - name: Upload checkout evidence on success or failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-checkout-browser-qa
           path: |
             scripts/browser-qa/browser-qa-results/
             scripts/browser-qa/browser-qa-report/
