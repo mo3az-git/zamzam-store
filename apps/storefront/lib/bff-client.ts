@@ -17,6 +17,7 @@
 import type { SanitizedCart } from "./cart-types.ts"
 import type { CheckoutReadinessState, GuestCheckoutInput } from "./checkout.ts"
 import type { Dictionary } from "./i18n.ts"
+import { isServerQaPreview } from "./qa-preview.ts"
 import { isValidSessionSecret } from "./session.ts"
 
 export const FEATURE_ENABLE_STOREFRONT_BFF = "FEATURE_ENABLE_STOREFRONT_BFF" as const
@@ -67,11 +68,49 @@ export interface StorefrontBffClient {
 }
 
 /**
+ * Transport mount state.
+ * Currently, no live transport adapter is mounted (DisabledStorefrontBffClient is active).
+ * An unmounted transport cannot be activated by feature flags alone.
+ */
+let bffTransportMounted = false
+
+/**
+ * Returns whether a live backend transport has been mounted by the integration coordinator.
+ */
+export function isBffTransportMounted(): boolean {
+  return bffTransportMounted
+}
+
+/**
  * Checks whether the Storefront BFF transport has been authorized and mounted.
  * Disabled by default.
+ *
+ * Hardening Rules (Phase 4.7):
+ * 1. Must NOT be enabled in synthetic QA preview mode (VERCEL_ENV=preview or ZAMZAM_SYNTHETIC_PREVIEW=true).
+ * 2. Feature flag FEATURE_ENABLE_STOREFRONT_BFF must be explicitly "true".
+ * 3. Transport must be mounted (FEATURE_ENABLE_STOREFRONT_BFF=true cannot activate an unmounted transport).
  */
 export function isStorefrontBffEnabled(): boolean {
-  return process.env[FEATURE_ENABLE_STOREFRONT_BFF] === "true"
+  // Synthetic QA preview mode NEVER authorizes live backend transport
+  if (
+    isServerQaPreview() ||
+    process.env.VERCEL_ENV === "preview" ||
+    process.env.ZAMZAM_SYNTHETIC_PREVIEW === "true"
+  ) {
+    return false
+  }
+
+  // Feature flag check
+  if (process.env[FEATURE_ENABLE_STOREFRONT_BFF] !== "true") {
+    return false
+  }
+
+  // An unmounted transport cannot be activated
+  if (!isBffTransportMounted()) {
+    return false
+  }
+
+  return true
 }
 
 /**

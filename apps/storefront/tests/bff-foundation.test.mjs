@@ -18,6 +18,9 @@ import {
   CSRF_HEADER_NAME,
   CSRF_COOKIE_NAME,
   CSRF_SECURE_COOKIE_NAME,
+  MIN_CSRF_SECRET_LENGTH,
+  isValidCsrfSecret,
+  getServerCsrfSecret,
   normalizeOrigin,
   isAllowedOrigin,
   validateRequestOrigin,
@@ -35,6 +38,7 @@ import {
   DisabledStorefrontBffClient,
   getStorefrontBffClient,
   isStorefrontBffEnabled,
+  isBffTransportMounted,
   resolveTrustedGuestSession,
   getAuthoritativeCartSnapshot,
   getBackendCheckoutReadiness,
@@ -46,6 +50,8 @@ import { getDictionary } from "../lib/i18n.ts"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+
+const TEST_SERVER_CSRF_SECRET = "test_server_csrf_secret_entropy_minimum_32_bytes_safe!"
 
 test("1. Hardened guest session contract: conflict, malformation and __Host- isolation", () => {
   const validSecret1 = "a".repeat(43)
@@ -150,7 +156,7 @@ test("3. CSRF defense: token extraction, duplicate cookie rejection and session-
   const token1 = generateCsrfToken()
   const token2 = generateCsrfToken()
 
-  // 3.1 Token validation
+  // 3.1 Standalone token validation
   assert.equal(validateCsrfToken(token1, token1), true)
   assert.equal(validateCsrfToken(token1, token2), false)
 
@@ -163,92 +169,215 @@ test("3. CSRF defense: token extraction, duplicate cookie rejection and session-
   const insecureCsrfHeader = `${CSRF_COOKIE_NAME}=${token1}`
   assert.equal(extractCsrfCookieTokenWithStatus(insecureCsrfHeader, true).status, "insecure_in_secure_mode")
 
-  // 3.3 Session-bound CSRF token derivation
-  const sessionSecret = "c".repeat(43)
-  const boundToken = deriveSessionBoundCsrfToken(sessionSecret)
-  assert.equal(isValidCsrfTokenFormat(boundToken), true)
+  // 3.3 Priority 1: Server HMAC secret strength validation & removal of static fallback
+  assert.equal(MIN_CSRF_SECRET_LENGTH, 32)
+  assert.equal(isValidCsrfSecret(null), false)
+  assert.equal(isValidCsrfSecret(""), false)
+  assert.equal(isValidCsrfSecret("   "), false)
+  assert.equal(isValidCsrfSecret("short_secret_under_32_bytes"), false)
+  assert.equal(isValidCsrfSecret(TEST_SERVER_CSRF_SECRET), true)
 
-  // Session-bound validation
-  assert.equal(validateSessionBoundCsrfToken(sessionSecret, boundToken), true)
-  assert.equal(validateSessionBoundCsrfToken(sessionSecret, "wrong_token_of_length_43_characters_padded!"), false)
-  assert.equal(validateSessionBoundCsrfToken("d".repeat(43), boundToken), false) // Different session secret fails
+  // Missing/weak secret fails closed
+  const sessionSecret1 = "c".repeat(43)
+  const sessionSecret2 = "d".repeat(43)
+
+  delete process.env.STOREFRONT_CSRF_SECRET
+  assert.throws(
+    () => deriveSessionBoundCsrfToken(sessionSecret1),
+    /missing or insufficiently strong server CSRF secret/
+  )
+  assert.equal(validateSessionBoundCsrfToken(sessionSecret1, token1), false)
+
+  // Weak secret explicitly passed fails closed
+  assert.throws(
+    () => deriveSessionBoundCsrfToken(sessionSecret1, "weak_secret"),
+    /missing or insufficiently strong server CSRF secret/
+  )
+  assert.equal(validateSessionBoundCsrfToken(sessionSecret1, token1, "weak_secret"), false)
+
+  // Valid secret derives session-specific token
+  const boundToken1 = deriveSessionBoundCsrfToken(sessionSecret1, TEST_SERVER_CSRF_SECRET)
+  const boundToken2 = deriveSessionBoundCsrfToken(sessionSecret2, TEST_SERVER_CSRF_SECRET)
+  assert.equal(isValidCsrfTokenFormat(boundToken1), true)
+  assert.equal(isValidCsrfTokenFormat(boundToken2), true)
+  assert.notEqual(boundToken1, boundToken2) // Session-specific
+
+  // Valid token validates against matching session secret
+  assert.equal(validateSessionBoundCsrfToken(sessionSecret1, boundToken1, TEST_SERVER_CSRF_SECRET), true)
+
+  // Cross-session rejection: boundToken1 cannot validate against sessionSecret2
+  assert.equal(validateSessionBoundCsrfToken(sessionSecret2, boundToken1, TEST_SERVER_CSRF_SECRET), false)
+
+  // Independently forged token is rejected
+  assert.equal(validateSessionBoundCsrfToken(sessionSecret1, token1, TEST_SERVER_CSRF_SECRET), false)
 })
 
-test("4. Composed internal BFF request policy evaluation", () => {
+test("4. Composed internal BFF request policy evaluation and accidental enablement elimination", () => {
   const allowlist = ["https://zamzamstore.com"]
-  const sessionSecret = "e".repeat(43)
-  const csrfToken = generateCsrfToken()
-  const secureCookieHeader = `${GUEST_SESSION_SECURE_COOKIE_NAME}=${sessionSecret}; ${CSRF_SECURE_COOKIE_NAME}=${csrfToken}`
+  const sessionSecret1 = "e".repeat(43)
+  const sessionSecret2 = "f".repeat(43)
+  const boundCsrfToken1 = deriveSessionBoundCsrfToken(sessionSecret1, TEST_SERVER_CSRF_SECRET)
+  const secureCookieHeader1 = `${GUEST_SESSION_SECURE_COOKIE_NAME}=${sessionSecret1}; ${CSRF_SECURE_COOKIE_NAME}=${boundCsrfToken1}`
 
-  // 4.1 Transport disabled (default)
+  // 4.1 Transport disabled by default (unmounted client)
   delete process.env.FEATURE_ENABLE_STOREFRONT_BFF
+  assert.equal(isBffTransportMounted(), false)
+  assert.equal(isStorefrontBffEnabled(), false)
+
   const defaultPolicy = evaluateBffRequestPolicy({
     method: "POST",
-    headers: { origin: "https://zamzamstore.com", [CSRF_HEADER_NAME]: csrfToken },
-    cookieHeader: secureCookieHeader,
+    headers: { origin: "https://zamzamstore.com", [CSRF_HEADER_NAME]: boundCsrfToken1 },
+    cookieHeader: secureCookieHeader1,
     allowlist,
     isSecure: true,
+    serverCsrfSecret: TEST_SERVER_CSRF_SECRET,
   })
   assert.equal(defaultPolicy.outcome, "transport_disabled")
   assert.equal(defaultPolicy.allowed, false)
 
-  // 4.2 With transport enabled (bypass flag for testing)
-  // Origin rejected
-  const badOriginPolicy = evaluateBffRequestPolicy({
+  // 4.2 Priority 3: Synthetic QA mode cannot enable live backend transport
+  process.env.VERCEL_ENV = "preview"
+  process.env.ZAMZAM_SYNTHETIC_PREVIEW = "true"
+  process.env.FEATURE_ENABLE_STOREFRONT_BFF = "true"
+  assert.equal(isStorefrontBffEnabled(), false)
+
+  const qaPreviewPolicy = evaluateBffRequestPolicy({
     method: "POST",
-    headers: { origin: "https://hacker.com", [CSRF_HEADER_NAME]: csrfToken },
-    cookieHeader: secureCookieHeader,
+    headers: { origin: "https://zamzamstore.com", [CSRF_HEADER_NAME]: boundCsrfToken1 },
+    cookieHeader: secureCookieHeader1,
     allowlist,
     isSecure: true,
-    bypassTransportCheck: true,
+    serverCsrfSecret: TEST_SERVER_CSRF_SECRET,
+    internalTestConfig: { allowTransportBypassForTesting: true },
+  })
+  assert.equal(qaPreviewPolicy.outcome, "transport_disabled")
+  assert.equal(qaPreviewPolicy.allowed, false)
+
+  delete process.env.VERCEL_ENV
+  delete process.env.ZAMZAM_SYNTHETIC_PREVIEW
+  delete process.env.FEATURE_ENABLE_STOREFRONT_BFF
+
+  // 4.3 Priority 3: Normal production call with unmounted transport remains blocked
+  process.env.NODE_ENV = "production"
+  process.env.FEATURE_ENABLE_STOREFRONT_BFF = "true"
+  assert.equal(isStorefrontBffEnabled(), false) // Transport is unmounted
+
+  const productionPolicy = evaluateBffRequestPolicy({
+    method: "POST",
+    headers: { origin: "https://zamzamstore.com", [CSRF_HEADER_NAME]: boundCsrfToken1 },
+    cookieHeader: secureCookieHeader1,
+    allowlist,
+    isSecure: true,
+    serverCsrfSecret: TEST_SERVER_CSRF_SECRET,
+    internalTestConfig: { allowTransportBypassForTesting: true }, // Forbidden in production
+  })
+  assert.equal(productionPolicy.outcome, "transport_disabled")
+  assert.equal(productionPolicy.allowed, false)
+
+  delete process.env.NODE_ENV
+  delete process.env.FEATURE_ENABLE_STOREFRONT_BFF
+
+  // 4.4 Priority 2: Full composition order under authorized internal test configuration
+  const testConfig = { allowTransportBypassForTesting: true }
+
+  // 4.4.1 Step 2: Origin rejected
+  const badOriginPolicy = evaluateBffRequestPolicy({
+    method: "POST",
+    headers: { origin: "https://hacker.com", [CSRF_HEADER_NAME]: boundCsrfToken1 },
+    cookieHeader: secureCookieHeader1,
+    allowlist,
+    isSecure: true,
+    serverCsrfSecret: TEST_SERVER_CSRF_SECRET,
+    internalTestConfig: testConfig,
   })
   assert.equal(badOriginPolicy.outcome, "origin_rejected")
 
-  // CSRF missing on POST
-  const missingCsrfPolicy = evaluateBffRequestPolicy({
-    method: "POST",
-    headers: { origin: "https://zamzamstore.com" },
-    cookieHeader: secureCookieHeader,
-    allowlist,
-    isSecure: true,
-    bypassTransportCheck: true,
-  })
-  assert.equal(missingCsrfPolicy.outcome, "csrf_rejected")
-
-  // Session cookie missing
-  const missingSessionPolicy = evaluateBffRequestPolicy({
-    method: "POST",
-    headers: { origin: "https://zamzamstore.com", [CSRF_HEADER_NAME]: csrfToken },
-    cookieHeader: `${CSRF_SECURE_COOKIE_NAME}=${csrfToken}`,
-    allowlist,
-    isSecure: true,
-    bypassTransportCheck: true,
-  })
-  assert.equal(missingSessionPolicy.outcome, "session_missing")
-
-  // Session cookie malformed/conflicting
+  // 4.4.2 Step 3: Session cookie invalid / conflicting
   const conflictingSessionPolicy = evaluateBffRequestPolicy({
     method: "POST",
-    headers: { origin: "https://zamzamstore.com", [CSRF_HEADER_NAME]: csrfToken },
-    cookieHeader: `${secureCookieHeader}; ${GUEST_SESSION_SECURE_COOKIE_NAME}=${"f".repeat(43)}`,
+    headers: { origin: "https://zamzamstore.com", [CSRF_HEADER_NAME]: boundCsrfToken1 },
+    cookieHeader: `${secureCookieHeader1}; ${GUEST_SESSION_SECURE_COOKIE_NAME}=${sessionSecret2}`,
     allowlist,
     isSecure: true,
-    bypassTransportCheck: true,
+    serverCsrfSecret: TEST_SERVER_CSRF_SECRET,
+    internalTestConfig: testConfig,
   })
   assert.equal(conflictingSessionPolicy.outcome, "session_invalid")
 
-  // Completely valid request perimeter
-  const allowedPolicy = evaluateBffRequestPolicy({
+  // 4.4.3 Step 4: Session missing on state-changing operation (denied by default)
+  const missingSessionPolicy = evaluateBffRequestPolicy({
     method: "POST",
-    headers: { origin: "https://zamzamstore.com", [CSRF_HEADER_NAME]: csrfToken },
-    cookieHeader: secureCookieHeader,
+    headers: { origin: "https://zamzamstore.com", [CSRF_HEADER_NAME]: boundCsrfToken1 },
+    cookieHeader: `${CSRF_SECURE_COOKIE_NAME}=${boundCsrfToken1}`,
     allowlist,
     isSecure: true,
-    bypassTransportCheck: true,
+    serverCsrfSecret: TEST_SERVER_CSRF_SECRET,
+    internalTestConfig: testConfig,
+  })
+  assert.equal(missingSessionPolicy.outcome, "session_missing")
+
+  // 4.4.4 Step 5: CSRF cookie or header missing on state-changing operation
+  const missingCsrfPolicy = evaluateBffRequestPolicy({
+    method: "POST",
+    headers: { origin: "https://zamzamstore.com" },
+    cookieHeader: secureCookieHeader1,
+    allowlist,
+    isSecure: true,
+    serverCsrfSecret: TEST_SERVER_CSRF_SECRET,
+    internalTestConfig: testConfig,
+  })
+  assert.equal(missingCsrfPolicy.outcome, "csrf_rejected")
+
+  // 4.4.5 Step 5 & 6: Matching but independently forged CSRF token is rejected (not session-bound)
+  const forgedToken = generateCsrfToken()
+  const forgedPolicy = evaluateBffRequestPolicy({
+    method: "POST",
+    headers: { origin: "https://zamzamstore.com", [CSRF_HEADER_NAME]: forgedToken },
+    cookieHeader: `${GUEST_SESSION_SECURE_COOKIE_NAME}=${sessionSecret1}; ${CSRF_SECURE_COOKIE_NAME}=${forgedToken}`,
+    allowlist,
+    isSecure: true,
+    serverCsrfSecret: TEST_SERVER_CSRF_SECRET,
+    internalTestConfig: testConfig,
+  })
+  assert.equal(forgedPolicy.outcome, "csrf_rejected")
+
+  // 4.4.6 Step 6: Same CSRF token with different session secret is rejected (cross-session reuse attempt)
+  const crossSessionPolicy = evaluateBffRequestPolicy({
+    method: "POST",
+    headers: { origin: "https://zamzamstore.com", [CSRF_HEADER_NAME]: boundCsrfToken1 },
+    cookieHeader: `${GUEST_SESSION_SECURE_COOKIE_NAME}=${sessionSecret2}; ${CSRF_SECURE_COOKIE_NAME}=${boundCsrfToken1}`,
+    allowlist,
+    isSecure: true,
+    serverCsrfSecret: TEST_SERVER_CSRF_SECRET,
+    internalTestConfig: testConfig,
+  })
+  assert.equal(crossSessionPolicy.outcome, "csrf_rejected")
+
+  // 4.4.7 Step 6: Missing or weak server CSRF secret fails closed
+  const missingSecretPolicy = evaluateBffRequestPolicy({
+    method: "POST",
+    headers: { origin: "https://zamzamstore.com", [CSRF_HEADER_NAME]: boundCsrfToken1 },
+    cookieHeader: secureCookieHeader1,
+    allowlist,
+    isSecure: true,
+    serverCsrfSecret: "too_short_secret",
+    internalTestConfig: testConfig,
+  })
+  assert.equal(missingSecretPolicy.outcome, "csrf_rejected")
+
+  // 4.4.8 Step 7: Fully valid request perimeter passes
+  const allowedPolicy = evaluateBffRequestPolicy({
+    method: "POST",
+    headers: { origin: "https://zamzamstore.com", [CSRF_HEADER_NAME]: boundCsrfToken1 },
+    cookieHeader: secureCookieHeader1,
+    allowlist,
+    isSecure: true,
+    serverCsrfSecret: TEST_SERVER_CSRF_SECRET,
+    internalTestConfig: testConfig,
   })
   assert.equal(allowedPolicy.outcome, "allowed")
   assert.equal(allowedPolicy.allowed, true)
-  assert.equal(allowedPolicy.sessionSecret, sessionSecret)
+  assert.equal(allowedPolicy.sessionSecret, sessionSecret1)
   assert.equal(allowedPolicy.origin, "https://zamzamstore.com")
 })
 
