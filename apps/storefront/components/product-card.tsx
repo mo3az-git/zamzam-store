@@ -26,7 +26,7 @@ export function ProductCard({ product, locale }: { product: StoreProduct; locale
           />
         ) : (
           <span className="product-placeholder" aria-hidden="true">
-            زمزم
+            {dict.brand.name}
           </span>
         )}
       </Link>
@@ -38,7 +38,7 @@ export function ProductCard({ product, locale }: { product: StoreProduct; locale
         <div className="product-card-bottom">
           <span className="product-price">{price ?? dict.product.priceUnavailable}</span>
           <Link className="product-view" href={href}>
-            {dict.product.detailsCta} <span aria-hidden="true">←</span>
+            {dict.product.detailsCta} <span aria-hidden="true">{locale === "en" ? "→" : "←"}</span>
           </Link>
         </div>
       </div>

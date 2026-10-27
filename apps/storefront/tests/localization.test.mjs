@@ -68,3 +68,19 @@ test("numbers follow the reader's numeral system", () => {
   assert.equal(formatNumber(12, "en"), "12")
   assert.notEqual(formatNumber(12, "ar"), "12")
 })
+
+
+test("language switcher preserves equivalent path and search query between locales", () => {
+  const switchTarget = (currentLocale, pathname, search = "") => {
+    const targetLocale = alternateLocale(currentLocale)
+    return `${localePath(targetLocale, stripLocale(pathname))}${search}`
+  }
+
+  assert.equal(switchTarget("ar", "/"), "/en")
+  assert.equal(switchTarget("ar", "/products"), "/en/products")
+  assert.equal(switchTarget("ar", "/products/zamzam-water-5l", "?q=water"), "/en/products/zamzam-water-5l?q=water")
+
+  assert.equal(switchTarget("en", "/en"), "/")
+  assert.equal(switchTarget("en", "/en/products"), "/products")
+  assert.equal(switchTarget("en", "/en/products/zamzam-water-5l", "?page=2"), "/products/zamzam-water-5l?page=2")
+})

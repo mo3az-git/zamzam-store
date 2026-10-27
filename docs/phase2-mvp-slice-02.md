@@ -34,7 +34,7 @@ region, and a store with no region rejects the request outright. The adapter now
   canonical form, and forwards the original path/search so links and 404 copy stay locale-correct.
 - `lib/i18n.ts` holds typed Arabic/English dictionaries; a test asserts both expose identical keys.
 - `<html lang dir>` is correct per locale; English reuses the same layout with a Latin display face.
-- The language switch preserves path and query string.
+- The language switch preserves path and query string with accessible iconography, tooltip, and keyboard focus rings.
 - **Translation fallback:** catalog text is shown exactly as stored in Medusa. No product name,
   description or claim is machine-translated or invented.
 
@@ -49,6 +49,7 @@ region, and a store with no region rejects the request outright. The adapter now
 
 - Search (`q`, trimmed to 100 chars) plus count-derived pagination; filters survive paging.
 - Variant selection keeps per-variant SKU and EGP price, with an explicit unavailable message.
+- Interactive product gallery (`ProductGallery`) supporting active thumbnail selection, accessible tablist controls, and graceful placeholder when unphotographed.
 - Images are filtered to `http(s)` or same-origin paths and deduplicated before rendering.
 - Missing image, price or stock never produces a fabricated value; stock status is deliberately
   **not** shown because generic Medusa quantity is not batch/FEFO authority.
@@ -57,10 +58,11 @@ region, and a store with no region rejects the request outright. The adapter now
 
 ### 5. Responsive, accessibility, SEO (P2-09/P2-11)
 
-- Mobile layout for collection tiles, filter chips, pagination and gallery; no horizontal overflow
+- Mobile layout for collection tiles, filter chips, pagination and interactive gallery; no horizontal overflow
   introduced (inherits the existing breakpoints).
 - Skip link, labelled navigation/search/filters/gallery, `aria-current` on the active filter and
   page, `aria-live` price updates, visible focus rings, `bdi` isolation for SKUs.
+- Directional reading arrows aligned per locale (`←` in RTL, `→` in LTR).
 - Canonical + `hreflang` (`ar`, `en`) alternates, per-locale titles/descriptions, Open Graph, and
   `metadataBase` from `NEXT_PUBLIC_SITE_URL`.
 
@@ -68,7 +70,7 @@ region, and a store with no region rejects the request outright. The adapter now
 
 | Check | Command | Result |
 |---|---|---|
-| Unit tests (pricing, query building, media safety, locale routing, dictionary parity) | `node --experimental-strip-types --test apps/storefront/tests/*.test.mjs` | 16 passed, 0 failed |
+| Unit tests (pricing, query building, media safety, locale routing, dictionary parity, query preservation) | `node --experimental-strip-types --test apps/storefront/tests/*.test.mjs` | 17 passed, 0 failed |
 | Lint | `npm run lint --workspace @zamzam/storefront` | pass |
 | Production build | `npm run build:storefront` | pass (routes `/[locale]`, `/[locale]/products`, `/[locale]/products/[handle]`, middleware) |
 | Runtime, Arabic + English | `next start` against a local stub of the Store API contract | `/`, `/products`, `/products/[handle]`, `/en*` all 200; `/ar/products` → 308 `/products`; localized 404 |
