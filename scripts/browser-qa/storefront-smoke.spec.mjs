@@ -73,6 +73,8 @@ test("ARG-B06 cart remains disabled and bilingual while checkout is unavailable"
 test("ARG-B05 mobile keyboard skip link and no overflow",async({page},info)=>{
  await page.setViewportSize({width:390,height:844})
  await page.goto("/en/products/qa-fixture-1")
+ await expect(page.getByRole("navigation",{name:"Main navigation"})).toBeVisible()
+ await expect(page.getByRole("navigation",{name:"Main navigation"}).getByRole("link",{name:"Shop"})).toBeVisible()
  await page.keyboard.press("Tab")
  await expect(page.locator(".lux-skip-link")).toBeFocused()
  const metrics=await page.evaluate(()=>({scroll:document.documentElement.scrollWidth,client:document.documentElement.clientWidth}))

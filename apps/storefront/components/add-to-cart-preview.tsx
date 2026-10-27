@@ -146,6 +146,8 @@ export function AddToCartPreview({ variantId, variantIds = [], locale, bffEnable
 
       {cartError ? <p className="notice notice-error" role="alert">{cartError === "CART_UNAVAILABLE"
         ? dict.cart.sessionOrCartUnavailable
+        : cartError === "CART_VERSION_CONFLICT"
+          ? dict.cart.cartVersionConflict
         : cartError === "INVENTORY_UNAVAILABLE"
           ? dict.cart.insufficientStock
           : dict.cart.cartServiceUnavailable}</p> : null}
