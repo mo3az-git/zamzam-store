@@ -6,6 +6,7 @@ on:
     paths:
       - "apps/storefront/**"
       - "scripts/browser-qa/**"
+      - "docs/mvp-integration-qa.md"
       - ".github/workflows/browser-qa.yml"
   workflow_dispatch:
 permissions:

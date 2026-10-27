@@ -53,6 +53,11 @@ These failures reproduce with the checked-in Node command. Root cause is not est
 
 ## CI evidence and remaining blockers
 
-The pull request's commit-specific GitHub Actions runs are the source of record for the new Chromium and disposable-service suites. Record their URLs, exact job counts, and head SHA here after those runs finish. CI success still does not mean canonical TP acceptance, owner acceptance, or production readiness.
+On PR #31 head `f1e670f2c0403affac0d7d9854c88bb81f8f2a98`, both GitHub Actions workflows completed successfully:
+
+- [Browser QA run 40573243305](https://github.com/mo3az-git/zamzam-store/actions/runs/40573243305): catalog Chromium **7/7 passed**; synthetic checkout Chromium **2/2 passed**; 0 failed, 0 skipped.
+- [Consolidated MVP run 40573243338](https://github.com/mo3az-git/zamzam-store/actions/runs/40573243338): Node test cases **89/89 passed** (storefront 62, payment quote 6, governorate 2, availability 6, visibility 8, PostgreSQL FEFO 5); proposed API contract **5/5 passed**; named cart guard, shipping policy, guest ownership, native shipping readiness, and governorate integration assertions **73/73 passed**. Lint, migrations, builds, and the overall job succeeded; 0 failed, 0 skipped.
+
+The two browser jobs use synthetic-only preview data. The disposable backend run created no order, payment, payment session, invoice, inventory reservation, or allocation. It persisted 27 Medusa service zones/GeoZones in the disposable database while keeping all 27 rates unconfigured and returning no shipping option. No gateway or fulfillment provider was selected. CI success does not mean canonical TP acceptance, owner acceptance, or production readiness.
 
 Remaining product blockers include an authorized guest-cart/session bridge, public scoped batch availability, customer checkout/address/shipping writes, approved governorate tariffs and fulfillment provider, server-authoritative positive payable quote, COD operations, electronic provider and callback policy, duplicate/replay-safe callback path, order/reconciliation operator controls, and an end-to-end retry-safe inventory reservation path.
