@@ -17,6 +17,8 @@ type BackendContainer = Parameters<typeof completeNativeCartForTp08Workflow>[0]
 type CheckoutDb = Parameters<typeof runOrderCreationWithFence>[0]
 type Authority = Parameters<typeof runOrderCreationWithFence>[1]
 export type NativeCompletionHooks = {
+  /** Fail closed unless a durable order-creation fence already exists. */
+  reconciliationOnly?: boolean
   afterFenceCommit?: () => void | Promise<void>
   afterNativeReturn?: () => void | Promise<void>
   /** Deterministic disposable-service hook immediately before native invocation. */
