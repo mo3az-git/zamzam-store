@@ -199,7 +199,7 @@ try {
       // Only exact hundredths are allowed: non-zero digits after the
       // second decimal place are rejected, never rounded.
       const raw = String(value ?? "")
-      const match = /^(0|[1-9][0-9]*)(?:\\.([0-9]+))?$/.exec(raw)
+      const match = /^(0|[1-9][0-9]*)(?:\.([0-9]+))?$/.exec(raw)
       if (!match || match[1].length>10) throw new Error("NATIVE_TOTAL_NOT_CANONICAL: "+raw)
       const fraction = match[2] ?? ""
       if (fraction.slice(2).replace(/0/g,"") !== "") throw new Error("NATIVE_TOTAL_PRECISION_LOSS: "+raw)
@@ -222,7 +222,7 @@ try {
       check("native_order_has_real_positive_EGP_total_"+method,true,
         {orderId:order.id,cartId:fixture.cart.id,total:native.total},
         native.id===order.id && native.currency_code==="egp" && native.total!=="0.00" &&
-        /^(?:0|[1-9][0-9]*)\\.[0-9]{2}$/.test(native.total))
+        /^(?:0|[1-9][0-9]*)\.[0-9]{2}$/.test(native.total))
       const attempt = (await adminPg.query(
         "SELECT idempotency_key FROM cart_checkout_attempt WHERE checkout_attempt_id=$1::uuid",
         [fixture.authority.attemptId])).rows[0]
