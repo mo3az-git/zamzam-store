@@ -144,7 +144,7 @@ try {
       quantity, actorId: "fixture:receipt" })
     return receipt.batch
   }
-  const makeCart = async (items, label = "inventory", nativeUnitPrice = 0) => {
+  const makeCart = async (items, label = "inventory", nativeUnitPrice = 0, paymentMethod = "cod") => {
     const cart = await cartService.createCarts({ currency_code: "egp", metadata: { disposable_fixture: tpId, label } })
     const nativeCheckout = ["TP-08-native-integration", "TP-08-recovery"].includes(tpId)
     const lineItems = items.map(({ quantity, key = randomUUID() }) => ({ title: "Native checkout batch line", product_title: "Disposable product",
@@ -156,7 +156,7 @@ try {
     await adminPg.query(`INSERT INTO idempotency_key(key,request_path,request_hash,status,lease_owner_id,expires_at,locked_at,last_heartbeat_at)
       VALUES($1,$2,$3,'pending',$4,NOW()+INTERVAL '14 days',NOW(),NOW())`, [key, `/store/carts/${cart.id}/complete`, createHash("sha256").update(key).digest("hex"), ownerId])
     await adminPg.query(`INSERT INTO cart_checkout_attempt(checkout_attempt_id,cart_id,epoch,idempotency_key,payment_method,lease_owner_id)
-      VALUES($1::uuid,$2,1,$3,'cod',$4)`, [attemptId, cart.id, key, ownerId])
+      VALUES($1::uuid,$2,1,$3,$5,$4)`, [attemptId, cart.id, key, ownerId, paymentMethod])
     await locking.acquire("cart:" + cart.id, { ownerId, expire: 120 })
     const redisOwner = await redisProvider.redisClient.get(redisProvider.keyNamePrefix + "cart:" + cart.id)
     if (redisOwner !== ownerId) throw new Error("Fixture Redis cart lock was not acquired")
@@ -206,10 +206,7 @@ try {
       return match[1]+"."+fraction.slice(0,2).padEnd(2,"0")
     }
     for (const method of ["cod","electronic"]) {
-      const fixture = await makeCart([{ quantity: 2 }], "real-payable-"+method)
-      if (method === "electronic") await adminPg.query(
-        "UPDATE cart_checkout_attempt SET payment_method='electronic' WHERE checkout_attempt_id=$1::uuid",
-        [fixture.authority.attemptId])
+      const fixture = await makeCart([{ quantity: 2 }], "real-payable-"+method, 0, method)
       await new InventoryLedger(runtime.container).reserveCart(fixture.authority)
       const order = await makeNativeOrder(fixture)
       const reservationIds = (await reservationsFor(fixture.authority.attemptId)).map(x=>x.id)
