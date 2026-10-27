@@ -1,6 +1,7 @@
 import { defineMiddlewares, errorHandler } from "@medusajs/framework/http"
 import { MedusaError } from "@medusajs/framework/utils"
 import { cartMutationGuard } from "./cart-mutation-guard"
+import { cartBffOriginGuard } from "./cart-bff-origin-guard"
 import { guestCartOwnershipGuard } from "./guest-cart-ownership-guard"
 import { OWNED_NATIVE_CART_ROUTE_MATCHER } from "./guest-cart-ownership-policy"
 
@@ -24,6 +25,10 @@ export default defineMiddlewares({
     return fallbackErrorHandler(error, req, res, next)
   },
   routes: [{
+    matcher: "/store/cart-bff",
+    methods: ["POST"],
+    middlewares: [cartBffOriginGuard],
+  }, {
     matcher: OWNED_NATIVE_CART_ROUTE_MATCHER,
     methods: ["GET"],
     middlewares: [guestCartOwnershipGuard],
