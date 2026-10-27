@@ -323,6 +323,7 @@ jobs:
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+          PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
         run: |
           set -o pipefail
           node scripts/run-tp-with-evidence.mjs TP-08-native-integration 2>&1 | tee artifacts/tp-08-native-integration.log
