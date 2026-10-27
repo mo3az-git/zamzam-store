@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url"
 import {
   createCart,
   addLineItemToCart,
+  retrieveCart,
   isCartEnabled,
   isValidCartId,
   isValidVariantId,
@@ -397,6 +398,14 @@ test("6. Cart mutation conflicts and locked-cart behavior preserved", async () =
           message: "Cart has already been converted to an order",
         })
       )
+    } else if (conflictMode === "timeout") {
+      res.end(
+        JSON.stringify({
+          type: "conflict",
+          code: "LOCK_TIMEOUT",
+          message: "Cart checkout lock timeout",
+        })
+      )
     } else {
       res.end(
         JSON.stringify({
@@ -436,7 +445,15 @@ test("6. Cart mutation conflicts and locked-cart behavior preserved", async () =
     assert.equal(completedRes.status, 409)
     assert.equal(completedRes.code, "CART_ALREADY_COMPLETED")
 
-    // 3. Generic conflict
+    // 3. Lock timeout conflict
+    conflictMode = "timeout"
+    const timeoutRes = await addLineItemToCart("cart_timeout_1", "var_1", 1)
+    assert.equal(timeoutRes.success, false)
+    assert.equal(timeoutRes.error, "lock_timeout")
+    assert.equal(timeoutRes.status, 409)
+    assert.equal(timeoutRes.code, "LOCK_TIMEOUT")
+
+    // 4. Generic conflict
     conflictMode = "generic"
     const genericRes = await addLineItemToCart("cart_gen_1", "var_1", 1)
     assert.equal(genericRes.success, false)

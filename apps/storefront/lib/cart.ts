@@ -14,6 +14,17 @@
  */
 
 import { resolveEgpRegionId, storeBase, storeKey } from "./medusa.ts"
+import {
+  type SanitizedCart,
+  type SanitizedLineItem,
+  SYNTHETIC_CART_PREVIEW_FIXTURE,
+} from "./cart-types.ts"
+
+export {
+  type SanitizedCart,
+  type SanitizedLineItem,
+  SYNTHETIC_CART_PREVIEW_FIXTURE,
+}
 
 export const FEATURE_FLAG_ENV_KEY = "FEATURE_ENABLE_MEDUSA_CART" as const
 const REQUEST_TIMEOUT_MS = 8000
@@ -29,28 +40,10 @@ export type CartErrorCode =
   | "invalid_quantity"
   | "cart_locked"
   | "cart_completed"
+  | "lock_timeout"
   | "conflict"
   | "network_timeout"
   | "upstream_error"
-
-export interface SanitizedLineItem {
-  id: string
-  title: string | null
-  variant_id: string
-  quantity: number
-  unit_price: number | null
-  total: number | null
-}
-
-export interface SanitizedCart {
-  id: string
-  region_id: string
-  currency_code: string
-  total: number | null
-  subtotal: number | null
-  tax_total?: number | null
-  items: SanitizedLineItem[]
-}
 
 export type CartResult<T> =
   | { success: true; data: T }
@@ -245,6 +238,15 @@ export async function createCart(): Promise<CartResult<SanitizedCart>> {
         message: errBody?.message || "Cart has already been converted to an order.",
       }
     }
+    if (code === "LOCK_TIMEOUT") {
+      return {
+        success: false,
+        error: "lock_timeout",
+        code,
+        status: 409,
+        message: errBody?.message || "Cart checkout lock timeout.",
+      }
+    }
     return {
       success: false,
       error: "conflict",
@@ -404,12 +406,121 @@ export async function addLineItemToCart(
         message: errBody?.message || "Cart has already been converted to an order.",
       }
     }
+    if (code === "LOCK_TIMEOUT") {
+      return {
+        success: false,
+        error: "lock_timeout",
+        code,
+        status: 409,
+        message: errBody?.message || "Cart checkout lock timeout.",
+      }
+    }
     return {
       success: false,
       error: "conflict",
       code,
       status: 409,
       message: errBody?.message || "Cart mutation conflict.",
+    }
+  }
+
+  if (!response.ok) {
+    const errBody = await parseErrorBody(response)
+    return {
+      success: false,
+      error: "upstream_error",
+      status: response.status,
+      code: errBody?.code,
+      message: errBody?.message || `Medusa returned HTTP status ${response.status}.`,
+    }
+  }
+
+  try {
+    const data = (await response.json()) as { cart?: unknown }
+    const sanitized = sanitizeMedusaCart(data.cart)
+    if (!sanitized) {
+      return {
+        success: false,
+        error: "upstream_error",
+        message: "Medusa response did not contain a valid cart payload.",
+      }
+    }
+    return { success: true, data: sanitized }
+  } catch {
+    return {
+      success: false,
+      error: "upstream_error",
+      message: "Failed to parse Medusa cart JSON response.",
+    }
+  }
+}
+
+/**
+ * Retrieves an existing Medusa cart by ID.
+ *
+ * Fails closed if:
+ * - Feature flag is disabled.
+ * - Missing or invalid cart ID.
+ * - Missing backend configuration or publishable key.
+ */
+export async function retrieveCart(cartId: unknown): Promise<CartResult<SanitizedCart>> {
+  if (!isCartEnabled()) {
+    return {
+      success: false,
+      error: "disabled",
+      message: "Medusa cart operations are disabled by default.",
+    }
+  }
+
+  if (!isValidCartId(cartId)) {
+    return {
+      success: false,
+      error: "invalid_cart_id",
+      message: "Cart ID must be a non-empty string of up to 255 characters.",
+    }
+  }
+
+  const base = storeBase()
+  if (!base) {
+    return {
+      success: false,
+      error: "missing_config",
+      message: "Medusa backend URL is not configured or invalid.",
+    }
+  }
+
+  const key = storeKey()
+  if (!key) {
+    return {
+      success: false,
+      error: "missing_publishable_key",
+      message: "Medusa publishable API key is not configured.",
+    }
+  }
+
+  const endpoint = `${base}/store/carts/${encodeURIComponent(cartId.trim())}`
+
+  let response: Response
+  try {
+    response = await fetch(endpoint, {
+      method: "GET",
+      headers: {
+        "x-publishable-api-key": key,
+        Accept: "application/json",
+      },
+      cache: "no-store",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    })
+  } catch (err: unknown) {
+    const isTimeout =
+      err instanceof Error &&
+      (err.name === "TimeoutError" || err.name === "AbortError" || /timeout/i.test(err.message))
+    return {
+      success: false,
+      error: isTimeout ? "network_timeout" : "upstream_error",
+      message: isTimeout
+        ? "Cart retrieval timed out."
+        : (err as Error)?.message || "Network error contacting Medusa backend.",
     }
   }
 

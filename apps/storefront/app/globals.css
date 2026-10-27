@@ -768,3 +768,295 @@ html[lang="en"] .catalog-intro h1, html[lang="en"] .detail-copy h1 { font-size: 
   margin: 0;
   font-style: normal;
 }
+
+
+/* ==========================================================================
+   Cart UI (Phase 4 MVP)
+   ========================================================================== */
+.lux-cart-page {
+  padding-block: 40px 80px;
+}
+
+.lux-cart-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-block-end: 24px;
+  border-block-end: 1px solid var(--line);
+  margin-block-end: 32px;
+}
+
+.lux-cart-title {
+  font-size: clamp(26px, 4vw, 36px);
+  font-weight: 800;
+  color: var(--lux-ink);
+  margin: 4px 0 0;
+  line-height: 1.2;
+}
+
+.lux-cart-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: 20px;
+  background: #f4ede1;
+  color: #634b35;
+  border: 1px solid #ded4c3;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.lux-cart-empty {
+  text-align: center;
+  padding: 64px 24px;
+  background: #fdfcf9;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  max-width: 580px;
+  margin-inline: auto;
+}
+
+.lux-cart-empty-icon {
+  font-size: 48px;
+  margin-block-end: 16px;
+  line-height: 1;
+}
+
+.lux-cart-empty h2 {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--lux-ink);
+  margin: 0 0 10px;
+}
+
+.lux-cart-empty p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted);
+  max-width: 440px;
+  margin: 0 auto 24px;
+}
+
+.lux-cart-empty-actions {
+  display: flex;
+  justify-content: center;
+  margin-block-end: 20px;
+}
+
+.lux-cart-disclaimer {
+  font-size: 12px;
+  color: #8c897f;
+  margin: 0;
+}
+
+.lux-cart-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+  align-items: start;
+}
+
+@media (min-width: 860px) {
+  .lux-cart-grid {
+    grid-template-columns: 1fr 340px;
+  }
+}
+
+.lux-cart-items-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.lux-cart-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.lux-cart-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.lux-cart-item-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lux-cart-item-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--lux-ink);
+}
+
+.lux-cart-item-variant {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.lux-cart-item-meta {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: #555;
+  margin-top: 4px;
+}
+
+.lux-cart-item-total {
+  text-align: end;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lux-cart-subtotal-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.lux-cart-item-total strong {
+  font-size: 17px;
+  color: var(--lux-ink);
+  font-weight: 800;
+}
+
+.lux-cart-navigation {
+  display: flex;
+  align-items: center;
+  padding-block-start: 12px;
+}
+
+.lux-cart-summary {
+  background: #fbf9f4;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.lux-cart-summary h2 {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--lux-ink);
+  margin: 0;
+  padding-block-end: 12px;
+  border-block-end: 1px solid var(--line);
+}
+
+.lux-cart-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.lux-cart-summary-total {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--lux-ink);
+  padding-block-start: 12px;
+  border-block-start: 1px solid var(--line);
+}
+
+.lux-cart-grand-total {
+  font-size: 22px;
+  color: var(--primary, #0b211d);
+}
+
+.lux-cart-notices {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-block-start: 8px;
+}
+
+.lux-cart-notice-authoritative {
+  font-size: 11px;
+  line-height: 1.5;
+  color: #8c897f;
+  margin: 0;
+}
+
+.lux-cart-checkout-disabled {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #f4ede1;
+  border: 1px solid #ded4c3;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #634b35;
+  line-height: 1.4;
+}
+
+.lux-cart-disabled-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+/* Product Detail Preview Stepper */
+.lux-cart-preview-box {
+  margin-block: 16px;
+  padding: 16px;
+  background: #fdfbf7;
+  border: 1px dashed #ded4c3;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lux-cart-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.lux-qty-stepper {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.lux-qty-btn {
+  background: none;
+  border: none;
+  padding: 6px 12px;
+  font-size: 16px;
+  cursor: pointer;
+  color: var(--lux-ink);
+}
+
+.lux-qty-input {
+  width: 44px;
+  text-align: center;
+  border: none;
+  border-inline: 1px solid var(--line);
+  font-weight: 700;
+  font-size: 14px;
+  padding: 6px 0;
+}

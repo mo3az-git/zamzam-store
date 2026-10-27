@@ -387,6 +387,17 @@ function egpAmount(variant: StoreVariant): number | null {
 
 const priceLocales: Record<Locale, string> = { ar: "ar-EG", en: "en-EG" }
 
+/** Format any positive finite EGP amount into localized currency display. */
+export function formatEgpAmount(amount: number | null | undefined, locale: Locale = "ar"): string | null {
+  if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0) return null
+  return new Intl.NumberFormat(priceLocales[locale] ?? priceLocales.ar, {
+    style: "currency",
+    currency: "EGP",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount)
+}
+
 export function formatVariantPrice(variant: StoreVariant, locale: Locale = "ar"): string | null {
   const amount = egpAmount(variant)
   if (amount === null) return null

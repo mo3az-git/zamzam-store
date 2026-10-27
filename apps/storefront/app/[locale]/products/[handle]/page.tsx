@@ -4,8 +4,9 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { cache } from "react"
 import { VariantSelector } from "../../../../components/variant-selector"
+import { AddToCartPreview } from "../../../../components/add-to-cart-preview"
 import { ProductGallery } from "../../../../components/product-gallery"
-import { getDictionary, isLocale, localePath } from "../../../../lib/i18n"
+import { getDictionary, isLocale, localePath, type Locale } from "../../../../lib/i18n"
 import {
   buildProductStructuredData,
   listStoreProducts,
@@ -125,6 +126,12 @@ export default async function ProductPage({ params }: { params: Promise<ProductP
           {product.subtitle ? <p className="detail-subtitle">{product.subtitle}</p> : null}
           <Suspense fallback={<div className="detail-variant-picker" />}>
             <VariantSelector variants={product.variants ?? []} locale={locale} />
+          </Suspense>
+          <Suspense fallback={null}>
+            <AddToCartPreview
+              variantId={product.variants?.[0]?.id ?? ""}
+              locale={locale as Locale}
+            />
           </Suspense>
           {product.description ? (
             <div className="detail-description">
