@@ -13,8 +13,8 @@ const rootRequire = registerTsNode()
 const { ContainerRegistrationKeys, Modules } = rootRequire("@medusajs/framework/utils")
 const { createRegionsWorkflow } = rootRequire("@medusajs/core-flows")
 const { createGuestCartWithOwnership, invalidateGuestCartOwnership, resolveGuestCartOwnership } =
-  rootRequire("../src/modules/batch-inventory/guest-cart-ownership.ts")
-const { evaluateGuestCheckoutPreflight } = rootRequire("../src/modules/batch-inventory/guest-checkout-preflight.ts")
+  rootRequire("./apps/backend/src/modules/batch-inventory/guest-cart-ownership.ts")
+const { evaluateGuestCheckoutPreflight } = rootRequire("./apps/backend/src/modules/batch-inventory/guest-checkout-preflight.ts")
 const fixtureId = randomUUID()
 const passed = []
 const cleanupErrors = []
