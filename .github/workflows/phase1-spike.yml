@@ -319,6 +319,16 @@ jobs:
           set -o pipefail
           node scripts/run-tp-with-evidence.mjs TP-08-native-integration 2>&1 | tee artifacts/tp-08-native-integration.log
 
+      - name: Run native checkout recovery and fault boundaries (component integration)
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+          PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-08-recovery 2>&1 | tee artifacts/tp-08-recovery.log
+
       - name: Run TP-21c refund identity and encryption test
         if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
         shell: bash
