@@ -1,4 +1,5 @@
 import { randomUUID, createHash } from "node:crypto"
+import { recordPaymentForCorrelatedOrder } from "../src/modules/order-operations/verified-payment-bridge.mjs"
 import path from "node:path"
 import { initializePaymentBranch } from "../src/modules/order-operations/payment-branch.mjs"
 import {
@@ -90,6 +91,43 @@ try {
   let malformedRejected=false
   try{await initializePaymentBranch(pg,{...base,method:"cod",orderId:conflictOrder,amount:"127.5"})}catch(e){malformedRejected=e.message==="INVALID_AMOUNT_MAJOR_UNITS"}
   check("reject_noncanonical_major_unit_amount",true,malformedRejected,malformedRejected)
+
+  // The verified payment bridge must NEVER persist a payment for a synthetic
+  // order, even when the calling server supplies a plausible authoritative
+  // amount and a checkout attempt that claims allocation.
+  const boundAttemptId = randomUUID()
+  const boundCartId = "cart_tp05_bound_"+runId
+  const boundOwnerId = "owner_tp05_"+runId
+  const boundOrderId = "order_tp05_fake_"+runId
+  await pg.query("INSERT INTO cart_checkout_session(cart_id,current_attempt_id,epoch,status) VALUES ($1,$2,1,'completed')",
+    [boundCartId,boundAttemptId])
+  await pg.query(`INSERT INTO cart_checkout_attempt
+    (checkout_attempt_id,cart_id,epoch,idempotency_key,payment_method,
+     lease_owner_id,attempt_status,order_correlation_status,order_id)
+    VALUES ($1::uuid,$2,1,$3,'cod',$4,'allocated','correlated',$5)`,
+    [boundAttemptId,boundCartId,"tp05_bound_"+runId,boundOwnerId,boundOrderId])
+  let nativeLinkRejected=false
+  try {
+    await recordPaymentForCorrelatedOrder(pg,{
+      orderId:boundOrderId,cartId:boundCartId,attemptId:boundAttemptId,
+      epoch:1,ownerId:boundOwnerId,idempotencyKey:"tp05_bound_"+runId,
+      claimCodeHash
+    },async(id)=>({id,total:amount,currency_code:"egp"}))
+  } catch(error) {nativeLinkRejected=error.message==="PAYMENT_NATIVE_ORDER_CART_LINK_MISSING"}
+  check("verified_bridge_rejects_unlinked_native_order",true,nativeLinkRejected,nativeLinkRejected)
+  const illegalRows=await pg.query("SELECT count(*)::int AS n FROM order_operational_state WHERE order_id=$1",[boundOrderId])
+  check("unlinked_native_order_creates_no_payment_records",0,illegalRows.rows[0].n,illegalRows.rows[0].n===0)
+  let invalidAmountRejected=false
+  try {
+    await recordPaymentForCorrelatedOrder(pg,{
+      orderId:boundOrderId,cartId:boundCartId,attemptId:boundAttemptId,
+      epoch:1,ownerId:boundOwnerId,idempotencyKey:"tp05_bound_"+runId,
+      claimCodeHash
+    },async(id)=>({id,total:127.5,currency_code:"egp"}))
+  } catch(error){invalidAmountRejected=error.message==="PAYMENT_UNSUPPORTED_ORDER_TOTAL"}
+  check("verified_bridge_rejects_noncanonical_money",true,invalidAmountRejected,invalidAmountRejected)
+  await pg.query("DELETE FROM cart_checkout_attempt WHERE checkout_attempt_id=$1::uuid",[boundAttemptId])
+  await pg.query("DELETE FROM cart_checkout_session WHERE cart_id=$1",[boundCartId])
 
   dbAfter=await snapshot(orderIds)
   check("only_two_operational_records",2,dbAfter.operational.length,dbAfter.operational.length===2)
