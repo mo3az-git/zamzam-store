@@ -1,0 +1,137 @@
+name: Phase 1 Focused Developer CI
+
+on:
+  push:
+    branches:
+      - "phase-1/**"
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "Focused suite; use all to execute all focused suites. Full acceptance CI remains separate."
+        type: choice
+        required: true
+        default: auto
+        options:
+          - auto
+          - locks
+          - inventory
+          - checkout
+          - payment
+          - security
+          - all
+
+permissions:
+  contents: read
+
+concurrency:
+  group: focused-phase1-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      suites: ${{ steps.select.outputs.suites }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Select impacted suites (unknown changes fail closed to all)
+        id: select
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          FOCUSED_SUITE: ${{ inputs.suite || 'auto' }}
+        run: node scripts/select-focused-ci.mjs
+
+  focused:
+    needs: plan
+    if: ${{ needs.plan.outputs.suites != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ${{ fromJSON(needs.plan.outputs.suites) }}
+    name: ${{ matrix.suite }} component integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16.15@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+        env:
+          POSTGRES_DB: zamzam_spike
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: spike-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d zamzam_spike"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7.2.16@sha256:1009f15ccd9ed271996d1c65745a1ab1dadedea188feb3f1ab938602a32e50a3
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:spike-only-password@127.0.0.1:5432/zamzam_spike
+      REDIS_URL: redis://127.0.0.1:6379
+      LOCKING_REDIS_URL: redis://127.0.0.1:6379
+      STORE_CORS: http://localhost:8000
+      ADMIN_CORS: http://localhost:9000
+      AUTH_CORS: http://localhost:8000,http://localhost:9000
+      JWT_SECRET: ci-only-jwt-secret-not-for-any-other-environment-123456
+      COOKIE_SECRET: ci-only-cookie-secret-not-for-any-other-environment-654321
+      NEXT_PUBLIC_MEDUSA_BACKEND_URL: http://localhost:9000
+      NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: ""
+      PHASE1_POSTGRES_IMAGE_REF: postgres:16.15@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+      PHASE1_REDIS_IMAGE_REF: redis:7.2.16@sha256:1009f15ccd9ed271996d1c65745a1ab1dadedea188feb3f1ab938602a32e50a3
+      PHASE1_DISPOSABLE_TEST_PROFILE: ci_ephemeral_service
+      PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
+      TS_NODE_PROJECT: ${{ github.workspace }}/apps/backend/tsconfig.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Create evidence folder
+        run: mkdir -p artifacts
+      - name: Verify unchanged 59-case registry
+        run: npm run spike:registry
+      - name: Install exact pinned dependencies
+        run: npm ci --strict-peer-deps --no-audit --no-fund
+      - name: Apply migrations to disposable PostgreSQL
+        run: npm run db:migrate
+      - name: Run selected component test suite (TP-01 prohibited)
+        shell: bash
+        env:
+          SUITE: ${{ matrix.suite }}
+        run: |
+          set -euo pipefail
+          case "$SUITE" in
+            locks) ids=(TP-02a TP-02b TP-02c TP-03 TP-04a TP-04b) ;;
+            inventory) ids=(TP-06a TP-06b TP-07a TP-07b TP-09 TP-10 TP-24c) ;;
+            checkout) ids=(TP-08-foundation TP-08-native-integration TP-08-recovery TP-08-operations) ;;
+            payment) ids=(TP-05 TP-05-native-order-binding) ;;
+            security) ids=(TP-21c) ;;
+            *) echo "Unknown suite" >&2; exit 1 ;;
+          esac
+          for id in "${ids[@]}"; do
+            echo "Running authorized $id in focused suite $SUITE"
+            node scripts/run-tp-with-evidence.mjs "$id" 2>&1 | tee "artifacts/focused-${id}.log"
+          done
+      - name: Upload focused evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-focused-${{ matrix.suite }}-${{ github.sha }}
+          if-no-files-found: warn
+          path: |
+            artifacts/
+            package-lock.json
