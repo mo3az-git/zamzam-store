@@ -71,6 +71,10 @@ jobs:
         run: npm run db:migrate
         env:
           TS_NODE_PROJECT: ${{ github.workspace }}/apps/backend/tsconfig.json
+      - name: Real guest cart ownership integration — disposable PostgreSQL and Redis (not formal TP)
+        run: node apps/backend/scripts/test-guest-cart-ownership-integration.mjs
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
       - name: Real PostgreSQL FEFO availability integration (not formal TP)
         run: node --experimental-strip-types --test apps/backend/scripts/test-batch-availability-postgres.mjs
         env:
