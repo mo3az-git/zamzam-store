@@ -3,7 +3,7 @@ import { createRequire } from "node:module"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..", "../..")
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
 const rootRequire = createRequire(path.join(root, "package.json"))
 rootRequire("ts-node").register({
   project: path.join(root, "apps/backend/tsconfig.json"),
