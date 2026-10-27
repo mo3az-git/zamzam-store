@@ -59,6 +59,7 @@ jobs:
       PHASE1_POSTGRES_IMAGE_REF: postgres:16.15@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
       PHASE1_REDIS_IMAGE_REF: redis:7.2.16@sha256:1009f15ccd9ed271996d1c65745a1ab1dadedea188feb3f1ab938602a32e50a3
       PHASE4_5_GUEST_OWNERSHIP_ONLY: ${{ github.ref == 'refs/heads/phase-1/same-order-native-payment-integration-spike' || github.event.pull_request.head.ref == 'phase-1/same-order-native-payment-integration-spike' }}
+      PHASE4_7_NATIVE_SHIPPING_ONLY: ${{ github.ref == 'refs/heads/phase-1/same-order-native-payment-integration-spike' || github.event.pull_request.head.ref == 'phase-1/same-order-native-payment-integration-spike' }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -131,13 +132,22 @@ jobs:
           npm run build:backend 2>&1 | tee artifacts/medusa-build.log
 
       - name: Verify real guest cart ownership against disposable PostgreSQL and Redis
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY == 'true' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY == 'true' && env.PHASE4_7_NATIVE_SHIPPING_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
         run: |
           set -o pipefail
           npm run spike:guest-cart-ownership-integration 2>&1 | tee artifacts/guest-cart-ownership-integration.log
+
+      - name: Verify native shipping and payable readiness against disposable PostgreSQL and Redis
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_7_NATIVE_SHIPPING_ONLY == 'true' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+        run: |
+          set -o pipefail
+          npm run spike:native-shipping-readiness 2>&1 | tee artifacts/native-shipping-readiness.log
 
       - name: Build Next.js storefront shell
         shell: bash
