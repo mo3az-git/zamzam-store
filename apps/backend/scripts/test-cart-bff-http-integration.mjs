@@ -20,7 +20,7 @@ const createdCartIds = []
 const guestSecrets = []
 
 function check(name, condition, evidence) {
-  assert.ok(condition, name)
+  assert.ok(condition, name + (evidence === undefined ? "" : ": " + JSON.stringify(evidence)))
   passed.push(name)
   console.log("PASS " + name + (evidence === undefined ? "" : ": " + JSON.stringify(evidence)))
 }
@@ -131,7 +131,8 @@ try {
       return whole + "." + (fraction + "00").slice(0, 2)
     })() &&
     Number(cartAfterAdd.items[0].quantity) === 2 && JSON.stringify(add.body) === JSON.stringify(addReplay.body), {
-    currency: add.body.cart.items[0].unitPrice.currency, priceMatchesMedusa: true, nativeQuantity: cartAfterAdd.items[0].quantity,
+    cart: add.body, replay: addReplay.body, nativeRawPrice: cartAfterAdd.items[0].raw_unit_price,
+    nativeQuantity: cartAfterAdd.items[0].quantity,
   })
   const changedReplay = await request({ ...addBody, quantity: 3 })
   check("same_owner_request_id_with_changed_body_conflicts", changedReplay.status === 409 && changedReplay.body.blockers?.includes("CART_IDEMPOTENCY_CONFLICT"))
@@ -211,4 +212,5 @@ try {
   await safeCloseClients({ pgClient: pg, redisClient: redis, cleanupErrors })
   if (cleanupErrors.length) { console.error("Cleanup failures: " + cleanupErrors.join("; ")); process.exitCode = 1 }
 }
+
 
