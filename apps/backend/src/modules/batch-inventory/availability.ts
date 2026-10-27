@@ -30,6 +30,10 @@ const validDays = (d: number | null): d is number =>
  * Produces a presentational status only. A positive read is provisional:
  * reservations can change immediately after this snapshot.
  *
+ * Mandatory location scope: verified custom inventory_location IDs for the
+ * publishable-key permitted sales channel. The function intentionally does not
+ * infer mappings to Medusa stock locations. Callers may not provide browser IDs.
+ *
  * Mandatory inputs: backend-verified variant ID and its actual shelf-life
  * policy. A missing policy is "unknown", NEVER defaulted to zero days.
  *
@@ -39,7 +43,9 @@ const validDays = (d: number | null): d is number =>
  */
 export async function readBatchAvailability(
   db: AvailabilitySql,
-  requests: readonly AvailabilityRequest[]
+  requests: readonly AvailabilityRequest[],
+  /** Mandatory custom inventory_location IDs from a separately verified Store sales-channel location mapping. */
+  authorizedLocationIds: readonly string[]
 ): Promise<AvailabilityResponse> {
   if (!Array.isArray(requests) || requests.length < 1 || requests.length > 100) {
     throw new TypeError("Expected 1..100 availability requests")
@@ -59,6 +65,13 @@ export async function readBatchAvailability(
     authority: "batch_inventory",
     items: requests.map((request) => ({ variantId: request.variantId, status: "unknown" })),
   })
+  // A publishable-key scope alone is insufficient: physical inventory locations
+  // must be explicitly mapped to this Store sales channel. Missing, duplicate or
+  // invalid location scope means UNKNOWN, never an unfiltered stock lookup.
+  if (!Array.isArray(authorizedLocationIds) ||
+      authorizedLocationIds.length < 1 || authorizedLocationIds.length > 100 ||
+      new Set(authorizedLocationIds).size !== authorizedLocationIds.length ||
+      authorizedLocationIds.some((id) => !validId(id))) return unknown()
   if (!qualified.length) return unknown()
 
   const placeholders = qualified.map(() => "(?, ?)").join(",")
@@ -70,6 +83,7 @@ export async function readBatchAvailability(
         WHEN batch.status = 'available'
          AND supplier.is_active IS TRUE
          AND location.is_active IS TRUE
+         AND location.id = ANY(?::text[])
          AND batch.expiration_date >
           ((CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
              + (requested.shelf_days * INTERVAL '1 day'))
@@ -82,7 +96,7 @@ export async function readBatchAvailability(
     LEFT JOIN supplier ON supplier.id = batch.supplier_id
     LEFT JOIN inventory_location location ON location.id = batch.location_id
     GROUP BY requested.variant_id`
-  const params = qualified.flatMap((request) => [request.variantId, request.minShelfLifeDays])
+  const params = [...qualified.flatMap((request) => [request.variantId, request.minShelfLifeDays]), authorizedLocationIds]
   try {
     const result = await db.raw(sql, params)
     if (!result || !Array.isArray(result.rows)) return unknown()

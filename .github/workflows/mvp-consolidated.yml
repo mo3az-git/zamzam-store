@@ -59,6 +59,8 @@ jobs:
         run: node --experimental-strip-types --test apps/backend/scripts/test-mvp-payment-quote.mjs
       - name: Internal batch availability projection tests (not formal TP)
         run: node --experimental-strip-types --test apps/backend/scripts/test-batch-availability.mjs
+      - name: Scoped product visibility authorization tests (not formal TP)
+        run: node --experimental-strip-types --test apps/backend/scripts/test-store-visibility.mjs
       - name: Lint both workspaces
         run: npm run lint
       - name: Migrate disposable Medusa database

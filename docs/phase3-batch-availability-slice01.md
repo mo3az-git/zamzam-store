@@ -25,3 +25,13 @@ Medusa Store requests must resolve a validated publishable-key context with perm
 3. Add disposable PostgreSQL tests for eligible/ineligible batches and concurrency, plus end-to-end Store API visibility tests. Only then enable a scoped GET endpoint returning the strict status contract.
 4. Frontend Agent 2 may build a read-only, default-`unknown` presentation component, but MUST NOT show `available` until a verified, authenticated endpoint exists and succeeds.
 5. No TP-01 execution, no real checkout, no merge to `main` without explicit owner authorization.
+
+## Slice 02 — Medusa Store visibility and location-scope safety (2026-10-27)
+
+The internal projection now REQUIRES an explicit `authorizedLocationIds` array (custom `inventory_location.id` values), which is inserted through a bound `ANY(?::text[])` predicate. Missing, malformed, repeated or empty locations return `unknown` without querying balances; the earlier all-locations view is not a safe authority for a public Store response.
+
+`apps/backend/src/modules/batch-inventory/store-visibility.ts` introduces a pure Medusa Query projection using confirmed graph entity `variant`, fields `product.sales_channels.id`, `product.status`, and product variant `metadata`. Requested variants must belong to a **published** product linked to the trusted sales-channel IDs from `MedusaStoreRequest.publishable_key_context.sales_channel_ids`. This module never trusts channel IDs from query strings or browser request bodies and returns denied (not visible) on errors, duplicates or malformed relations. The FEFO shelf-life threshold is only read from trusted variant `metadata.packaging.min_shelf_life_days` when it is an integer in 0..365; absence stays unknown.
+
+**Important remaining integration:** This change does not claim the custom `inventory_location.id` keys equal Medusa stock-location IDs. Map them to verified sales-channel stock locations, validate that mapping using disposable Medusa fixtures, and only then add a Store route. Both helpers are deliberately unmounted (no public route). The standalone Query tests use a deterministic fake (not proof of a running Medusa graph). No live stock or purchase authority is granted.
+
+The added focused tests verify multi-channel scopes, unpublished/draft products, absent metadata, duplicate rows, invalid inputs, and absence of any stock SQL when the location scope is missing. No TP-01 / formal TP claims or activation.
