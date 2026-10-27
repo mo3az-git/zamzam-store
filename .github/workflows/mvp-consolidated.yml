@@ -63,7 +63,24 @@ jobs:
       - name: Guest session transport guards (not formal TP)
         run: node --experimental-strip-types --test apps/backend/scripts/test-guest-cart-session-transport.mjs
       - name: Read-only combined checkout readiness (not formal TP)
-        run: node --experimental-strip-types --test apps/backend/scripts/test-checkout-preflight-readiness.mjs
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: ci_ephemeral_service
+        run: |
+          node <<'NODE'
+          const { Client } = require("pg")
+          ;(async () => {
+            if (process.env.GITHUB_ACTIONS !== "true" ||
+                process.env.PHASE1_DISPOSABLE_TEST_PROFILE !== "ci_ephemeral_service") throw Error("Not disposable CI")
+            const uri = new URL(process.env.DATABASE_URL)
+            if (uri.hostname !== "127.0.0.1" || uri.pathname !== "/zamzam_consolidation") throw Error("Unexpected DB target")
+            const c = new Client({ connectionString: process.env.DATABASE_URL })
+            await c.connect()
+            try { await c.query("CREATE DATABASE checkout_preflight_test") }
+            finally { await c.end() }
+          })().catch(e => { console.error(e.message); process.exitCode = 1 })
+          NODE
+          export DATABASE_URL="${DATABASE_URL%/*}/checkout_preflight_test"
+          node apps/backend/scripts/test-checkout-preflight-readiness.mjs
       - name: Cart mutation boundary regression (not formal TP)
         run: node apps/backend/scripts/test-cart-mutation-boundary.mjs
       - name: Cart completion remains disabled until authorized checkout is wired
