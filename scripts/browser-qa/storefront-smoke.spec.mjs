@@ -25,6 +25,7 @@ test("ARG-B02 English LTR and language switch retains context",async({page},info
 })
 test("ARG-B03 catalog categories/search and interactive gallery",async({page},info)=>{
  await page.goto("/en/products?category=fixtures")
+ await expect(page.getByRole("navigation",{name:"Breadcrumb"})).toBeVisible()
  await expect(page.locator("h1")).toContainText("QA Fixtures")
  await expect(page.locator(".products-grid")).toBeVisible()
  await page.goto("/en/products?q=Fixture%201")
