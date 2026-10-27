@@ -2,7 +2,6 @@
 
 import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
-import { useEffect, useState } from "react"
 import {
   alternateLocale,
   buildLanguageSwitchHref,
@@ -21,8 +20,8 @@ export interface LanguageSwitchProps {
  * Dynamic Client-Side Language Switcher (DEF-02)
  *
  * App Router layouts persist across client-side page transitions, making
- * static header links stale. This component reacts to `usePathname()` and
- * `useSearchParams()` (as well as client-side URL history updates) to guarantee
+ * static header links stale. Use App Router's reactive pathname and search
+ * parameters as the single source of truth to guarantee
  * that switching language preserves the current product path, filters, query,
  * and variant parameters.
  */
@@ -35,24 +34,11 @@ export function LanguageSwitch({
   const searchParams = useSearchParams()
   const targetLocale = alternateLocale(currentLocale)
 
-  // Track client search string reactively (including popstate triggered by URL replaceState)
-  const [clientSearch, setClientSearch] = useState<string | null>(null)
-
-  useEffect(() => {
-    const syncSearch = () => {
-      setClientSearch(window.location.search)
-    }
-    syncSearch()
-    window.addEventListener("popstate", syncSearch)
-    return () => window.removeEventListener("popstate", syncSearch)
-  }, [])
-
-  const searchToUse =
-    clientSearch !== null
-      ? clientSearch
-      : searchParams
-      ? `?${searchParams.toString()}`
-      : ""
+  // Next.js App Router patches the native history API, so useSearchParams
+  // updates on both <Link> transitions and variant history.replaceState().
+  // A separate mount-only window.search cache would mask later client routing.
+  const search = searchParams?.toString() ?? ""
+  const searchToUse = search ? `?${search}` : ""
 
   const href = pathname
     ? buildLanguageSwitchHref(currentLocale, pathname, searchToUse)
