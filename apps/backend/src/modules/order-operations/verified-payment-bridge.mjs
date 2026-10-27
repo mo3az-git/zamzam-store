@@ -52,6 +52,20 @@ export async function recordPaymentForCorrelatedOrder(db, authority, readNativeO
     if (!s || !a || s.current_attempt_id!==attemptId || Number(s.epoch)!==epoch ||
         a.cart_id!==cartId || Number(a.epoch)!==epoch || a.lease_owner_id!==ownerId)
       throw new Error("PAYMENT_STALE_CHECKOUT_AUTHORITY")
+    // The checkout idempotency lease belongs to the same server-derived
+    // owner and remains fresh while payment-branch records are committed.
+    // Guard inside this transaction rather than trusting a prior preflight.
+    const lease=await tx.query(`
+      SELECT key,status FROM idempotency_key
+      WHERE key=$1 AND lease_owner_id=$2 AND deleted_at IS NULL
+        AND status='pending' AND last_heartbeat_at>NOW()-INTERVAL '120 seconds'
+      FOR SHARE`,[idempotencyKey,ownerId])
+    if (lease.rows.length!==1) throw new Error("PAYMENT_CHECKOUT_LEASE_NOT_OWNED")
+    const attemptLease=await tx.query(
+      "SELECT idempotency_key FROM cart_checkout_attempt WHERE checkout_attempt_id=$1::uuid",
+      [attemptId])
+    if (attemptLease.rows[0]?.idempotency_key!==idempotencyKey)
+      throw new Error("PAYMENT_IDEMPOTENCY_KEY_MISMATCH")
     if (a.order_id!==orderId || a.order_correlation_status!=="correlated" ||
         a.attempt_status!=="allocated" || s.status!=="completed")
       throw new Error("PAYMENT_ORDER_NOT_ALLOCATED")
