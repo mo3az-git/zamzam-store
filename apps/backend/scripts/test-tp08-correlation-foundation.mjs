@@ -9,6 +9,8 @@ import {
 const require = registerTsNode()
 const { markOrderCreationStarted, reconcileOrderCreation, runOrderCreationWithFence, CorrelationConflict } =
   require(path.join(repositoryRoot, "apps/backend/src/modules/batch-inventory/order-correlation.ts"))
+const { findNativeOrdersByCart } = require(path.join(repositoryRoot,
+  "apps/backend/src/modules/batch-inventory/native-order-lookup.ts"))
 const start = new Date().toISOString(), meta = await getSystemMetadata()
 let pg, redis, runtime, db, status = "failed", blocker = null
 const assertions=[], cleanupErrors=[], logLines=[], errLines=[]
@@ -50,6 +52,8 @@ try {
   const {ContainerRegistrationKeys}=require("@medusajs/framework/utils")
   db=runtime.container.resolve(ContainerRegistrationKeys.PG_CONNECTION)
   check("real_medusa_postgres_connection",typeof db.transaction==="function",typeof db.transaction)
+  const nativeEmpty=await findNativeOrdersByCart(db,"cart_tp08_absent_"+uid().replace(/-/g,""))
+  check("native_order_cart_link_empty_lookup",Array.isArray(nativeEmpty) && nativeEmpty.length===0,nativeEmpty)
   const a=await register()
   dbBefore=await state(a.attemptId)
   check("initial_reserved_no_correlation",dbBefore.attempt_status==="reserved"&&dbBefore.order_id===null,dbBefore)
