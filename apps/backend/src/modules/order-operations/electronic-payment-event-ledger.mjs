@@ -157,7 +157,11 @@ export async function applyVerifiedElectronicPaymentEvent(db, rawEvent) {
     let nextStatus = currentStatus
     if (ordering === "stale") disposition = "stale"
     else if (ordering === "ambiguous") disposition = "needs_reconciliation"
-    else if (event.status === "partially_refunded" || event.status === "refunded") {
+    else if (event.status === "paid") {
+      // No gateway is selected and no authenticated settlement adapter is wired.
+      // Retain settlement claims for reconciliation; never settle from simulator or unsigned input.
+      disposition = "needs_reconciliation"
+    } else if (event.status === "partially_refunded" || event.status === "refunded") {
       // Refund state alone is insufficient: no refund amount/identity ledger exists yet.
       disposition = "needs_reconciliation"
     } else if (currentStatus === event.status) disposition = "applied"
