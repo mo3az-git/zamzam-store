@@ -76,3 +76,26 @@ export interface ElectronicPaymentProviderAdapter {
  * Adapters preserve exact minor-unit strings. Number arithmetic, caller-
  * selected providers, and inferred success states are outside this contract.
  */
+
+
+/**
+ * Internal capability snapshot for checkout orchestration.
+ * This is descriptive only: it cannot enable a public method or settle payment.
+ */
+export type PaymentBranchReadiness = Readonly<{
+  method: "cod" | "electronic"
+  internallyAvailable: boolean
+  publicMethodEnabled: false
+  settlementEnabled: false
+  blockers: readonly (
+    | "COD_COLLECTION_AUTHORITY_REQUIRED"
+    | "GATEWAY_NOT_SELECTED"
+    | "AUTHENTICATED_ADAPTER_NOT_CONFIGURED"
+    | "NATIVE_MEDUSA_PAYMENT_SYNC_REQUIRED"
+  )[]
+}>
+
+export type PaymentReadinessSnapshot = Readonly<{
+  cod: PaymentBranchReadiness
+  electronic: PaymentBranchReadiness
+}>
