@@ -1,0 +1,73 @@
+name: Checkout Preflight Readiness Contract
+
+on:
+  pull_request:
+    branches:
+      - "integration/**"
+    paths:
+      - ".github/workflows/checkout-preflight-readiness.yml"
+      - "apps/backend/src/modules/batch-inventory/checkout-preflight-readiness.ts"
+      - "apps/backend/src/modules/batch-inventory/cart-bff-*.ts"
+      - "apps/backend/src/modules/batch-inventory/shipping-quote-readiness.ts"
+      - "apps/backend/src/modules/order-operations/payment-provider-contract.ts"
+      - "apps/backend/scripts/test-checkout-preflight-readiness.mjs"
+  push:
+    branches:
+      - "codex/checkout-preflight-readiness-*"
+    paths:
+      - ".github/workflows/checkout-preflight-readiness.yml"
+      - "apps/backend/src/modules/batch-inventory/checkout-preflight-readiness.ts"
+      - "apps/backend/src/modules/batch-inventory/cart-bff-*.ts"
+      - "apps/backend/src/modules/batch-inventory/shipping-quote-readiness.ts"
+      - "apps/backend/src/modules/order-operations/payment-provider-contract.ts"
+      - "apps/backend/scripts/test-checkout-preflight-readiness.mjs"
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Disposable checkout preflight and default-deny regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: checkout_preflight_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: disposable-preflight-only
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d checkout_preflight_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:disposable-preflight-only@127.0.0.1:5432/checkout_preflight_test
+      REDIS_URL: redis://127.0.0.1:6379
+      PHASE1_DISPOSABLE_TEST_PROFILE: ci_ephemeral_service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install pinned dependencies
+        run: npm ci --strict-peer-deps --no-audit --no-fund
+      - name: Run read-only preflight against disposable PostgreSQL and Redis
+        run: node apps/backend/scripts/test-checkout-preflight-readiness.mjs
+      - name: Keep public order completion default-deny
+        run: node --experimental-strip-types --test apps/backend/scripts/test-cart-completion-disabled.test.mjs
+      - name: Lint and build backend
+        run: |
+          npx eslint apps/backend/src/modules/batch-inventory/checkout-preflight-readiness.ts apps/backend/src/modules/batch-inventory/cart-bff-contract.ts apps/backend/src/modules/batch-inventory/cart-bff-orchestrator.ts apps/backend/src/modules/batch-inventory/shipping-quote-readiness.ts apps/backend/src/modules/order-operations/payment-provider-contract.ts apps/backend/scripts/test-checkout-preflight-readiness.mjs
+          npm run build:backend
