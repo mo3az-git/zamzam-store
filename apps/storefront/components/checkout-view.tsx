@@ -67,7 +67,9 @@ export function CheckoutView({ locale, isQaMode, initialCart = null }: CheckoutV
         deliveryAddress: false,
         shippingMethod: false,
         shippingPrice: false,
-        payableTotal: Boolean(activeCart?.subtotal),
+        // A cart subtotal is not the payable total; shipping and backend
+        // preflight have not been confirmed in this UI state.
+        payableTotal: false,
       },
     }
   })
