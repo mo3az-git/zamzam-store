@@ -160,6 +160,7 @@ Do not assign two agents to edit the same checkout coordinator, migration sequen
 
 This audit is planning documentation only: `docs/mvp-completion-gap-audit.md`. It makes no source/runtime changes and does not modify canonical TP acceptance state.
 
-- Audited tree: PR #26 head `90f858e6998288be4b07a8b0e506f1a586896919`.
-- CI evidence: [consolidated compatibility run 40566386267](https://github.com/mo3az-git/zamzam-store/actions/runs/40566386267) and [Chromium smoke run 40566386348](https://github.com/mo3az-git/zamzam-store/actions/runs/40566386348), both completed successfully on the audited snapshot.
-- Documentation commit and post-commit CI will be recorded after the audit file is added to the existing Draft PR #26.
+- Audited code baseline before documentation: `90f858e6998288be4b07a8b0e506f1a586896919`.
+- Documentation commit on existing PR #26: `7ff8a9751e54ab2328cfac1c5888af209c009ec1`; this is a docs-only child commit. The PR remains open and Draft.
+- Post-commit consolidated CI: [run 40569981874](https://github.com/mo3az-git/zamzam-store/actions/runs/40569981874), completed **success** on the documentation commit. It reran targeted storefront/backend checks, lint, disposable Medusa migration and guest ownership/FEFO/Query integrations, both builds and contract-schema validation. No formal TP suite ran.
+- The preceding browser smoke remains [run 40566386348](https://github.com/mo3az-git/zamzam-store/actions/runs/40566386348), completed **success** on code baseline `90f858e`; it was not rerun for a docs-only commit. It used synthetic local Medusa data.
