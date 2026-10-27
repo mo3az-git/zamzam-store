@@ -485,6 +485,7 @@ try {
     const beforeConversion=await makeCart([{quantity:3}],"cleanup-starts-first")
     await new InventoryLedger(runtime.container).reserveCart(beforeConversion.authority)
     const beforeRows=await reservationsFor(beforeConversion.authority.attemptId), beforeOrder=await makeNativeOrder(beforeConversion)
+    dbBefore=await saveSnapshot([batch.id])
     const blockerClient=createPgClient(isolatedUrl); await blockerClient.connect()
     const holderPid=(await blockerClient.query("SELECT pg_backend_pid() AS pid")).rows[0].pid
     await blockerClient.query("BEGIN")
@@ -597,6 +598,7 @@ try {
     releaseFirst()
     const [leftResult,rightResult]=await Promise.all([left,right])
     const raceSnapshot=await saveSnapshot([batch.id])
+    dbAfter=raceSnapshot
     check("same-order-converters-serialize-on-real-order-root",true,{leftReplay:leftResult.replay,rightReplay:rightResult.replay,blockerPids:raceBlockers},
       leftPid!==rightPid&&raceBlockers.includes(leftPid)&&leftResult.replay!==rightResult.replay)
     check("same-batch-conversion-contention-produces-one-committed-set",true,{allocationRows:raceSnapshot.allocations.filter((row)=>row.order_id===raceOrder.id).length,
