@@ -131,6 +131,11 @@ export async function reconcileOrderCreation(db: Sql, authority: Authority, look
       }
     }
     const a = await current(tx, authority)
+    const lease = (await tx.raw(`SELECT status FROM idempotency_key WHERE key=? AND lease_owner_id=?
+      AND deleted_at IS NULL AND ((status='pending' AND last_heartbeat_at>NOW()-INTERVAL '120 seconds')
+        OR (status='completed' AND ?))`, [a.idempotency_key, authority.ownerId,
+      a.attempt_status === "allocated" && a.order_id !== null])).rows[0]
+    if (!lease) invalid("CHECKOUT_LEASE_NOT_OWNED")
     // Never lock the session/attempt and only then discover a different order
     // root. If correlation changed concurrently, abort instead of proceeding.
     if (a.order_id && a.order_id !== lockedOrderId) invalid("ORDER_ROOT_CHANGED_DURING_RECONCILIATION")
@@ -168,14 +173,19 @@ export async function reconcileOrderCreation(db: Sql, authority: Authority, look
  * No repeat native order-creation call is permitted after a durable start fence.
  */
 export async function runOrderCreationWithFence(db: Sql, authority: Authority,
-  runNativeCompleteCart: Complete, lookup: Lookup) {
+  runNativeCompleteCart: Complete, lookup: Lookup,
+  hooks: { afterFenceCommit?: () => void | Promise<void>; afterNativeReturn?: () => void | Promise<void> } = {}) {
   const started = await markOrderCreationStarted(db, authority)
   if (!started.replay) {
+    await hooks.afterFenceCommit?.()
+    let nativeReturned = false
     try {
       await runNativeCompleteCart(authority.cartId)
+      nativeReturned = true
     } catch {
       // Unknown native workflow outcome: NEVER roll back the durable fence.
     }
+    if (nativeReturned) await hooks.afterNativeReturn?.()
   }
   return reconcileOrderCreation(db, authority, lookup)
 }

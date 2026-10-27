@@ -17,6 +17,8 @@ type BackendContainer = Parameters<typeof completeNativeCartForTp08Workflow>[0]
 type CheckoutDb = Parameters<typeof runOrderCreationWithFence>[0]
 type Authority = Parameters<typeof runOrderCreationWithFence>[1]
 export type NativeCompletionHooks = {
+  afterFenceCommit?: () => void | Promise<void>
+  afterNativeReturn?: () => void | Promise<void>
   /** Deterministic disposable-service hook immediately before native invocation. */
   beforeNativeCompletion?: () => void | Promise<void>
   /** Deterministic disposable-service fault boundary after the native saga returns. */
@@ -46,6 +48,7 @@ export async function completeNativeCartWithFence(
       const candidate = (data as { id?: unknown }).id
       return typeof candidate === "string" ? { orderId: candidate } : null
     },
-    async (cartId) => findNativeOrdersByCart(db, cartId)
+    async (cartId) => findNativeOrdersByCart(db, cartId),
+    hooks
   )
 }
