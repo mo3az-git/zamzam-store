@@ -37,5 +37,5 @@ const manifest = {
 const outputDirectory = resolve("artifacts/qa")
 await mkdir(outputDirectory, { recursive: true })
 const filePath = resolve(outputDirectory, `mvp-integration-run-${process.env.QA_RUN_ID ?? "local"}.json`)
-await writeFile(filePath, `${JSON.stringify(manifest, null, 2)}\\n`, { mode: 0o600 })
+await writeFile(filePath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 })
 console.log(`Wrote non-secret QA run manifest: ${filePath}`)
