@@ -246,6 +246,7 @@ function blockedResult(
 export function createCheckoutPreflightReadiness(sources: CheckoutPreflightReadSources) {
   return async (request: Readonly<{
     snapshot: CartOrchestrationSnapshot
+    cartId: string
     ownershipProof: unknown
     ownerKey: string
     requestId: string
@@ -254,16 +255,13 @@ export function createCheckoutPreflightReadiness(sources: CheckoutPreflightReadS
   }>): Promise<CheckoutPreflightResult> => {
     const method = request.paymentMethod
     const version = request.snapshot?.version ?? null
+    const cartId = request.cartId
     if (!sources || typeof sources.isVerifiedGuestCartOwnership !== "function" ||
         !request.ownershipProof || !request.ownerKey || !request.requestId ||
-        !sources.isVerifiedGuestCartOwnership(request.ownershipProof, request.ownershipProof &&
-          typeof request.ownershipProof === "object" && "cartId" in request.ownershipProof
-            ? String((request.ownershipProof as { cartId: unknown }).cartId) : "")) {
+        typeof cartId !== "string" || !cartId ||
+        !sources.isVerifiedGuestCartOwnership(request.ownershipProof, cartId)) {
       return blockedResult(method, version, "GUEST_CART_NOT_OWNED")
     }
-    const cartId = typeof request.snapshot.native === "object" && request.snapshot.native &&
-      "id" in request.snapshot.native ? String((request.snapshot.native as { id: unknown }).id) : ""
-    if (!cartId) return blockedResult(method, version, "PREFLIGHT_STATE_UNAVAILABLE")
 
     try {
       const replay = await sources.inspectReplay({
@@ -273,14 +271,13 @@ export function createCheckoutPreflightReadiness(sources: CheckoutPreflightReadS
       })
       if (replay === "conflict") return blockedResult(method, version, "PREFLIGHT_REPLAY_CONFLICT")
       if (replay === "unavailable") return blockedResult(method, version, "PREFLIGHT_STATE_UNAVAILABLE")
-      const [native, attempt, inventory, shipping, payments] = await Promise.all([
-        sources.readNativeFacts(request.snapshot, request.ownershipProof),
+      const native = await sources.readNativeFacts(request.snapshot, request.ownershipProof)
+      const [attempt, inventory, quote, payments] = await Promise.all([
         sources.readAttempt(cartId),
         sources.readInventory(request.snapshot.lines),
-        Promise.resolve(null as CheckoutShippingQuoteReadiness | null),
+        sources.readShipping(request.snapshot, native),
         sources.readPayments(request.snapshot),
       ])
-      const quote = await sources.readShipping(request.snapshot, native)
       return evaluateCheckoutPreflight({
         ownership: { status: "owned", cartId, proof: request.ownershipProof },
         expectedVersion: request.expectedVersion,
@@ -290,7 +287,7 @@ export function createCheckoutPreflightReadiness(sources: CheckoutPreflightReadS
         native,
         attempt,
         inventory,
-        shipping: quote ?? shipping!,
+        shipping: quote,
         payments,
       }, { isVerifiedGuestCartOwnership: (proof, id) =>
         sources.isVerifiedGuestCartOwnership(proof, id) })
