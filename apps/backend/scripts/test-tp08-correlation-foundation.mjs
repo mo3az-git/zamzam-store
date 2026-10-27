@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { createRequire } from "node:module"
 import path from "node:path"
 import {
@@ -32,12 +32,14 @@ const state = async (id) => (await pg.query(
   "SELECT attempt_status,order_correlation_status,order_id FROM cart_checkout_attempt WHERE checkout_attempt_id=$1::uuid",[id]
 )).rows[0]
 const register = async (method="cod") => {
-  const id=uid(),cartId="cart_tp08_"+uid().replace(/-/g,""),ownerId="owner_"+uid().replace(/-/g,"")
+  const id=uid(),cartId="cart_tp08_"+uid().replace(/-/g,""),ownerId="owner_"+uid().replace(/-/g,""),leaseKey=uid()
   await pg.query("INSERT INTO cart_checkout_session(cart_id,current_attempt_id,epoch,status) VALUES ($1,$2,1,'in_progress')",[cartId,id])
+  await pg.query(`INSERT INTO idempotency_key(key,request_path,request_hash,status,lease_owner_id,expires_at,locked_at,last_heartbeat_at)
+    VALUES($1,$2,$3,'pending',$4,NOW()+INTERVAL '14 days',NOW(),NOW())`,[leaseKey,`/store/carts/${cartId}/complete`,createHash("sha256").update(leaseKey).digest("hex"),ownerId])
   await pg.query(`INSERT INTO cart_checkout_attempt(checkout_attempt_id,cart_id,epoch,idempotency_key,payment_method,lease_owner_id,attempt_status,order_correlation_status)
-    VALUES ($1::uuid,$2,1,$3,$4,$5,'reserved','none')`,[id,cartId,"tp08_"+id,method,ownerId])
+    VALUES ($1::uuid,$2,1,$3,$4,$5,'reserved','none')`,[id,cartId,leaseKey,method,ownerId])
   const authority={cartId,attemptId:id,epoch:1,ownerId}
-  entries.push(authority)
+  entries.push({...authority,leaseKey})
   return authority
 }
 const candidate = (a,id="order_tp08_"+uid().replace(/-/g,"")) => ({id,cart_id:a.cartId})
@@ -70,7 +72,7 @@ try {
   check("exactly_one_binds_by_cas",result.orderId===single.id&&s.order_id===single.id&&s.order_correlation_status==="correlated",{result,s})
   result=await reconcileOrderCreation(db,a,async()=>[single])
   check("exact_reconciliation_replay",result.replay===true&&result.orderId===single.id,result)
-  await assertConflict("different_bound_order_rejected",()=>reconcileOrderCreation(db,a,async()=>[candidate(a)]),"BOUND_ORDER_LOOKUP_DIVERGENCE")
+  await assertConflict("different_bound_order_rejected",()=>reconcileOrderCreation(db,a,async()=>[candidate(a)]),"ORDER_ROOT_CHANGED_DURING_RECONCILIATION")
   let correlatedNativeCalls=0
   const correlatedReplay=await runOrderCreationWithFence(db,a,async()=>{
     correlatedNativeCalls++
@@ -82,7 +84,7 @@ try {
     {correlatedReplay,correlatedNativeCalls})
   await assertConflict("correlated_replay_with_wrong_native_order_rejected",
     ()=>runOrderCreationWithFence(db,a,async()=>{correlatedNativeCalls++},async()=>[candidate(a)]),
-    "BOUND_ORDER_LOOKUP_DIVERGENCE")
+    "ORDER_ROOT_CHANGED_DURING_RECONCILIATION")
   check("invalid_correlated_replay_does_not_reinvoke_workflow",correlatedNativeCalls===0,correlatedNativeCalls)
 
   const b=await register()
@@ -206,6 +208,7 @@ try {
       for(const x of entries){
         await pg.query("DELETE FROM cart_checkout_attempt WHERE checkout_attempt_id=$1::uuid",[x.attemptId])
         await pg.query("DELETE FROM cart_checkout_session WHERE cart_id=$1",[x.cartId])
+        await pg.query("DELETE FROM idempotency_key WHERE key=$1",[x.leaseKey])
       }
       await pg.query("COMMIT")
       const verify=await pg.query("SELECT count(*)::int AS n FROM cart_checkout_attempt WHERE checkout_attempt_id=ANY($1::uuid[])",[entries.map(x=>x.attemptId)])
