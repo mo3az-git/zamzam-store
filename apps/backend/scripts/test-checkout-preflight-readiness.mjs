@@ -15,10 +15,10 @@ require.extensions[".ts"] = (module, filename) => {
   module._compile(output, filename)
 }
 const { evaluateCheckoutPreflight, createCheckoutPreflightReadiness } =
-  require("../src/modules/batch-inventory/checkout-preflight-readiness.ts")
-const { executeCartBffRequest } = require("../src/modules/batch-inventory/cart-bff-orchestrator.ts")
+  require("./apps/backend/src/modules/batch-inventory/checkout-preflight-readiness.ts")
+const { executeCartBffRequest } = require("./apps/backend/src/modules/batch-inventory/cart-bff-orchestrator.ts")
 const { validateCartBffRequest, validateCartBffResponse } =
-  require("../src/modules/batch-inventory/cart-bff-contract.ts")
+  require("./apps/backend/src/modules/batch-inventory/cart-bff-contract.ts")
 
 const assertDisposableServices = async () => {
   if (process.env.PHASE1_DISPOSABLE_TEST_PROFILE !== "ci_ephemeral_service") {
