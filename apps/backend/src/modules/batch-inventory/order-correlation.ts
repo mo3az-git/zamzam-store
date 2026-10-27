@@ -46,7 +46,14 @@ export async function markOrderCreationStarted(db: Sql, authority: Authority) {
   validate(authority)
   return db.transaction(async (tx) => {
     const a = await current(tx, authority)
-    if (a.order_id) invalid("ALREADY_CORRELATED")
+    // An already correlated attempt must be replay-safe: never invoke the
+    // native order creation workflow a second time. Reconciliation below
+    // independently rechecks the existing native cart/order link.
+    if (a.order_id) {
+      if (a.attempt_status !== "order_created" || a.order_correlation_status !== "correlated")
+        invalid("BOUND_ORDER_STATE_DIVERGENCE")
+      return { fenced: true, replay: true }
+    }
     if ((a.attempt_status === "order_creation_started" && a.order_correlation_status === "pending_correlation") ||
         (a.attempt_status === "needs_reconciliation" && a.order_correlation_status === "needs_reconciliation"))
       return { fenced: true, replay: true }
