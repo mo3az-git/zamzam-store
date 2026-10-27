@@ -67,6 +67,8 @@ jobs:
         run: node --experimental-strip-types --test apps/storefront/tests/governorate-contract.test.mjs
       - name: Canonical 27-governorate shipping policy checks (not formal TP)
         run: node apps/backend/scripts/check-egypt-shipping-configuration.mjs
+      - name: Checkout shipping quote readiness contract (not formal TP)
+        run: node apps/backend/scripts/check-shipping-quote-readiness-contract.mjs
       - name: Internal batch availability projection tests (not formal TP)
         run: node --experimental-strip-types --test apps/backend/scripts/test-batch-availability.mjs
       - name: FEFO lock-key validation unit test (not formal TP)
