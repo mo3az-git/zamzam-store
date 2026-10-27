@@ -37,6 +37,7 @@ export interface CartBffDependencies {
   /** Server-only composition of ownership, native totals/version, FEFO, shipping, payment and attempt state. */
   checkoutReadiness(input: Readonly<{
     snapshot: CartOrchestrationSnapshot
+    cartId: string
     ownershipProof: unknown
     ownerKey: string
     requestId: string
@@ -103,7 +104,7 @@ export async function executeCartBffRequest(input: {
     if (operation.expectedVersion !== current.version) return fail(operation.operation, "CART_VERSION_CONFLICT", current.public)
     try {
       const readiness = await deps.checkoutReadiness({
-        snapshot: current, ownershipProof: authority.proof, ownerKey: authority.ownerKey,
+        snapshot: current, cartId: authority.cartId, ownershipProof: authority.proof, ownerKey: authority.ownerKey,
         requestId: operation.requestId, expectedVersion: operation.expectedVersion,
         paymentMethod: operation.paymentMethod,
       })
