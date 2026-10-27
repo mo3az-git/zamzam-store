@@ -1,0 +1,61 @@
+name: Browser QA - Disposable Storefront
+on:
+  push:
+    branches:
+      - "integration/mvp-consolidated-*"
+    paths:
+      - "apps/storefront/**"
+      - "scripts/browser-qa/**"
+      - ".github/workflows/browser-qa.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  chromium-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      MEDUSA_BACKEND_URL: http://127.0.0.1:9091
+      NEXT_PUBLIC_MEDUSA_BACKEND_URL: http://127.0.0.1:9091
+      NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: pk_qa_read_only
+      NEXT_PUBLIC_SITE_URL: http://127.0.0.1:8000
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install pinned dependencies
+        run: npm ci --strict-peer-deps --no-audit --no-fund
+      - name: Build read-only Next storefront
+        run: npm run build:storefront
+      - name: Install ephemeral Playwright (no lockfile changes)
+        run: |
+          npm install --no-save --package-lock=false --ignore-scripts @playwright/test@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Start local mock Medusa and Next preview
+        run: |
+          node scripts/browser-qa/mock-medusa-store.mjs > /tmp/zamzam-mock.log 2>&1 &
+          npm run start --workspace @zamzam/storefront > /tmp/zamzam-next.log 2>&1 &
+          for attempt in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:8000/en > /dev/null && curl -fsS http://127.0.0.1:9091/store/regions -H 'x-publishable-api-key: pk_qa_read_only' > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/zamzam-next.log
+          cat /tmp/zamzam-mock.log
+          exit 1
+      - name: Browser smoke ARG-B01 through ARG-B05
+        run: npx playwright test --config scripts/browser-qa/playwright.config.mjs
+      - name: Upload evidence on success or failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: argon-prep-browser-qa
+          path: |
+            scripts/browser-qa/browser-qa-results/
+            scripts/browser-qa/browser-qa-report/
+          retention-days: 7
+          if-no-files-found: warn
