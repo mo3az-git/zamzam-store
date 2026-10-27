@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { localePath, type Locale } from "./i18n"
+import { localePath, type Locale } from "./i18n.ts"
 
 /**
  * Absolute base URL for canonical links, hreflang alternates and Open Graph.

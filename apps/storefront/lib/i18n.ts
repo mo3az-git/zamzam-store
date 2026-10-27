@@ -208,6 +208,45 @@ export type Dictionary = {
     addedSuccess: string
     disabledNotice: string
     checkoutDisabledNotice: string
+    goToCheckout: string
+  }
+  checkout: {
+    title: string
+    subtitle: string
+    backToCart: string
+    guestInfoHeading: string
+    orderSummaryHeading: string
+    fullNameLabel: string
+    fullNamePlaceholder: string
+    phoneLabel: string
+    phonePlaceholder: string
+    governorateLabel: string
+    selectGovernorate: string
+    cityLabel: string
+    cityPlaceholder: string
+    addressLabel: string
+    addressPlaceholder: string
+    notesLabel: string
+    notesPlaceholder: string
+    nameRequired: string
+    phoneRequired: string
+    governorateRequired: string
+    cityRequired: string
+    addressRequired: string
+    shippingHeader: string
+    shippingPending: string
+    shippingNotice: string
+    payableTotalNotice: string
+    itemsSubtotal: string
+    disabledNotice: string
+    qaBadge: string
+    previewBadge: string
+    qaSimulateButton: string
+    disabledSubmitButton: string
+    qaSuccessTitle: string
+    qaSuccessNotice: string
+    emptyCartNotice: string
+    backToShop: string
   }
 }
 
@@ -389,6 +428,47 @@ const ar: Dictionary = {
     addedSuccess: "تمت الإضافة إلى السلة بنجاح",
     disabledNotice: "خاصية الشراء غير مفعّلة في الإصدار الحالي.",
     checkoutDisabledNotice: "إتمام الطلب والدفع غير مفعلين في هذه المرحلة.",
+    goToCheckout: "متابعة بيانات التوصيل (معاينة)",
+  },
+  checkout: {
+    title: "بيانات إتمام الطلب",
+    subtitle: "بيانات العميل وعنوان التوصيل",
+    backToCart: "العودة إلى سلة المشتريات",
+    guestInfoHeading: "بيانات التوصيل للعميل",
+    orderSummaryHeading: "ملخص الطلب المعتمد",
+    fullNameLabel: "الاسم بالكامل",
+    fullNamePlaceholder: "الاسم الثلاثي أو الثنائي",
+    phoneLabel: "رقم الهاتف المحمول (مصر)",
+    phonePlaceholder: "مثال: 01012345678",
+    governorateLabel: "المحافظة",
+    selectGovernorate: "اختر المحافظة",
+    cityLabel: "المدينة / الحي",
+    cityPlaceholder: "مثال: مدينة نصر، المعادي، الدقي...",
+    addressLabel: "العنوان التفصيلي",
+    addressPlaceholder: "اسم الشارع، رقم المبنى، رقم الشقة أو الطابق",
+    notesLabel: "ملاحظات التوصيل (اختياري)",
+    notesPlaceholder: "علامة مميزة أو إرشادات خاصة بالتسليم",
+    nameRequired: "يرجى إدخال الاسم بالكامل (3 أحرف على الأقل).",
+    phoneRequired: "يرجى إدخال رقم هاتف محمول مصري صحيح (11 رقم يبدأ بـ 010 أو 011 أو 012 أو 015).",
+    governorateRequired: "يرجى اختيار المحافظة.",
+    cityRequired: "يرجى إدخال المدينة أو الحي.",
+    addressRequired: "يرجى إدخال العنوان التفصيلي (5 أحرف على الأقل).",
+    shippingHeader: "رسوم التوصيل",
+    shippingPending: "يتم تحديدها لاحقًا من قِبل المتجر",
+    shippingNotice:
+      "لا يتم احتساب أو تخمين رسوم التوصيل من الواجهة؛ سيتم تحديدها واعتمادها عبر نظام المتجر عند تأكيد الطلب.",
+    payableTotalNotice: "الإجمالي النهائي المستحق يُحدد بعد اعتماد رسوم التوصيل.",
+    itemsSubtotal: "المجموع المعتمد للمنتجات",
+    disabledNotice: "خاصية إتمام الطلبات والدفع معطّلة حاليًا في هذه النسخة التجريبية.",
+    qaBadge: "معاينة ضبط الجودة (QA)",
+    previewBadge: "معاينة تجريبية",
+    qaSimulateButton: "التحقق من بيانات التوصيل (محاكاة QA)",
+    disabledSubmitButton: "إتمام الطلب معطّل حاليًا",
+    qaSuccessTitle: "تم التحقق من بيانات التوصيل بنجاح (محاكاة QA)",
+    qaSuccessNotice:
+      "هذه محاكاة تدقيق فني فقط. إتمام الطلبات الفعلي، وتحديد رسوم الشحن، ومعالجة الدفع معطّلة بالكامل حتى اعتماد مسار الدفع المركزي.",
+    emptyCartNotice: "سلة المشتريات فارغة. يرجى إضافة منتجات أولاً قبل متابعة التوصيل.",
+    backToShop: "تصفح المنتجات",
   },
 }
 
@@ -570,6 +650,47 @@ const en: Dictionary = {
     addedSuccess: "Successfully added to cart",
     disabledNotice: "Purchasing actions are disabled in this release.",
     checkoutDisabledNotice: "Checkout and payment are not active in this stage.",
+    goToCheckout: "Proceed to Delivery Details (Preview)",
+  },
+  checkout: {
+    title: "Guest Checkout",
+    subtitle: "Customer Details & Delivery Address",
+    backToCart: "Back to Shopping Cart",
+    guestInfoHeading: "Delivery Information",
+    orderSummaryHeading: "Authoritative Order Summary",
+    fullNameLabel: "Full Name",
+    fullNamePlaceholder: "First and last name",
+    phoneLabel: "Mobile Number (Egypt)",
+    phonePlaceholder: "e.g. 01012345678",
+    governorateLabel: "Governorate",
+    selectGovernorate: "Select Governorate",
+    cityLabel: "City / District",
+    cityPlaceholder: "e.g. Nasr City, Dokki, Maadi...",
+    addressLabel: "Detailed Address",
+    addressPlaceholder: "Street, building number, apartment/floor",
+    notesLabel: "Delivery Notes (Optional)",
+    notesPlaceholder: "Landmarks or specific delivery instructions",
+    nameRequired: "Please enter your full name (at least 3 characters).",
+    phoneRequired: "Please enter a valid Egyptian mobile number (11 digits starting with 010, 011, 012, or 015).",
+    governorateRequired: "Please select a governorate.",
+    cityRequired: "Please enter your city or district.",
+    addressRequired: "Please enter detailed delivery address (at least 5 characters).",
+    shippingHeader: "Delivery Fee",
+    shippingPending: "Pending store confirmation",
+    shippingNotice:
+      "Delivery fees are never calculated or estimated by the browser; they will be confirmed via the store system.",
+    payableTotalNotice: "Final payable total is confirmed upon shipping quote.",
+    itemsSubtotal: "Items Authoritative Subtotal",
+    disabledNotice: "Order placement and payment collection are disabled in this preview release.",
+    qaBadge: "QA Simulation Mode",
+    previewBadge: "Nonproduction Preview",
+    qaSimulateButton: "Validate Delivery Details (QA Simulation)",
+    disabledSubmitButton: "Checkout Disabled",
+    qaSuccessTitle: "Delivery Details Validated (QA Simulation)",
+    qaSuccessNotice:
+      "This is a technical validation preview only. Real order creation, live shipping quotes, and payment gateways remain locked until central store authorization.",
+    emptyCartNotice: "Your cart is currently empty. Please add items before proceeding to checkout.",
+    backToShop: "Browse Products",
   },
 }
 
