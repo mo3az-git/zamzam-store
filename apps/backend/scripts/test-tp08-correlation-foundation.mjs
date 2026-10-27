@@ -136,11 +136,68 @@ try {
     concurrentRuns.every(x=>x.status==="correlated" && x.orderId===concurrentOrder.id) &&
     concurrentState.order_id===concurrentOrder.id,
     {concurrentRuns,concurrentState})
+  // A legitimate actor must not bind an order after losing the checkout lease,
+  // even when the native lookup produces a single correctly related candidate.
+  const ownership=await register()
+  await markOrderCreationStarted(db,ownership)
+  const ownershipOrder=candidate(ownership)
+  await pg.query(
+    "UPDATE cart_checkout_attempt SET lease_owner_id=$1 WHERE checkout_attempt_id=$2::uuid",
+    ["owner_replaced_"+uid().replace(/-/g,""),ownership.attemptId]
+  )
+  await assertConflict("lease_owner_changed_after_native_fence_rejects_bind",
+    ()=>reconcileOrderCreation(db,ownership,async()=>[ownershipOrder]),
+    "STALE_OR_UNAUTHORIZED_ATTEMPT")
+  const ownershipState=await state(ownership.attemptId)
+  check("lease_owner_change_leaves_order_unbound",
+    ownershipState.order_id===null && ownershipState.order_correlation_status==="pending_correlation",
+    ownershipState)
+
+  // A recovered request must not override a checkout session that has moved
+  // to a different authoritative attempt/epoch.
+  const superseded=await register()
+  await markOrderCreationStarted(db,superseded)
+  await pg.query("UPDATE cart_checkout_session SET epoch=2 WHERE cart_id=$1",[superseded.cartId])
+  await assertConflict("session_epoch_increment_rejects_stale_order_binding",
+    ()=>reconcileOrderCreation(db,superseded,async()=>[candidate(superseded)]),
+    "STALE_OR_UNAUTHORIZED_ATTEMPT")
+  const supersededState=await state(superseded.attemptId)
+  check("epoch_fence_preserves_pending_order_correlation",
+    supersededState.order_id===null && supersededState.order_correlation_status==="pending_correlation",
+    supersededState)
+
+  // A failed native lookup must not accidentally allow a second native call.
+  const lookupOutage=await register()
+  let outageNativeCalls=0
+  let outageError
+  try {
+    await runOrderCreationWithFence(db,lookupOutage,async()=>{
+      outageNativeCalls++
+      return null
+    },async()=>{throw new Error("simulated-native-lookup-outage")})
+  } catch(error) {outageError=error}
+  check("first_native_lookup_failure_is_visible",
+    outageError?.message==="simulated-native-lookup-outage",outageError?.message)
+  let outageRetryError
+  try {
+    await runOrderCreationWithFence(db,lookupOutage,async()=>{
+      outageNativeCalls++
+      throw new Error("unsafe-double-creation")
+    },async()=>{throw new Error("simulated-native-lookup-outage")})
+  } catch(error) {outageRetryError=error}
+  check("lookup_outage_retry_does_not_create_another_order",
+    outageNativeCalls===1 && outageRetryError?.message==="simulated-native-lookup-outage",
+    {outageNativeCalls,error:outageRetryError?.message})
+  const outageState=await state(lookupOutage.attemptId)
+  check("failed_lookup_keeps_durable_pending_fence",
+    outageState.attempt_status==="order_creation_started" &&
+    outageState.order_correlation_status==="pending_correlation" &&
+    outageState.order_id===null,outageState)
   const e=await register()
   await assertConflict("invalid_native_order_cart_rejected",()=>reconcileOrderCreation(db,e,async()=>[{id:"order_fake",cart_id:"wrong"}]),"INVALID_NATIVE_ORDER_CANDIDATE")
   s=await state(e.attemptId)
   check("bad_candidate_does_not_change_state",s.attempt_status==="reserved"&&s.order_id===null,s)
-  dbAfter={a:await state(a.attemptId),b:await state(b.attemptId),c:await state(c.attemptId),d:await state(d.attemptId),concurrent:await state(concurrent.attemptId),e:await state(e.attemptId)}
+  dbAfter={a:await state(a.attemptId),b:await state(b.attemptId),c:await state(c.attemptId),d:await state(d.attemptId),concurrent:await state(concurrent.attemptId),ownership:await state(ownership.attemptId),superseded:await state(superseded.attemptId),lookupOutage:await state(lookupOutage.attemptId),e:await state(e.attemptId)}
   status="passed"
 }catch(error){blocker=error.stack||String(error);errLines.push(blocker);console.error(blocker);assertions.push({name:"execution_completed",expected:true,actual:error.message,passed:false})}finally{
   if(pg){
