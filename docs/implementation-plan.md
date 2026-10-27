@@ -4,13 +4,23 @@
 **Date:** 2026-10-25  
 **Target Release:** MVP  
 **Review Decision:** `Phase 0 design is accepted by owner; cross-document review/sign-off completed. Runtime evidence is deferred to the Phase 1 Technical Compatibility Spike.`
-*(Phase 0 closes on design/documentation and recorded owner decisions and default assumptions (owner may change) only; a restricted Phase 1 Technical Compatibility Spike may run before Phase 0 sign-off, but store feature development remains blocked until the spike evidence and launch gates are reviewed)*
+*(Phase 0 design is accepted. Under the owner-authorized MVP-first amendment of 2026-10-27, feature development can proceed with incremental safety checks without waiting for the full Phase 1 TP suite. Formal acceptance and production release remain separately gated; see the MVP-first policy below.)*
 
 ---
 
+## Owner Decision — MVP-First Delivery Policy (2026-10-27)
+
+**Decision:** Prioritize a functioning MVP before exhaustive formal TP execution. This amendment supersedes earlier text **only where it blocks development solely because the entire 59-case TP suite has not passed**; other architecture, compliance, and safety restrictions remain in force.
+
+- **Development gate:** Phase 2 catalog/Arabic UI and later MVP workstreams may start in isolated feature branches and draft PRs. Incremental builds, linting, targeted component/API tests, and integration checks relevant to changed code continue. Prevent regressions rather than requiring every unrelated TP case for each feature.
+- **High-risk workflows:** Before integrating or demonstrating an operable real checkout, verify critical order uniqueness, EGP total correctness, reservation/stock invariants, concurrency/idempotency, payment callback signature and authorization, compensation and failure-path handling, as applicable. Simulators are not production payment proof.
+- **Formal TP gate:** Preserve exactly 59 canonical cases and untouched acceptance markers. Schedule the complete suite for hardening/pre-release after MVP integration; do not label deferred tests as passed. **TP-01 stays unauthorized** and may not be run or disguised as a differently named test. The formal all-59 gate remains unresolved until a later, separate owner decision about TP-01; this policy does not silently waive it.
+- **Release gate:** No public launch, real customer transactions, production payment enablement, or claimed operational readiness until formal acceptance, security/concurrency/recovery checks, required regulatory/content/operational launch gates, and explicit owner release approval are recorded. Deployment of isolated nonproduction previews is distinct from release.
+- **Branch discipline:** Existing PRs remain draft; do not merge, rebase other owners' branches, alter historical test evidence, or tick acceptance checkboxes without explicit authorization. Track deferred work in a separate backlog and label incomplete evidence honestly.
+
 ## 1. Overview and Phased Delivery Roadmap
 
-The project adheres to an incremental delivery model. Progression to any subsequent phase is strictly blocked until the preceding phase satisfies its formal **Acceptance Gate**.
+The project uses **MVP-first incremental delivery**: feature development may advance across phases without formal completion of the preceding phase's entire TP suite. Phase acceptance, formal TP sign-off, and production release are separate gates. Critical safety checks must accompany implementation; unexecuted acceptance cases remain open.
 
 ```mermaid
 flowchart LR
@@ -82,7 +92,7 @@ Phase 0 acceptance is a **design/documentation decision**, not a statement that 
 Establish the repository structure, initialize Next.js 15.5.28 and the Medusa v2.21.2 candidate cohort, connect to PostgreSQL 16.15, configure environment variables, and execute a **Technical Compatibility Spike** covering dependency compatibility, cart/order correlation, inventory reservations, electronic-payment/COD branches, webhook handling, refund idempotency, and recovery before broader feature development.
 
 > **Phase Transition & Scaffolding Policy:**  
-> Authorization is granted **EXCLUSIVELY** for initial monorepo scaffolding and executing the 59 listed Technical Prototype test rows (TP-01 through TP-25d, including lettered subcases). Store feature development remains **STRICTLY BLOCKED** until Phase 0 design sign-off and all 59 enumerated prototype test rows (including explicitly listed lettered subcases) pass with logged terminal evidence. Gates 1, 2, 3, and 5 block production launch only, not feature development. The provider-specific electronic-payment integration and final refund-formula activation remain blocked until the open Gate 6/Gate 4 parameters are supplied. The Spike may use a provider simulator; it must not select a gateway on the owner’s behalf.
+> **Owner-authorized MVP-first amendment (2026-10-27):** Phase 0 design sign-off is already recorded. Development of Phase 2–5 MVP features is now permitted **without** first passing all 59 Phase 1 TP cases. The canonical 59-row suite is deferred to formal pre-release validation, not waived, passed, deleted, renamed or silently reduced. **TP-01 remains explicitly unauthorized** for execution until a separate owner decision; the conflict between TP-01 prohibition and all-59 formal acceptance remains an explicit unresolved release blocker. Keep normal build/lint and targeted regression checks on every changed component; payment/order correctness, idempotency, stock consistency, secrets and permissions require risk-based critical tests before integration or enabling live transactions. No actual customer sales or production launch until formal acceptance, security/recovery checks and launch gates are satisfied. Gates 1, 2, 3 and 5 remain production launch gates. Provider-specific electronic-payment integration and final refund-formula activation remain blocked until Gate 6/Gate 4 parameters are supplied; no gateway is selected implicitly.
 
 ### Concrete Tasks
 1. Initialize monorepo directory layout:
@@ -102,11 +112,11 @@ Establish the repository structure, initialize Next.js 15.5.28 and the Medusa v2
 6. Configure ESLint, Prettier, and TypeScript strict mode across both apps.
 7. Implement admin seed script for initial super-administrator user with neutral non-production placeholders.
 8. **Execute Technical Prototype Gate (Canonical TP ID Registry):**
-   Execute the 59 listed prototype test rows (TP-01 through TP-25d, including subcases) in the local staging environment and capture logged terminal evidence:
+   **Deferred pre-release acceptance work:** execute the 59 listed prototype test rows (TP-01 through TP-25d, including subcases) in staging and capture terminal evidence **only when separately authorized**. This is not a prerequisite for beginning MVP feature development. TP-01 execution is expressly prohibited pending a separate decision:
 
 ### Canonical Technical Prototype (TP) Registry (TP-01 through TP-25d)
 
-**Registry count:** 59 test rows are currently enumerated in this table. IDs with letter suffixes are individual test cases/subcases; TP-24c includes enforcement subcases A and B, and TP-25a–TP-25d cover electronic-payment failure modes. The registry has not been executed. All status markers remain `[ ]`.
+**Registry count:** 59 test rows are currently enumerated in this table. IDs with letter suffixes are individual test cases/subcases; TP-24c includes enforcement subcases A and B, and TP-25a–TP-25d cover electronic-payment failure modes. Formal status markers remain `[ ]` and must not be changed without per-case evidence. The full formal suite is deferred until pre-release authorization; TP-01 remains prohibited. Component test evidence from draft branches does not by itself confer formal TP acceptance.
 
 | Test ID | Scenario Name & Scope | Setup & Inputs | Concurrent Interleaving / Injection | Expected Observable Result & DB State | Status |
 |---|---|---|---|---|:---:|
@@ -170,8 +180,8 @@ Establish the repository structure, initialize Next.js 15.5.28 and the Medusa v2
 | **TP-25c** | **Payment Succeeded but Order Creation Failed / Timed Out** | Provider reports successful payment while order creation fails or its outcome is uncertain. | Inject failure before order persistence and an ambiguous timeout after order creation starts. | Do not release inventory or retry order creation while correlation is unknown. Once failure is definitive, void/refund the payment using provider-supported semantics and release reservations only after compensation/cancellation is confirmed. | `[ ]` |
 | **TP-25d** | **Partial Electronic Refund and Gateway Refund Failure/Timeout** | Paid electronic order with approved frozen refund amount and a partial return; also include the undelivered-depot no-payout exception with no `refund_record` and attempts with `abandoned`, `void_pending`, `outcome_unknown`, non-NULL `paid_at`, or an existing refund record. | Gateway refund succeeds with lost response, definitively fails, or times out; reconcile provider transactions against local records. | System-computed amount is bounded by frozen approval; override reason/approver are audited; partial refunds reserve capacity; unknown result is not blindly retried; reconciliation prevents double refund and identifies mismatches. The no-payout branch is accepted only for `status IN ('failed','voided') AND paid_at IS NULL`, no refund record of any status, and no captured attempt on the order; provider status mapping remains pending gateway selection. | `[ ]` |
 
-### Verification & Acceptance Gate
-- [ ] Technical Prototype passes all 59 enumerated test rows, including the defined subcases, with logged terminal execution evidence.
+### Verification & Acceptance Gate (Deferred Formal Acceptance / Pre-release, NOT a Development Entry Gate)
+- [ ] Technical Prototype passes all 59 enumerated test rows, including the defined subcases, with logged terminal execution evidence. TP-01 remains unauthorized; therefore this full acceptance criterion cannot be completed unless the owner issues a separate explicit decision. Neither this checkbox nor any individual TP status is pre-approved.
 - [ ] Exact package metadata/peer requirements are captured with `npm view` for all pinned packages.
 - [ ] A lockfile is committed and `npm ci` succeeds without peer conflicts.
 - [ ] `npm ls --all` contains no incompatible duplicate Medusa core versions or missing peer dependencies.
