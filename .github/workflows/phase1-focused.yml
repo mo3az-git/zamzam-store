@@ -39,6 +39,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
+      - name: Check focused CI selector invariants
+        run: node scripts/test-focused-ci-selector.mjs
       - name: Select impacted suites (unknown changes fail closed to all)
         id: select
         env:
