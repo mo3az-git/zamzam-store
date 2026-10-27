@@ -128,6 +128,7 @@ export type Dictionary = {
   catalog: {
     breadcrumbHome: string
     breadcrumb: string
+    breadcrumbLabel: string
     kicker: string
     title: string
     intro: string
@@ -375,6 +376,7 @@ const ar: Dictionary = {
   catalog: {
     breadcrumbHome: "الرئيسية",
     breadcrumb: "المنتجات",
+    breadcrumbLabel: "مسار التنقل",
     kicker: "الكتالوج",
     title: "اكتشف المنتجات",
     intro: "البيانات المعروضة تأتي مباشرةً من قائمة المنتجات المنشورة في Medusa.",
@@ -652,6 +654,7 @@ const en: Dictionary = {
   catalog: {
     breadcrumbHome: "Home",
     breadcrumb: "Products",
+    breadcrumbLabel: "Breadcrumb",
     kicker: "Catalog",
     title: "Discover products",
     intro: "Everything shown here comes directly from the published product list in Medusa.",
