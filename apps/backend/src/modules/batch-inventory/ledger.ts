@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto"
 import { ContainerRegistrationKeys, MedusaError, Modules } from "@medusajs/framework/utils"
 import type { MedusaContainer } from "@medusajs/framework/types"
+import { normalizeEgpTotal } from "./native-payable-order-snapshot"
 
 type Row = Record<string, unknown>
 interface Sql {
@@ -72,20 +73,22 @@ const decimal4 = (value: string, signed = false) => {
   return match[1] && normalized !== "0.0000" ? "-" + normalized : normalized
 }
 const integerAmount = (value: unknown) => {
-  const text = typeof value === "string" || typeof value === "number" ? String(value) : String((value as { toString?: () => string })?.toString?.() ?? "")
+  const raw = value && typeof value === "object" && "value" in value ? (value as { value?: unknown }).value : value
+  const text = typeof raw === "string" ? raw : typeof raw === "number" && Number.isSafeInteger(raw) ? String(raw) : ""
   const match = text.match(/^(\d+)(?:\.(\d+))?$/)
   if (!match) throw conflict("INVALID_AUTHORITATIVE_ORDER_PRICE")
-  const fraction = (match[2] || "").padEnd(3, "0")
-  const cents = BigInt(match[1]) * 100n + BigInt(fraction.slice(0, 2) || "0") + (Number(fraction[2]) >= 5 ? 1n : 0n)
+  const fraction = match[2] || ""
+  if (fraction.slice(2).replace(/0/g, "") !== "") throw conflict("ORDER_PRICE_FRACTIONAL_MINOR_UNIT")
+  const cents = BigInt(match[1]) * 100n + BigInt((fraction + "00").slice(0, 2))
   if (cents > 999999999999n) throw conflict("INVALID_AUTHORITATIVE_ORDER_PRICE")
   return cents
 }
 const moneyString = (cents: bigint) => `${cents / 100n}.${String(cents % 100n).padStart(2, "0")}`
 interface NativeOrderLine extends Row {
   id: string; variant_id: string | null; metadata?: Record<string, unknown> | null
-  line_item_metadata?: Record<string, unknown> | null; unit_price: unknown
+  line_item_metadata?: Record<string, unknown> | null; unit_price: unknown; raw_unit_price?: unknown
   detail?: { quantity?: unknown } | null; quantity?: unknown
-  adjustments?: { amount: unknown }[] | null
+  adjustments?: { amount: unknown; raw_amount?: unknown }[] | null
 }
 interface NativeOrderSnapshot { id: string; version: number; lines: NativeOrderLine[] }
 
@@ -243,6 +246,18 @@ export class InventoryLedger {
     return { id: orderId, version: Number(order.version), lines: order.items as NativeOrderLine[] }
   }
 
+  private async assertEgpTotalPrecision(orderId: string) {
+    const query = this.container.resolve(ContainerRegistrationKeys.QUERY) as unknown as {
+      graph(input: Row): Promise<{ data: Row[] }>
+    }
+    const result = await query.graph({ entity: "order", fields: ["id", "currency_code", "total", "raw_total"],
+      filters: { id: orderId } })
+    if (result.data.length !== 1 || result.data[0].id !== orderId || typeof result.data[0].currency_code !== "string") {
+      throw conflict("AUTHORITATIVE_ORDER_SNAPSHOT_INVALID")
+    }
+    if (result.data[0].currency_code.toLowerCase() === "egp") normalizeEgpTotal(result.data[0].raw_total, true)
+  }
+
   private orderLineMap(order: NativeOrderSnapshot) {
     const result = new Map<string, { lineItemId: string; variantId: string; quantity: number; paidUnit: string }>()
     for (const line of order.lines) {
@@ -253,8 +268,8 @@ export class InventoryLedger {
       if (key === undefined || key === null || key === "") continue
       if (typeof key !== "string" || !uuid(key) || result.has(key) || !line.id || !line.variant_id) throw conflict("AMBIGUOUS_LINE_MAPPING")
       const count = quantity(Number(line.detail?.quantity ?? line.quantity))
-      const unitCents = integerAmount(line.unit_price)
-      const discountCents = (line.adjustments || []).reduce((sum, adjustment) => sum + integerAmount(adjustment.amount), 0n)
+      const unitCents = integerAmount(line.raw_unit_price ?? line.unit_price)
+      const discountCents = (line.adjustments || []).reduce((sum, adjustment) => sum + integerAmount(adjustment.raw_amount ?? adjustment.amount), 0n)
       const netCents = unitCents * BigInt(count) - discountCents
       if (netCents < 0n) throw conflict("INVALID_AUTHORITATIVE_ORDER_PRICE")
       const paidUnitCents = (netCents + BigInt(Math.floor(count / 2))) / BigInt(count)
@@ -270,12 +285,13 @@ export class InventoryLedger {
       new Set(input.validatedReservationIds).size !== input.validatedReservationIds.length) throw conflict("INVALID_VALIDATED_RESERVATION_SET")
     await this.assertRedisOwner(input)
     const preflight = await this.readCorrelatedOrder(input.orderId, input.cartId)
-    const preflightLines = this.orderLineMap(preflight)
     const validatedIds = [...input.validatedReservationIds].sort()
     return this.transaction(async (tx) => {
       // Existing-order root must precede session/attempt, batch, and child locks.
       await tx.raw("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", ["phase0:order:" + input.orderId])
       await this.hooks.event?.("order_advisory_lock_acquired", { orderId: input.orderId })
+      await this.assertEgpTotalPrecision(input.orderId)
+      const preflightLines = this.orderLineMap(preflight)
       const order = await this.readCorrelatedOrder(input.orderId, input.cartId)
       const lines = this.orderLineMap(order)
       if (order.version !== preflight.version || JSON.stringify([...lines]) !== JSON.stringify([...preflightLines])) throw conflict("AUTHORITATIVE_ORDER_CHANGED_DURING_CONVERSION")
