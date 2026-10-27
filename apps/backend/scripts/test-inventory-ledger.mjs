@@ -8,7 +8,7 @@ import {
 } from "./shared/tp-harness.mjs"
 
 const tpId = process.argv[2]
-if (!["TP-06a", "TP-06b", "TP-07a", "TP-07b", "TP-09", "TP-10", "TP-24c", "TP-08-native-integration", "TP-08-recovery"].includes(tpId)) throw new Error("Unsupported inventory TP: " + tpId)
+if (!["TP-06a", "TP-06b", "TP-07a", "TP-07b", "TP-09", "TP-10", "TP-24c", "TP-08-native-integration", "TP-08-recovery", "TP-05-native-order-binding"].includes(tpId)) throw new Error("Unsupported inventory TP: " + tpId)
 if (process.env.PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP !== "true") throw new Error("Disposable database create/drop opt-in is required")
 const rootRequire = registerTsNode()
 const { Modules, ContainerRegistrationKeys } = await import("@medusajs/framework/utils")
@@ -183,6 +183,71 @@ try {
   const conversionInput = (fixture, order, reservationIds) => ({ ...fixture.authority, orderId: order.id, validatedReservationIds: reservationIds })
   const convert = (fixture, order, ids, hooks) => new InventoryLedger(runtime.container, hooks).convertCartReservationsToAllocations(conversionInput(fixture, order, ids))
   const saveSnapshot = async (batchIds) => snapshotTables(adminPg, batchIds)
+
+  if (tpId === "TP-05-native-order-binding") {
+    // Unlike the zero-total native complete-cart suite, this is a real
+    // positive-value native ORDER + inventory allocation + payment-branch
+    // boundary. It does not assert that a payable completeCartWorkflow ran.
+    const { recordPaymentForCorrelatedOrder } = await import(
+      "../src/modules/order-operations/verified-payment-bridge.mjs")
+    const orderService = runtime.container.resolve(Modules.ORDER)
+    const batch = await makeBatch(25, 90, "payable-order-binding")
+    dbBefore = await saveSnapshot([batch.id])
+    const money = (value) => {
+      const raw = String(value ?? "")
+      if (!/^(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,2})?$/.test(raw)) throw new Error("NATIVE_TOTAL_NOT_CANONICAL: " + raw)
+      const [whole,frac = ""] = raw.split(".")
+      return whole + "." + frac.padEnd(2,"0")
+    }
+    for (const method of ["cod","electronic"]) {
+      const fixture = await makeCart([{ quantity: 2 }], "real-payable-"+method)
+      if (method === "electronic") await adminPg.query(
+        "UPDATE cart_checkout_attempt SET payment_method='electronic' WHERE checkout_attempt_id=$1::uuid",
+        [fixture.authority.attemptId])
+      await new InventoryLedger(runtime.container).reserveCart(fixture.authority)
+      const order = await makeNativeOrder(fixture)
+      const reservationIds = (await reservationsFor(fixture.authority.attemptId)).map(x=>x.id)
+      const allocation = await convert(fixture, order, reservationIds)
+      const nativeReader = async (orderId) => {
+        const native = await orderService.retrieveOrder(orderId,{relations:["items","items.detail"]})
+        return {id:native.id,currency_code:native.currency_code,total:money(native.total)}
+      }
+      const native = await nativeReader(order.id)
+      check("native_order_has_real_positive_EGP_total_"+method,true,
+        {orderId:order.id,cartId:fixture.cart.id,total:native.total},
+        native.id===order.id && native.currency_code==="egp" && native.total!=="0.00" &&
+        /^(?:0|[1-9][0-9]*)\\.[0-9]{2}$/.test(native.total))
+      const attempt = (await adminPg.query(
+        "SELECT idempotency_key FROM cart_checkout_attempt WHERE checkout_attempt_id=$1::uuid",
+        [fixture.authority.attemptId])).rows[0]
+      const binding = {...fixture.authority,orderId:order.id,idempotencyKey:attempt.idempotency_key,
+        claimCodeHash:createHash("sha256").update("isolated-"+fixture.authority.attemptId).digest("hex")}
+      const first = await recordPaymentForCorrelatedOrder(adminPg,binding,nativeReader)
+      const replay = await recordPaymentForCorrelatedOrder(adminPg,binding,nativeReader)
+      const operational=(await adminPg.query(
+        "SELECT payment_method FROM order_operational_state WHERE order_id=$1 AND deleted_at IS NULL",
+        [order.id])).rows
+      const cod=(await adminPg.query(
+        "SELECT expected_amount FROM cod_collection_record WHERE order_id=$1 AND deleted_at IS NULL",
+        [order.id])).rows
+      const electronic=(await adminPg.query(
+        "SELECT amount,provider_key FROM electronic_payment_attempt WHERE order_id=$1 AND deleted_at IS NULL",
+        [order.id])).rows
+      check("positive_native_order_allocated_before_payment_"+method,true,{allocation,first},
+        allocation && first.orderId===order.id && first.method===method)
+      check("native_order_selects_exactly_one_payment_branch_"+method,true,
+        {operational,cod,electronic,native},operational.length===1 &&
+        operational[0].payment_method===method &&
+        cod.length===Number(method==="cod") &&
+        electronic.length===Number(method==="electronic") &&
+        (method==="cod" ? cod[0]?.expected_amount===native.total :
+          electronic[0]?.amount===native.total && electronic[0]?.provider_key==="phase1-simulator"))
+      check("verified_payment_order_replay_idempotent_"+method,true,{first,replay},
+        replay.orderId===order.id && replay.method===method && replay.amountCurrency==="EGP")
+    }
+    dbAfter = await saveSnapshot([batch.id])
+    status = "passed"
+  }
 
   if (tpId === "TP-08-recovery") {
     const { runNativeRecoveryScenarios } = await import("./test-native-recovery-scenarios.mjs")
