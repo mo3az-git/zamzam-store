@@ -131,6 +131,7 @@ export default async function ProductPage({ params }: { params: Promise<ProductP
           <Suspense fallback={null}>
             <AddToCartPreview
               variantId={product.variants?.[0]?.id ?? ""}
+              variantIds={product.variants?.map((variant) => variant.id) ?? []}
               locale={locale as Locale}
               allowSyntheticPreview={process.env.VERCEL_ENV === "preview" && process.env.ZAMZAM_SYNTHETIC_PREVIEW === "true"}
             />

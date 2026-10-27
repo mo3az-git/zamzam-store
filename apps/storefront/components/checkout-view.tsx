@@ -67,7 +67,9 @@ export function CheckoutView({ locale, isQaMode, initialCart = null }: CheckoutV
         deliveryAddress: false,
         shippingMethod: false,
         shippingPrice: false,
-        payableTotal: Boolean(activeCart?.subtotal),
+        // A cart subtotal is not the payable total; shipping and backend
+        // preflight have not been confirmed in this UI state.
+        payableTotal: false,
       },
     }
   })
@@ -382,6 +384,17 @@ export function CheckoutView({ locale, isQaMode, initialCart = null }: CheckoutV
                 />
               </div>
 
+              <fieldset className="lux-form-group" disabled aria-describedby="payment-method-unavailable">
+                <legend className="lux-label">{dict.checkout.paymentMethodHeading}</legend>
+                <label className="lux-cart-item-meta">
+                  <input type="radio" name="paymentMethod" value="cod" disabled /> {dict.checkout.codOption}
+                </label>
+                <label className="lux-cart-item-meta">
+                  <input type="radio" name="paymentMethod" value="electronic" disabled /> {dict.checkout.electronicOption}
+                </label>
+                <p id="payment-method-unavailable" className="lux-checkout-disabled-hint">{dict.checkout.paymentUnavailable}</p>
+              </fieldset>
+
               {/* Actions & Simulation Control */}
               <div className="lux-checkout-actions">
                 {isQaMode ? (
@@ -552,3 +565,4 @@ export function CheckoutView({ locale, isQaMode, initialCart = null }: CheckoutV
     </div>
   )
 }
+

@@ -2,10 +2,12 @@
 
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
+import { useEffect, useState } from "react"
 import { getDictionary, localePath, type Locale } from "../lib/i18n"
 import { formatEgpAmount } from "../lib/medusa"
 import type { SanitizedCart } from "../lib/cart-types"
 import { SYNTHETIC_CART_PREVIEW_FIXTURE } from "../lib/cart-types"
+import { newCartRequestId, requestCartBff, type CartBffSnapshot } from "../lib/cart-bff"
 
 export interface CartViewProps {
   locale: Locale
@@ -17,22 +19,51 @@ export interface CartViewProps {
 /**
  * Bilingual, accessible Cart View Component (Phase 4 MVP).
  *
- * Designed to consume authoritative `SanitizedCart` data from Medusa:
+ * Designed to consume authoritative Agent 2 guest-cart snapshots:
  * - Empty cart state with return-to-shopping navigation.
  * - Populated cart state with authoritative unit prices and Medusa totals.
  * - Clear nonproduction preview badges and system notices.
- * - Strictly read-only: does not execute live checkout or payment transactions.
+ * - Updates and removes lines through versioned guest-session BFF operations.
+ * - Does not execute checkout or payment transactions.
  */
 export function CartView({ locale, initialCart = null, errorCode = null, allowSyntheticPreview = false }: CartViewProps) {
   const dict = getDictionary(locale)
   const searchParams = useSearchParams()
+  const [serverCart, setServerCart] = useState<CartBffSnapshot | null>(null)
+  const [cartReadComplete, setCartReadComplete] = useState(false)
+  const [mutationError, setMutationError] = useState(false)
   const isPreviewParam = allowSyntheticPreview && searchParams?.get("preview") === "sample"
 
   // Use synthetic fixture in nonproduction preview mode when no live cart is provided
   const activeCart: SanitizedCart | null =
     initialCart ?? (isPreviewParam ? SYNTHETIC_CART_PREVIEW_FIXTURE : null)
 
-  const items = activeCart?.items ?? []
+  useEffect(() => {
+    if (isPreviewParam || initialCart) { setCartReadComplete(true); return }
+    let active = true
+    void requestCartBff({ operation: "read", requestId: newCartRequestId() }).then((result) => {
+      if (!active) return
+      if (result.success && result.data.ok) setServerCart(result.data.cart)
+      setMutationError(!result.success)
+      setCartReadComplete(true)
+    })
+    return () => { active = false }
+  }, [initialCart, isPreviewParam])
+
+  const mutateItem = async (lineItemId: string, quantity?: number) => {
+    if (!serverCart) return
+    setMutationError(false)
+    const result = await requestCartBff(quantity === undefined
+      ? { operation: "remove_item", requestId: newCartRequestId(), expectedVersion: serverCart.version, lineItemId }
+      : { operation: "update_item", requestId: newCartRequestId(), expectedVersion: serverCart.version, lineItemId, quantity })
+    if (result.success && result.data.ok && result.data.cart) setServerCart(result.data.cart)
+    else setMutationError(true)
+  }
+
+  const items = serverCart?.items.map((line) => ({
+    id: line.lineItemId, title: line.title, variant_id: line.variantId, quantity: line.quantity,
+    unit_price: line.unitPrice.amount, total: line.total.amount, availability: line.availability,
+  })) ?? activeCart?.items ?? []
   const hasItems = items.length > 0
   const catalogUrl = localePath(locale, "/products")
   const checkoutUrl = localePath(locale, "/checkout")
@@ -44,7 +75,7 @@ export function CartView({ locale, initialCart = null, errorCode = null, allowSy
           <span className="lux-eyebrow">{dict.brand.name}</span>
           <h1 className="lux-cart-title">{dict.cart.title}</h1>
         </div>
-        <span className="lux-cart-badge">{dict.cart.previewBadge}</span>
+        {isPreviewParam ? <span className="lux-cart-badge">{dict.cart.previewBadge}</span> : null}
       </div>
 
       {errorCode ? (
@@ -61,8 +92,11 @@ export function CartView({ locale, initialCart = null, errorCode = null, allowSy
           </p>
         </div>
       ) : null}
+      {mutationError ? <div className="notice notice-error" role="alert">{dict.cart.cartServiceUnavailable}</div> : null}
 
-      {!hasItems ? (
+      {!cartReadComplete && !hasItems ? (
+        <div className="lux-cart-empty" role="status" aria-live="polite">{dict.cart.loadingCart}</div>
+      ) : !hasItems ? (
         <div className="lux-cart-empty" role="status">
           <div className="lux-cart-empty-icon" aria-hidden="true">
             🛒
@@ -82,8 +116,8 @@ export function CartView({ locale, initialCart = null, errorCode = null, allowSy
           <div className="lux-cart-items-container">
             <ul className="lux-cart-items" aria-label={dict.cart.title}>
               {items.map((item, index) => {
-                const unitPriceFormatted = formatEgpAmount(item.unit_price, locale)
-                const lineTotalFormatted = formatEgpAmount(item.total, locale)
+                const unitPriceFormatted = formatCartAmount(item.unit_price, locale)
+                const lineTotalFormatted = formatCartAmount(item.total, locale)
                 return (
                   <li key={item.id || `item-${index}`} className="lux-cart-item">
                     <div className="lux-cart-item-details">
@@ -97,6 +131,11 @@ export function CartView({ locale, initialCart = null, errorCode = null, allowSy
                         <span className="lux-cart-item-qty">
                           {dict.cart.quantityHeader}: {item.quantity}
                         </span>
+                        {"availability" in item ? (
+                          <span className="lux-cart-item-qty" role="status">
+                            {item.availability === "available" ? dict.availability.available.label : item.availability === "unavailable" ? dict.availability.unavailable.label : dict.availability.unknown.label}
+                          </span>
+                        ) : null}
                         {unitPriceFormatted ? (
                           <span className="lux-cart-item-price">
                             {dict.cart.unitPriceLabel}: {unitPriceFormatted}
@@ -108,6 +147,15 @@ export function CartView({ locale, initialCart = null, errorCode = null, allowSy
                       <span className="lux-cart-subtotal-label">{dict.cart.subtotalLabel}</span>
                       <strong>{lineTotalFormatted ?? dict.product.priceUnavailable}</strong>
                     </div>
+                    {serverCart ? (
+                      <div className="lux-cart-item-actions" aria-label={dict.cart.updateCart}>
+                        <button type="button" className="lux-qty-btn" aria-label={dict.cart.decreaseQuantity}
+                          disabled={item.quantity <= 1} onClick={() => mutateItem(item.id, item.quantity - 1)}>−</button>
+                        <button type="button" className="lux-qty-btn" aria-label={dict.cart.increaseQuantity}
+                          disabled={item.quantity >= 100} onClick={() => mutateItem(item.id, item.quantity + 1)}>+</button>
+                        <button type="button" className="button button-secondary" onClick={() => mutateItem(item.id)}>{dict.cart.removeItem}</button>
+                      </div>
+                    ) : null}
                   </li>
                 )
               })}
@@ -127,16 +175,23 @@ export function CartView({ locale, initialCart = null, errorCode = null, allowSy
             <div className="lux-cart-summary-row">
               <span>{dict.cart.subtotalHeader}</span>
               <strong>
-                {formatEgpAmount(activeCart?.subtotal, locale) ?? dict.product.priceUnavailable}
+                {serverCart ? formatCartAmount(serverCart.subtotal.amount, locale) : formatEgpAmount(activeCart?.subtotal, locale) ?? dict.product.priceUnavailable}
               </strong>
             </div>
 
             <div className="lux-cart-summary-row lux-cart-summary-total">
               <span>{dict.cart.totalLabel}</span>
               <strong className="lux-cart-grand-total">
-                {formatEgpAmount(activeCart?.total, locale) ?? dict.product.priceUnavailable}
+                {serverCart?.shipping
+                  ? formatCartAmount(serverCart.total.amount, locale) ?? dict.product.priceUnavailable
+                  : isPreviewParam
+                    ? formatEgpAmount(activeCart?.total, locale) ?? dict.product.priceUnavailable
+                    : dict.product.priceUnavailable}
               </strong>
             </div>
+            {!serverCart?.shipping && !isPreviewParam ? (
+              <p className="lux-cart-notice-authoritative" role="note">{dict.cart.cartTotalUnavailable}</p>
+            ) : null}
 
             <div className="lux-cart-actions">
               <Link
@@ -165,3 +220,10 @@ export function CartView({ locale, initialCart = null, errorCode = null, allowSy
     </div>
   )
 }
+
+function formatCartAmount(amount: number | string | null, locale: Locale): string | null {
+  const value = typeof amount === "string" && /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(amount) ? Number(amount) : amount
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null
+  return new Intl.NumberFormat(locale === "ar" ? "ar-EG" : "en-EG", { style: "currency", currency: "EGP" }).format(value)
+}
+

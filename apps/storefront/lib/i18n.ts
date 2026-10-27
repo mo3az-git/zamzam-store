@@ -208,6 +208,14 @@ export type Dictionary = {
     addToCartButton: string
     addingToCart: string
     addedSuccess: string
+    cartServiceUnavailable: string
+    decreaseQuantity: string
+    increaseQuantity: string
+    removeItem: string
+    updateCart: string
+    cartItemUpdated: string
+    loadingCart: string
+    cartTotalUnavailable: string
     disabledNotice: string
     checkoutDisabledNotice: string
     goToCheckout: string
@@ -257,6 +265,10 @@ export type Dictionary = {
     previewBadge: string
     qaSimulateButton: string
     disabledSubmitButton: string
+    paymentMethodHeading: string
+    codOption: string
+    electronicOption: string
+    paymentUnavailable: string
     qaSuccessTitle: string
     qaSuccessNotice: string
     emailLabel: string
@@ -478,6 +490,14 @@ const ar: Dictionary = {
     addToCartButton: "إضافة إلى السلة (معاينة)",
     addingToCart: "جاري الإضافة...",
     addedSuccess: "تمت الإضافة إلى السلة بنجاح",
+    cartServiceUnavailable: "خدمة السلة غير متاحة حاليًا. لم يتم تغيير سلتك.",
+    decreaseQuantity: "تقليل الكمية",
+    increaseQuantity: "زيادة الكمية",
+    removeItem: "حذف المنتج من السلة",
+    updateCart: "تحديث السلة",
+    cartItemUpdated: "تم تحديث السلة من الخادم.",
+    loadingCart: "جارٍ تحميل سلتك من الخادم…",
+    cartTotalUnavailable: "الإجمالي المستحق غير متاح حتى يؤكد الخادم رسوم التوصيل.",
     disabledNotice: "خاصية الشراء غير مفعّلة في الإصدار الحالي.",
     checkoutDisabledNotice: "إتمام الطلب والدفع غير مفعلين في هذه المرحلة.",
     goToCheckout: "متابعة بيانات التوصيل (معاينة)",
@@ -532,6 +552,10 @@ const ar: Dictionary = {
     previewBadge: "معاينة تجريبية",
     qaSimulateButton: "التحقق من بيانات التوصيل (محاكاة QA)",
     disabledSubmitButton: "إتمام الطلب معطّل حاليًا",
+    paymentMethodHeading: "طريقة الدفع (غير متاحة حاليًا)",
+    codOption: "الدفع عند الاستلام",
+    electronicOption: "الدفع الإلكتروني",
+    paymentUnavailable: "سيتم تفعيل خيارات الدفع بعد اعتمادها. لا يتم إنشاء طلب أو تحصيل أي مبلغ هنا.",
     qaSuccessTitle: "تم التحقق من بيانات التوصيل بنجاح (محاكاة QA)",
     qaSuccessNotice:
       "هذه محاكاة تدقيق فني فقط. إتمام الطلبات الفعلي، وتحديد رسوم الشحن، ومعالجة الدفع معطّلة بالكامل حتى اعتماد مسار الدفع المركزي.",
@@ -756,6 +780,14 @@ const en: Dictionary = {
     addToCartButton: "Add to Cart (Preview)",
     addingToCart: "Adding...",
     addedSuccess: "Successfully added to cart",
+    cartServiceUnavailable: "The cart service is unavailable. Your cart was not changed.",
+    decreaseQuantity: "Decrease quantity",
+    increaseQuantity: "Increase quantity",
+    removeItem: "Remove item from cart",
+    updateCart: "Update cart",
+    cartItemUpdated: "The cart was updated by the server.",
+    loadingCart: "Loading your cart from the server…",
+    cartTotalUnavailable: "Payable total is unavailable until the server confirms shipping.",
     disabledNotice: "Purchasing actions are disabled in this release.",
     checkoutDisabledNotice: "Checkout and payment are not active in this stage.",
     goToCheckout: "Proceed to Delivery Details (Preview)",
@@ -810,6 +842,10 @@ const en: Dictionary = {
     previewBadge: "Nonproduction Preview",
     qaSimulateButton: "Validate Delivery Details (QA Simulation)",
     disabledSubmitButton: "Checkout Disabled",
+    paymentMethodHeading: "Payment method (not available)",
+    codOption: "Cash on delivery",
+    electronicOption: "Electronic payment",
+    paymentUnavailable: "Payment choices will be enabled after approval. This page does not create orders or collect payment.",
     qaSuccessTitle: "Delivery Details Validated (QA Simulation)",
     qaSuccessNotice:
       "This is a technical validation preview only. Real order creation, live shipping quotes, and payment gateways remain locked until central store authorization.",

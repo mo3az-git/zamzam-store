@@ -145,9 +145,17 @@ test("5. Absence of accidental checkout or payment action across cart components
     "CartView must include disabled checkout notice"
   )
 
-  // AddToCartPreview must be hidden by default unless preview=cart is present
+  // A preview is never inferred from a URL alone; regular cart actions use the
+  // same-origin BFF and never receive browser-owned prices/cart identifiers.
   assert.ok(
     addToCartSrc.includes('searchParams?.get("preview") === "cart"'),
     "AddToCartPreview must require explicit preview=cart parameter"
   )
+  assert.match(addToCartSrc, /requestCartBff\(/)
+  assert.match(addToCartSrc, /expectedVersion:\s*cart\.version/)
+  assert.match(cartViewSrc, /operation:\s*"update_item"/)
+  assert.match(cartViewSrc, /operation:\s*"remove_item"/)
+  assert.match(cartPageSrc, /allowSyntheticPreview/)
+  assert.match(addToCartSrc, /resolveSelectedVariantId\(/)
 })
+

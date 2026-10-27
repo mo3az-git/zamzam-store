@@ -41,7 +41,7 @@ test("ARG-B03 catalog categories/search and interactive gallery",async({page},in
  await expect(page.locator(".detail-main-photo")).toHaveAttribute("src",/\/images\/two\.svg$/)
  await evidence(page,info,"b03-gallery")
 })
-test("ARG-B04 verifies EGP region context and no purchase CTA",async({page,request},info)=>{
+test("ARG-B04 verifies EGP catalog context and non-authoritative cart fails closed",async({page,request},info)=>{
  await page.goto("/en/products/qa-fixture-1")
  await expect(page.locator(".detail-price")).toContainText(/EGP/)
  const ld=JSON.parse(await page.locator('script[type="application/ld+json"]').textContent())
@@ -49,8 +49,26 @@ test("ARG-B04 verifies EGP region context and no purchase CTA",async({page,reque
  expect(ld).not.toHaveProperty("offers") // The MVP is catalog-only; no purchasable Offer
  const observed=await (await request.get("http://127.0.0.1:9091/__observed")).json()
  expect(observed.requests.some(r=>r.path==="/store/products"&&r.params.region_id==="reg_qa_egp"&&r.params.fields.includes("+variants.calculated_price"))).toBe(true)
- await expect(page.getByRole("button",{name:/buy|purchase|checkout|اشتر|إتمام الطلب/i})).toHaveCount(0)
+ await expect(page.getByRole("button",{name:"Add to Cart"})).toBeVisible()
+ await page.getByRole("button",{name:"Add to Cart"}).click()
+ await expect(page.getByRole("alert")).toContainText("cart service is unavailable")
+ await expect(page.getByText("Successfully added to cart")).toHaveCount(0)
  await evidence(page,info,"b04-egp")
+})
+test("ARG-B06 cart remains session-scoped and bilingual while checkout is disabled",async({page},info)=>{
+ await page.goto("/cart")
+ await expect(page.locator("html")).toHaveAttribute("dir","rtl")
+ await expect(page.getByRole("heading",{name:"سلة المشتريات"})).toBeVisible()
+ await expect(page.getByRole("alert")).toContainText("خدمة السلة غير متاحة")
+ await page.goto("/en/cart")
+ await expect(page.locator("html")).toHaveAttribute("dir","ltr")
+ await expect(page.getByRole("heading",{name:"Shopping Cart"})).toBeVisible()
+ await expect(page.getByRole("alert")).toContainText("cart service is unavailable")
+ await page.goto("/en/checkout")
+ await expect(page.locator('input[name="paymentMethod"][value="cod"]')).toBeDisabled()
+ await expect(page.locator('input[name="paymentMethod"][value="electronic"]')).toBeDisabled()
+ await expect(page.getByRole("button",{name:/Checkout Disabled/})).toBeDisabled()
+ await evidence(page,info,"b06-checkout-disabled")
 })
 test("ARG-B05 mobile keyboard skip link and no overflow",async({page},info)=>{
  await page.setViewportSize({width:390,height:844})
