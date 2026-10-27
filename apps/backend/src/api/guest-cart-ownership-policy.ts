@@ -1,6 +1,7 @@
 import type { MedusaContainer } from "@medusajs/framework/types"
 import type { GuestCartOwnershipResult } from "../modules/batch-inventory/guest-cart-ownership"
-import { GUEST_CART_SESSION_COOKIE, getGuestCartSessionSecret } from "./guest-cart-session-transport"
+import { getGuestCartSessionSecret } from "./guest-cart-session-transport"
+export { GUEST_CART_SESSION_COOKIE, getGuestCartSessionSecret } from "./guest-cart-session-transport"
 
 /**
  * The raw random secret is created only by a trusted server-side cart issuer
