@@ -225,15 +225,16 @@ try {
   // Fault the guard's PostgreSQL query itself. The real Express middleware and
   // native handler are still exercised; the injected failure must fail closed.
   const pgConnection = container.resolve(ContainerRegistrationKeys.PG_CONNECTION)
-  const originalRaw = pgConnection.raw
+  const knexClient = pgConnection.client
+  const originalQuery = knexClient.query
   const privateDatabaseDetail = "private-db-integration-detail-" + fixtureId
   let interceptedSessionQuery = 0
-  pgConnection.raw = function(sql, ...args) {
-    if (typeof sql === "string" && sql.includes("SELECT status FROM cart_checkout_session")) {
+  knexClient.query = function(connection, query) {
+    if (typeof query?.sql === "string" && query.sql.toLowerCase().includes("select status from cart_checkout_session")) {
       interceptedSessionQuery++
-      throw new Error("database host " + privateDatabaseDetail)
+      return Promise.reject(new Error("database host " + privateDatabaseDetail))
     }
-    return originalRaw.call(this, sql, ...args)
+    return originalQuery.call(this, connection, query)
   }
   try {
     before = await cartSnapshot()
@@ -246,7 +247,7 @@ try {
     })
     assert.deepEqual(await cartSnapshot(), before)
   } finally {
-    pgConnection.raw = originalRaw
+    delete knexClient.query
   }
 
   // Exercise the real locking provider and HTTP error middleware with a
