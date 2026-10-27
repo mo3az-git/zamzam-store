@@ -168,7 +168,7 @@ assert.equal(response.response.checkout.status, "ready_for_review")
 assert.equal(validateCartBffResponse(response.response).valid, true)
 assert.equal(mutationCount, 0, "preflight performs no cart, payment, reservation, or order writes")
 assert.equal(response.rejectedBeforeMutation, true)
-assert.equal(response.response.checkout.blockers.length, 0)
+assert.equal(response.response.blockers.length, 0, "the public BFF places sanitized blockers at top level")
 
 replayState = "conflict"
 const conflict = await executeCartBffRequest({
