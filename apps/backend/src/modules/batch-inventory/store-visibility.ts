@@ -28,14 +28,18 @@ const record = (value: unknown): Record<string, unknown> | null =>
 const policy = (metadata: unknown): number | null => {
   const root = record(metadata)
   const packaging = record(root?.packaging)
-  const days = packaging?.min_shelf_life_days
-  return typeof days === "number" && Number.isSafeInteger(days) &&
-    days >= 0 && days <= 365 ? days : null
+  const raw = packaging?.min_shelf_life_days
+  // Preserve the ledger-compatible canonical numeric-string policy, but keep
+  // this display-only projection conservatively bounded at 365 days.
+  const days = typeof raw === "number" ? raw :
+    typeof raw === "string" && /^(0|[1-9]\\d*)$/.test(raw) ? Number(raw) : NaN
+  return Number.isSafeInteger(days) && days >= 0 && days <= 365 ? days : null
 }
 
 /**
  * Restrict variants to products explicitly published in one of the sales
- * channels of the validated publishable-key context. A query failure, empty
+ * channels of the validated publishable-key context. Only batch-managed
+ * variants with manage_inventory exactly false may return visible. A query failure, empty
  * scope, missing association, missing publication state or unexpected record
  * never authorizes a stock read. Product metadata is not browser supplied.
  *
@@ -66,7 +70,7 @@ export async function resolveScopedVariantPolicies(
     // Confirmed Medusa Query entity/relations: "variant", "product.sales_channels.id".
     const response = await query.graph({
       entity: "variant",
-      fields: ["id", "metadata", "product.id", "product.status", "product.sales_channels.id"],
+      fields: ["id", "metadata", "manage_inventory", "product.id", "product.status", "product.sales_channels.id"],
       filters: { id: [...variantIds] },
     })
     if (!response || !Array.isArray(response.data)) return unknown()
@@ -78,7 +82,7 @@ export async function resolveScopedVariantPolicies(
       const product = record(variant.product)
       const channels = product?.sales_channels
       const published = product?.status === "published" && identifier(product?.id)
-      const allowed = published && Array.isArray(channels) && channels.some((entry: unknown) => {
+      const allowed = published && variant.manage_inventory === false && Array.isArray(channels) && channels.some((entry: unknown) => {
         const channel = record(entry)
         return identifier(channel?.id) && scoped.has(channel.id)
       })

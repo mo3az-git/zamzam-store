@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { resolveScopedVariantPolicies } from "../src/modules/batch-inventory/store-visibility.ts"
 
 const visible = (id="variant_1", status="published", channels=["sc_public"], days=30) => ({
- id, metadata: {packaging: {min_shelf_life_days: days}},
+ id, manage_inventory:false, metadata: {packaging: {min_shelf_life_days: days}},
  product: {id:"prod_1", status, sales_channels:channels.map(id=>({id}))}
 })
 const query = (data, {fail=false}={}) => {
@@ -20,14 +20,16 @@ test("published product and trusted publishable-key sales channel allow internal
  const q=query([visible()])
  const result=await resolveScopedVariantPolicies(q,["variant_1"],["sc_public"])
  assert.deepEqual(result,[{variantId:"variant_1",visible:true,minShelfLifeDays:30}])
- assert.deepEqual(q.calls,[{entity:"variant",fields:["id","metadata","product.id","product.status","product.sales_channels.id"],filters:{id:["variant_1"]}}])
+ assert.deepEqual(q.calls,[{entity:"variant",fields:["id","metadata","manage_inventory","product.id","product.status","product.sales_channels.id"],filters:{id:["variant_1"]}}])
 })
 test("different sales channel and draft/unpublished products are denied",async()=>{
  for(const rows of [[visible("variant_1","published",["sc_other"])],
    [visible("variant_1","draft",["sc_public"])],
    [visible("variant_1","published",[])],
    [{id:"variant_1",metadata: {packaging:{min_shelf_life_days:30}},product:{id:"prod_1",sales_channels:[{id:"sc_public"}]}}],
-   [{id:"variant_1",product:null}]]) {
+   [{id:"variant_1",product:null}],
+   [{...visible(),manage_inventory:true}],
+   [{...visible(),manage_inventory:null}]]) {
   assert.deepEqual(await resolveScopedVariantPolicies(query(rows),["variant_1"],["sc_public"]),[denied()])
  }
 })
@@ -65,4 +67,23 @@ test("trusted scope across multiple sales channels and missing requested variant
   query([visible("variant_1","published",["sc_second"],0)]),
   ["variant_1","variant_2"],["sc_first","sc_second"])
  assert.deepEqual(results,[{variantId:"variant_1",visible:true,minShelfLifeDays:0},denied("variant_2")])
+})
+
+test("ledger-compatible managed-stock flag and numeric string shelf-life policy", async()=>{
+  for(const manage_inventory of [true,null,undefined,"false",1]){
+    const q=query([{...visible(),manage_inventory}])
+    assert.deepEqual(await resolveScopedVariantPolicies(q,["variant_1"],["sc_public"]),[denied()])
+  }
+  for(const raw of ["30","0","365"]){
+    const q=query([visible("variant_1","published",["sc_public"],raw)])
+    assert.deepEqual(await resolveScopedVariantPolicies(q,["variant_1"],["sc_public"]),[
+      {variantId:"variant_1",visible:true,minShelfLifeDays:Number(raw)}
+    ])
+  }
+  for(const raw of ["01"," 30 ","-1","1e2", "366", "10000000000000000"]){
+    const q=query([visible("variant_1","published",["sc_public"],raw)])
+    assert.deepEqual(await resolveScopedVariantPolicies(q,["variant_1"],["sc_public"]),[
+      {variantId:"variant_1",visible:true,minShelfLifeDays:null}
+    ])
+  }
 })
