@@ -23,6 +23,7 @@
     "spike:medusa-loader": "node scripts/check-medusa-cli-tsconfig-paths.cjs",
     "spike:tp-readiness": "node scripts/assess-phase1-tp-readiness.mjs",
     "spike:target-validator": "node apps/backend/scripts/test-disposable-target-validator.mjs",
+    "spike:guest-cart-ownership-integration": "node apps/backend/scripts/test-guest-cart-ownership-integration.mjs",
     "spike:tp02b-unit": "node apps/backend/scripts/check-tp02b-heartbeat-unit.mjs",
     "spike:tp02b": "node scripts/run-tp-with-evidence.mjs TP-02b",
     "spike:tp02c-unit": "node apps/backend/scripts/check-tp02c-cas-abort-unit.mjs",
