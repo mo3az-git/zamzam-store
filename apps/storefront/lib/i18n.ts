@@ -236,6 +236,18 @@ export type Dictionary = {
     shippingHeader: string
     shippingPending: string
     shippingNotice: string
+    shippingStates: {
+      shipping_rate_unconfigured: string
+      shipping_quote_pending: string
+      shipping_quote_unavailable: string
+      shipping_ready: string
+    }
+    shippingStateNotices: {
+      shipping_rate_unconfigured: string
+      shipping_quote_pending: string
+      shipping_quote_unavailable: string
+      shipping_ready: string
+    }
     payableTotalNotice: string
     itemsSubtotal: string
     disabledNotice: string
@@ -493,6 +505,22 @@ const ar: Dictionary = {
     shippingPending: "يتم تحديدها لاحقًا من قِبل المتجر",
     shippingNotice:
       "لا يتم احتساب أو تخمين رسوم التوصيل من الواجهة؛ سيتم تحديدها واعتمادها عبر نظام المتجر عند تأكيد الطلب.",
+    shippingStates: {
+      shipping_rate_unconfigured: "تسعيرة المحافظة قيد الإعداد",
+      shipping_quote_pending: "في انتظار تحديد المحافظة",
+      shipping_quote_unavailable: "تسعيرة الشحن غير متوفرة",
+      shipping_ready: "تسعيرة الشحن معتمدة",
+    },
+    shippingStateNotices: {
+      shipping_rate_unconfigured:
+        "لم يتم اعتماد تسعيرة الشحن الرسمية لهذه المحافظة بعد؛ لا يمكن إتمام الطلب بدون تسعيرة معتمدة.",
+      shipping_quote_pending:
+        "يرجى اختيار محافظة التوصيل لعرض تسعيرة الشحن المعتمدة فور توفرها.",
+      shipping_quote_unavailable:
+        "تعذر الحصول على تسعيرة شحن موثوقة لوجهة التوصيل المختارة حالياً.",
+      shipping_ready:
+        "تسعيرة الشحن المعروضة مستخرجة وموثقة رسمياً من نظام المتجر؛ الشراء الفعلي معطل في هذه النسخة التجريبية.",
+    },
     payableTotalNotice: "الإجمالي النهائي المستحق يُحدد بعد اعتماد رسوم التوصيل.",
     itemsSubtotal: "المجموع المعتمد للمنتجات",
     disabledNotice: "خاصية إتمام الطلبات والدفع معطّلة حاليًا في هذه النسخة التجريبية.",
@@ -753,6 +781,22 @@ const en: Dictionary = {
     shippingPending: "Pending store confirmation",
     shippingNotice:
       "Delivery fees are never calculated or estimated by the browser; they will be confirmed via the store system.",
+    shippingStates: {
+      shipping_rate_unconfigured: "Rate unconfigured for governorate",
+      shipping_quote_pending: "Pending governorate selection",
+      shipping_quote_unavailable: "Shipping quote unavailable",
+      shipping_ready: "Shipping quote confirmed",
+    },
+    shippingStateNotices: {
+      shipping_rate_unconfigured:
+        "Official shipping rates for this governorate have not yet been approved; order placement cannot proceed without an approved rate.",
+      shipping_quote_pending:
+        "Please select a delivery governorate to display its authoritative shipping quote once configured.",
+      shipping_quote_unavailable:
+        "An authoritative delivery quote is currently unavailable for the selected destination.",
+      shipping_ready:
+        "Authoritative store delivery quote applied; purchasing and checkout remain disabled in this preview release.",
+    },
     payableTotalNotice: "Final payable total is confirmed upon shipping quote.",
     itemsSubtotal: "Items Authoritative Subtotal",
     disabledNotice: "Order placement and payment collection are disabled in this preview release.",

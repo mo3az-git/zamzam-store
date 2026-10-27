@@ -13,6 +13,7 @@ import { formatEgpAmount } from "../lib/medusa.ts"
 import { SYNTHETIC_CART_PREVIEW_FIXTURE } from "../lib/cart-types.ts"
 import {
   EGYPTIAN_GOVERNORATES,
+  isValidGovernorate,
   normalizeEgyptianPhone,
   isValidEgyptianPhone,
   isValidEmail,
@@ -23,6 +24,7 @@ import {
   setInMemoryCheckoutState,
   SYNTHETIC_QA_READINESS_FIXTURE,
 } from "../lib/checkout.ts"
+import { adaptShippingQuoteToUi } from "../lib/shipping.ts"
 import { isServerQaPreview } from "../lib/qa-preview.ts"
 import { localeAlternates } from "../lib/site.ts"
 
@@ -98,7 +100,7 @@ test("1. Required guest fields, email validation and safe Egyptian contract mapp
       assert.equal(payload.phone, "01001234567") // Normalized Egyptian phone
       assert.equal(payload.address_1, "شارع النيل 14")
       assert.equal(payload.city, "القاهرة")
-      assert.equal(payload.province, "Cairo") // Mapped from governorate
+      assert.equal(payload.province, "eg-c") // Native Medusa province_code, not display name
       assert.equal(payload.country_code, "eg") // Hardcoded Egypt country code
 
       // Delivery notes kept separate from Medusa address allowlist
@@ -245,5 +247,154 @@ test("5. Absence of live payment or order actions and server-gated QA preview", 
     else delete process.env.VERCEL_ENV
     if (prevSynthetic !== undefined) process.env.ZAMZAM_SYNTHETIC_PREVIEW = prevSynthetic
     else delete process.env.ZAMZAM_SYNTHETIC_PREVIEW
+  }
+})
+
+test("6. Phase 4.8 Task A: Governorate UX validation, 27 unique IDs, names, and language-switch preservation", () => {
+  // 6.1 Exactly 27 governorates
+  assert.equal(EGYPTIAN_GOVERNORATES.length, 27, "Must contain exactly 27 Egyptian governorates")
+
+  // 6.2 Stable, unique identifiers
+  const codes = EGYPTIAN_GOVERNORATES.map((g) => g.code)
+  const uniqueCodes = new Set(codes)
+  assert.equal(uniqueCodes.size, 27, "All 27 governorate codes must be unique")
+
+  // 6.3 Valid Arabic and English names
+  for (const gov of EGYPTIAN_GOVERNORATES) {
+    assert.ok(gov.code && gov.code.trim().length > 0, "Governorate code must be non-empty")
+    assert.ok(gov.nameAr && gov.nameAr.trim().length > 0, `Governorate ${gov.code} must have Arabic name`)
+    assert.ok(gov.nameEn && gov.nameEn.trim().length > 0, `Governorate ${gov.code} must have English name`)
+  }
+
+  // 6.4 Valid and invalid governorate checks
+  assert.equal(isValidGovernorate("cairo"), true)
+  assert.equal(isValidGovernorate("alexandria"), true)
+  assert.equal(isValidGovernorate("Aswan"), false) // Stable IDs are exact and case-sensitive
+  assert.equal(isValidGovernorate("matrouh"), true)
+
+  assert.equal(isValidGovernorate(""), false)
+  assert.equal(isValidGovernorate("atlantis"), false)
+  assert.equal(isValidGovernorate(null), false)
+  assert.equal(isValidGovernorate(undefined), false)
+
+  // 6.5 Province resolution: Does NOT silently map unknown governorates
+  assert.equal(resolveGovernorateProvince("cairo"), "eg-c")
+  assert.equal(resolveGovernorateProvince("alexandria"), "eg-alx")
+  assert.equal(resolveGovernorateProvince("unknown_gov"), null)
+  assert.equal(resolveGovernorateProvince(""), null)
+
+  // 6.6 Language-switch preservation: State remains consistent in-memory
+  setInMemoryCheckoutState({ governorate: "luxor" })
+  const preserved = getInMemoryCheckoutState()
+  assert.equal(preserved.governorate, "luxor")
+
+  // Both Arabic and English views resolve the same stable identifier
+  const govObj = EGYPTIAN_GOVERNORATES.find((g) => g.code === preserved.governorate)
+  assert.ok(govObj)
+  assert.equal(govObj.nameAr, "الأقصر")
+  assert.equal(govObj.nameEn, "Luxor")
+})
+
+test("7. Phase 4.8 Task B, C & D: Delivery pricing UI boundary, presentation states, and QA safety", () => {
+  for (const locale of locales) {
+    const dict = getDictionary(locale)
+
+    // 7.1 Missing / no governorate selected -> shipping_quote_pending
+    const pendingNoGov = adaptShippingQuoteToUi(null, "", dict, locale)
+    assert.equal(pendingNoGov.status, "shipping_quote_pending")
+    assert.equal(pendingNoGov.formattedAmount, null, "Pending quote must not format an amount")
+    assert.equal(pendingNoGov.isReady, false)
+    assert.equal(pendingNoGov.isBlocked, true)
+    assert.equal(pendingNoGov.statusLabel, dict.checkout.shippingStates.shipping_quote_pending)
+
+    // 7.2 Selected governorate with unconfigured rate (no backend quote) -> shipping_rate_unconfigured
+    const unconfiguredGov = adaptShippingQuoteToUi(null, "cairo", dict, locale)
+    assert.equal(unconfiguredGov.status, "shipping_rate_unconfigured")
+    assert.equal(unconfiguredGov.formattedAmount, null, "Unconfigured quote must NOT display EGP 0 or free")
+    assert.notEqual(unconfiguredGov.statusLabel, "0 EGP")
+    assert.notEqual(unconfiguredGov.statusLabel, "مجاني")
+    assert.notEqual(unconfiguredGov.statusLabel, "Free")
+    assert.equal(unconfiguredGov.isReady, false)
+    assert.equal(unconfiguredGov.isBlocked, true)
+    assert.equal(unconfiguredGov.statusLabel, dict.checkout.shippingStates.shipping_rate_unconfigured)
+
+    // 7.3 Unknown backend status fails closed to shipping_quote_unavailable
+    const unknownStatusQuote = adaptShippingQuoteToUi(
+      { status: "unexpected_status", governorate: "cairo", currency: "EGP" },
+      "cairo",
+      dict,
+      locale
+    )
+    assert.equal(unknownStatusQuote.status, "shipping_quote_unavailable")
+    assert.equal(unknownStatusQuote.formattedAmount, null)
+    assert.equal(unknownStatusQuote.isReady, false)
+    assert.equal(unknownStatusQuote.isBlocked, true)
+
+    // 7.4 Non-EGP currency fails closed to shipping_quote_unavailable
+    const foreignCurrencyQuote = adaptShippingQuoteToUi(
+      { status: "ready", amount: 50, currency: "USD", governorate: "cairo" },
+      "cairo",
+      dict,
+      locale
+    )
+    assert.equal(foreignCurrencyQuote.status, "shipping_quote_unavailable")
+    assert.equal(foreignCurrencyQuote.formattedAmount, null)
+    assert.equal(foreignCurrencyQuote.blockerCode, "CART_CURRENCY_NOT_EGP")
+
+    // 7.5 Conflicting governorate response fails closed
+    const conflictingGovQuote = adaptShippingQuoteToUi(
+      { status: "ready", amount: 50, currency: "EGP", governorate: "alexandria" },
+      "cairo",
+      dict,
+      locale
+    )
+    assert.equal(conflictingGovQuote.status, "shipping_quote_unavailable")
+    assert.equal(conflictingGovQuote.formattedAmount, null)
+    assert.equal(conflictingGovQuote.isReady, false)
+
+    // 7.6 Malformed amount (null, NaN, negative) fails closed
+    const malformedAmountQuote = adaptShippingQuoteToUi(
+      { status: "ready", amount: -10, currency: "EGP", governorate: "cairo" },
+      "cairo",
+      dict,
+      locale
+    )
+    assert.equal(malformedAmountQuote.status, "shipping_quote_unavailable")
+    assert.equal(malformedAmountQuote.formattedAmount, null)
+
+    // 7.7 Trusted future native quote (valid EGP amount)
+    const validQuote = adaptShippingQuoteToUi(
+      { status: "ready", amount: 65, currency: "EGP", governorate: "giza" },
+      "giza",
+      dict,
+      locale
+    )
+    assert.equal(validQuote.status, "shipping_ready")
+    assert.ok(validQuote.formattedAmount !== null)
+    assert.equal(validQuote.rawAmount, 65)
+    assert.equal(validQuote.isReady, true)
+    assert.equal(validQuote.isBlocked, false)
+    assert.equal(validQuote.statusLabel, dict.checkout.shippingStates.shipping_ready)
+
+    // 7.8 Representation without client-side recalculation:
+    // Total line does NOT add shipping client-side; order placement remains disabled
+    const checkoutViewSrc = fs.readFileSync(
+      path.resolve(__dirname, "../components/checkout-view.tsx"),
+      "utf-8"
+    )
+    assert.equal(
+      /activeCart\?\.subtotal\s*\+\s*shipping/i.test(checkoutViewSrc),
+      false,
+      "CheckoutView must not add shipping to subtotal on the client"
+    )
+    assert.equal(
+      /formatEgpAmount\s*\(\s*\(?\s*activeCart\?\.subtotal\s*\+\s*/i.test(checkoutViewSrc),
+      false,
+      "CheckoutView must not perform arithmetic on subtotal"
+    )
+
+    // 7.9 QA fixture safety: QA fixture does not have fake shipping rates
+    assert.equal(SYNTHETIC_QA_READINESS_FIXTURE.readiness.shippingPrice, false)
+    assert.ok(SYNTHETIC_QA_READINESS_FIXTURE.blockers.includes("SHIPPING_PRICE_UNAVAILABLE"))
   }
 })

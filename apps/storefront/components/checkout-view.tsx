@@ -17,6 +17,7 @@ import {
   type GuestCheckoutInput,
   type PreflightBlocker,
 } from "../lib/checkout"
+import { adaptShippingQuoteToUi } from "../lib/shipping"
 
 export interface CheckoutViewProps {
   locale: Locale
@@ -112,6 +113,14 @@ export function CheckoutView({ locale, isQaMode, initialCart = null }: CheckoutV
 
   const cartUrl = localePath(locale, "/cart")
   const catalogUrl = localePath(locale, "/products")
+
+  // Pure UI delivery quote presentation; fails safe to unconfigured or pending
+  const shippingPresentation = adaptShippingQuoteToUi(
+    null,
+    formData.governorate,
+    dict,
+    locale
+  )
 
   return (
     <div className="shell lux-checkout-page" id="main-content">
@@ -438,11 +447,15 @@ export function CheckoutView({ locale, isQaMode, initialCart = null }: CheckoutV
               {/* Shipping / Delivery Status */}
               <div className="lux-cart-summary-row lux-shipping-row">
                 <span>{dict.checkout.shippingHeader}</span>
-                <span className="lux-pending-badge" role="note">
-                  {dict.checkout.shippingPending}
-                </span>
+                {shippingPresentation.formattedAmount ? (
+                  <strong className="lux-shipping-amount">{shippingPresentation.formattedAmount}</strong>
+                ) : (
+                  <span className="lux-pending-badge" role="note">
+                    {shippingPresentation.statusLabel}
+                  </span>
+                )}
               </div>
-              <p className="lux-shipping-notice">{dict.checkout.shippingNotice}</p>
+              <p className="lux-shipping-notice">{shippingPresentation.notice}</p>
 
               {/* Payable Total */}
               <div className="lux-cart-summary-row lux-cart-summary-total">
