@@ -3,20 +3,28 @@
 import { useState } from "react"
 import { getDictionary, type Locale } from "../lib/i18n"
 import { formatVariantPrice, type StoreVariant } from "../lib/medusa"
+import { AvailabilityDisplay } from "./availability-display"
 
 /** Catalog-only variant selector. Never treats a displayed price as checkout authority. */
 export function VariantSelector({
   variants,
   locale,
+  availabilityByVariant,
 }: {
   variants: StoreVariant[]
   locale: Locale
+  /**
+   * Optional authoritative availability status per variant id.
+   * Defaults safely to "unknown" when not provided or unverified.
+   */
+  availabilityByVariant?: Record<string, unknown>
 }) {
   const dict = getDictionary(locale)
   const [selectedId, setSelectedId] = useState(variants[0]?.id ?? "")
   const chosen = variants.find((variant) => variant.id === selectedId) ?? variants[0]
   const price = chosen ? formatVariantPrice(chosen, locale) : null
   const sku = chosen?.sku?.trim()
+  const chosenAvailability = chosen ? availabilityByVariant?.[chosen.id] : undefined
 
   if (!chosen) {
     return (
@@ -60,6 +68,7 @@ export function VariantSelector({
         ) : null}
         {!price ? <p className="detail-variant-warning">{dict.product.variantWarning}</p> : null}
       </div>
+      <AvailabilityDisplay status={chosenAvailability} locale={locale} />
       <p className="detail-variant-notice">{dict.product.variantNotice}</p>
     </section>
   )

@@ -151,6 +151,13 @@ export type Dictionary = {
   }
   errors: { configuration: string; connection: string; response: string }
   notFound: { title: string; body: string; cta: string }
+  availability: {
+    heading: string
+    available: { label: string; description: string }
+    unavailable: { label: string; description: string }
+    unknown: { label: string; description: string }
+    disclaimer: string
+  }
 }
 
 const ar: Dictionary = {
@@ -283,6 +290,23 @@ const ar: Dictionary = {
     body: "لم نعثر على الصفحة التي تبحث عنها. قد يكون الرابط قديمًا أو أن المنتج لم يُنشر بعد.",
     cta: "العودة للرئيسية",
   },
+  availability: {
+    heading: "حالة التوفر",
+    available: {
+      label: "متوفر في المخزون المعتمد",
+      description: "الصنف متاح حاليًا وفق فحص الدُفعات المعتمد.",
+    },
+    unavailable: {
+      label: "غير متوفر حاليًا",
+      description: "هذا الخيار غير متاح للتسليم الفوري حاليًا.",
+    },
+    unknown: {
+      label: "قيد التحقق عند فتح الطلب",
+      description: "تُؤكَّد إتاحة الصنف من سجل الدُفعات الفعلي عند إتمام الطلب.",
+    },
+    disclaimer:
+      "لا نقدّم وعودًا مسبقة بالتوفر؛ يتم فحص الدُفعات وتاريخ الصلاحية الفعلي عبر نظام المتجر.",
+  },
 }
 
 const en: Dictionary = {
@@ -414,6 +438,23 @@ const en: Dictionary = {
     title: "Page not found",
     body: "We could not find the page you are looking for. The link may be outdated or the product may not be published yet.",
     cta: "Back to home",
+  },
+  availability: {
+    heading: "Availability",
+    available: {
+      label: "In Verified Stock",
+      description: "Currently available based on verified batch inventory inspection.",
+    },
+    unavailable: {
+      label: "Currently Unavailable",
+      description: "This option is currently out of stock for immediate delivery.",
+    },
+    unknown: {
+      label: "Confirmed Upon Order",
+      description: "Batch availability is confirmed against store inventory records when ordering.",
+    },
+    disclaimer:
+      "We do not make advance stock guarantees; actual batch eligibility and shelf life are verified via the store system.",
   },
 }
 
