@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - "integration/mvp-consolidated-*"
+  pull_request:
+    branches:
+      - "integration/**"
   workflow_dispatch:
 
 permissions:
@@ -61,6 +64,8 @@ jobs:
         run: node apps/backend/scripts/test-cart-mutation-boundary.mjs
       - name: Cart completion remains disabled until authorized checkout is wired
         run: node --experimental-strip-types --test apps/backend/scripts/test-cart-completion-disabled.test.mjs
+      - name: Native cart ownership route authorization (not formal TP)
+        run: node --experimental-strip-types --test apps/backend/scripts/test-guest-cart-ownership-route-policy.mjs
       - name: Guest checkout read-only preflight (not formal TP)
         run: node --experimental-strip-types apps/backend/scripts/test-guest-checkout-preflight.mjs
       - name: Cross-layer governorate/Medusa province code contract (not formal TP)
