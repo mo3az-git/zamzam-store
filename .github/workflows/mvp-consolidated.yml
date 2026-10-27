@@ -55,6 +55,8 @@ jobs:
         run: npm ci --strict-peer-deps --no-audit --no-fund
       - name: Storefront unit tests (not formal TP)
         run: node --experimental-strip-types --test apps/storefront/tests/*.test.mjs
+      - name: Read-only native payable quote unit tests (not formal TP)
+        run: node --experimental-strip-types --test apps/backend/scripts/test-mvp-payment-quote.mjs
       - name: Lint both workspaces
         run: npm run lint
       - name: Migrate disposable Medusa database
