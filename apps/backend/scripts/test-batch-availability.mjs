@@ -67,7 +67,7 @@ test("never accepts malformed variant IDs, missing/malformed policies or more th
     [req("variant_1"),req("variant_1")],
     [req(" variant_1")], [req("variant_1;DROP")],
     [req("variant_1",-1)], [req("variant_1",1.5)],
-    [req("variant_1",366)], [req("variant_1",undefined)],
+    [req("variant_1",366)], [{ variantId: "variant_1" }],
   ]) await assert.rejects(readBatchAvailability(source,list), /availability request/)
   assert.equal(source.calls.length,0)
 })
