@@ -27,7 +27,18 @@ const readAdapter = (client) => ({
     // pg's wire protocol uses $1..$N; real Medusa's Knex uses ? markers.
     const prepared = sql.replace(/\?/g, () => "$" + (++n))
     assert.equal(n, values.length, "SQL bindings must not be omitted")
-    return client.query(prepared, values)
+    await client.query("SAVEPOINT phase3_read_snapshot")
+    try {
+      const result = await client.query(prepared, values)
+      await client.query("RELEASE SAVEPOINT phase3_read_snapshot")
+      return result
+    } catch(error) {
+      // CI-only diagnostic: do not echo SQL parameter values or connection secrets.
+      console.error("PHASE3_PG_QUERY_ERROR", error.code, error.message)
+      await client.query("ROLLBACK TO SAVEPOINT phase3_read_snapshot")
+      await client.query("RELEASE SAVEPOINT phase3_read_snapshot")
+      throw error
+    }
   },
 })
 const req=(variantId,minShelfLifeDays=30)=>({variantId,minShelfLifeDays})
