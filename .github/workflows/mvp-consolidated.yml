@@ -73,6 +73,10 @@ jobs:
         run: node --experimental-strip-types --test apps/backend/scripts/test-batch-availability-postgres.mjs
         env:
           PHASE3_INVENTORY_DISPOSABLE_TEST: "true"
+      - name: Live Medusa Query sales-channel visibility integration (not formal TP)
+        run: node apps/backend/scripts/test-store-visibility-medusa.mjs
+        env:
+          PHASE3_MEDUSA_VISIBILITY_CI: "true"
       - name: Build backend
         run: npm run build:backend
         env:
