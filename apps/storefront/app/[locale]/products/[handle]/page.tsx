@@ -106,7 +106,7 @@ export default async function ProductPage({ params }: { params: Promise<ProductP
 
   return (
     <main className="shell detail-page" id="main-content">
-      <nav className="breadcrumbs" aria-label={dict.nav.label}>
+      <nav className="breadcrumbs" aria-label={dict.catalog.breadcrumbLabel}>
         <Link href={localePath(locale, "/")}>{dict.catalog.breadcrumbHome}</Link>
         <span aria-hidden="true">/</span>
         <Link href={catalog}>{dict.catalog.breadcrumb}</Link>
