@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { isDeepStrictEqual } from "node:util"
 import { once } from "node:events"
 import { createHash, randomUUID } from "node:crypto"
 import {
@@ -130,7 +131,7 @@ try {
       const raw = String(cartAfterAdd.items[0].raw_unit_price.value); const [whole, fraction = ""] = raw.split(".")
       return whole + "." + (fraction + "00").slice(0, 2)
     })() &&
-    Number(cartAfterAdd.items[0].quantity) === 2 && JSON.stringify(add.body) === JSON.stringify(addReplay.body), {
+    Number(cartAfterAdd.items[0].quantity) === 2 && isDeepStrictEqual(add.body, addReplay.body), {
     cart: add.body, replay: addReplay.body, nativeRawPrice: cartAfterAdd.items[0].raw_unit_price,
     nativeQuantity: cartAfterAdd.items[0].quantity,
   })
