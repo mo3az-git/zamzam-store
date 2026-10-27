@@ -162,6 +162,10 @@ try {
     [Modules.STOCK_LOCATION]: { stock_location_id: stockLocationId },
     [Modules.FULFILLMENT]: { fulfillment_set_id: fulfillmentSetId },
   })
+  await container.resolve(ContainerRegistrationKeys.LINK).create({
+    [Modules.STOCK_LOCATION]: { stock_location_id: stockLocationId },
+    [Modules.FULFILLMENT]: { fulfillment_provider_id: "manual_manual" },
+  })
   assert.ok(cartResult.result.sales_channel_id, "disposable cart must have a sales channel")
   await linkSalesChannelsToStockLocationWorkflow(container).run({ input: {
     id: stockLocationId,
