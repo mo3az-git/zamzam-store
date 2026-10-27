@@ -57,6 +57,8 @@ jobs:
         run: node --experimental-strip-types --test apps/storefront/tests/*.test.mjs
       - name: Read-only native payable quote unit tests (not formal TP)
         run: node --experimental-strip-types --test apps/backend/scripts/test-mvp-payment-quote.mjs
+      - name: Cart mutation boundary regression (not formal TP)
+        run: node apps/backend/scripts/test-cart-mutation-boundary.mjs
       - name: Internal batch availability projection tests (not formal TP)
         run: node --experimental-strip-types --test apps/backend/scripts/test-batch-availability.mjs
       - name: Scoped product visibility authorization tests (not formal TP)
