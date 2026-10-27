@@ -35,6 +35,7 @@ export function CartView({ locale, initialCart = null, errorCode = null, allowSy
   const items = activeCart?.items ?? []
   const hasItems = items.length > 0
   const catalogUrl = localePath(locale, "/products")
+  const checkoutUrl = localePath(locale, "/checkout")
 
   return (
     <div className="shell lux-cart-page" id="main-content">
@@ -135,6 +136,16 @@ export function CartView({ locale, initialCart = null, errorCode = null, allowSy
               <strong className="lux-cart-grand-total">
                 {formatEgpAmount(activeCart?.total, locale) ?? dict.product.priceUnavailable}
               </strong>
+            </div>
+
+            <div className="lux-cart-actions">
+              <Link
+                href={checkoutUrl}
+                className="button button-primary lux-cart-checkout-btn"
+              >
+                {dict.cart.goToCheckout}{" "}
+                <span aria-hidden="true">{locale === "en" ? "→" : "←"}</span>
+              </Link>
             </div>
 
             <div className="lux-cart-notices">

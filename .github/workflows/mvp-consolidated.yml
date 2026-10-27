@@ -59,6 +59,8 @@ jobs:
         run: node --experimental-strip-types --test apps/backend/scripts/test-mvp-payment-quote.mjs
       - name: Cart mutation boundary regression (not formal TP)
         run: node apps/backend/scripts/test-cart-mutation-boundary.mjs
+      - name: Guest checkout read-only preflight (not formal TP)
+        run: node --experimental-strip-types apps/backend/scripts/test-guest-checkout-preflight.mjs
       - name: Internal batch availability projection tests (not formal TP)
         run: node --experimental-strip-types --test apps/backend/scripts/test-batch-availability.mjs
       - name: Scoped product visibility authorization tests (not formal TP)

@@ -208,6 +208,81 @@ export type Dictionary = {
     addedSuccess: string
     disabledNotice: string
     checkoutDisabledNotice: string
+    goToCheckout: string
+  }
+  checkout: {
+    title: string
+    subtitle: string
+    backToCart: string
+    guestInfoHeading: string
+    orderSummaryHeading: string
+    fullNameLabel: string
+    fullNamePlaceholder: string
+    phoneLabel: string
+    phonePlaceholder: string
+    governorateLabel: string
+    selectGovernorate: string
+    cityLabel: string
+    cityPlaceholder: string
+    addressLabel: string
+    addressPlaceholder: string
+    notesLabel: string
+    notesPlaceholder: string
+    nameRequired: string
+    phoneRequired: string
+    governorateRequired: string
+    cityRequired: string
+    addressRequired: string
+    shippingHeader: string
+    shippingPending: string
+    shippingNotice: string
+    payableTotalNotice: string
+    itemsSubtotal: string
+    disabledNotice: string
+    qaBadge: string
+    previewBadge: string
+    qaSimulateButton: string
+    disabledSubmitButton: string
+    qaSuccessTitle: string
+    qaSuccessNotice: string
+    emailLabel: string
+    emailPlaceholder: string
+    emailRequired: string
+    firstNameLabel: string
+    firstNamePlaceholder: string
+    firstNameRequired: string
+    lastNameLabel: string
+    lastNamePlaceholder: string
+    lastNameRequired: string
+    readinessHeading: string
+    readinessNotice: string
+    readinessBadgeQa: string
+    readinessBadgeLive: string
+    deliveryAddressLabel: string
+    shippingMethodLabel: string
+    shippingPriceLabel: string
+    payableTotalLabel: string
+    ownershipLabel: string
+    statusMet: string
+    statusPending: string
+    statusBlocked: string
+    blockers: {
+      CHECKOUT_OWNERSHIP_UNAVAILABLE: string
+      GUEST_DELIVERY_INVALID: string
+      MISSING_SHIPPING_ADDRESS: string
+      MISSING_SHIPPING_METHOD: string
+      SHIPPING_PRICE_UNAVAILABLE: string
+      PAYABLE_TOTAL_UNAVAILABLE: string
+      CHECKOUT_IN_PROGRESS: string
+      CHECKOUT_ALREADY_COMPLETED: string
+      CART_UNAVAILABLE: string
+      CART_REGION_UNAVAILABLE: string
+      CART_REGION_NOT_EGYPT_EGP: string
+      CART_CURRENCY_NOT_EGP: string
+      CHECKOUT_SESSION_UNAVAILABLE: string
+    }
+    emptyCartNotice: string
+    backToShop: string
   }
 }
 
@@ -389,6 +464,85 @@ const ar: Dictionary = {
     addedSuccess: "تمت الإضافة إلى السلة بنجاح",
     disabledNotice: "خاصية الشراء غير مفعّلة في الإصدار الحالي.",
     checkoutDisabledNotice: "إتمام الطلب والدفع غير مفعلين في هذه المرحلة.",
+    goToCheckout: "متابعة بيانات التوصيل (معاينة)",
+  },
+  checkout: {
+    title: "بيانات إتمام الطلب",
+    subtitle: "بيانات العميل وعنوان التوصيل",
+    backToCart: "العودة إلى سلة المشتريات",
+    guestInfoHeading: "بيانات التوصيل للعميل",
+    orderSummaryHeading: "ملخص الطلب المعتمد",
+    fullNameLabel: "الاسم بالكامل",
+    fullNamePlaceholder: "الاسم الثلاثي أو الثنائي",
+    phoneLabel: "رقم الهاتف المحمول (مصر)",
+    phonePlaceholder: "مثال: 01012345678",
+    governorateLabel: "المحافظة",
+    selectGovernorate: "اختر المحافظة",
+    cityLabel: "المدينة / الحي",
+    cityPlaceholder: "مثال: مدينة نصر، المعادي، الدقي...",
+    addressLabel: "العنوان التفصيلي",
+    addressPlaceholder: "اسم الشارع، رقم المبنى، رقم الشقة أو الطابق",
+    notesLabel: "ملاحظات التوصيل (اختياري)",
+    notesPlaceholder: "علامة مميزة أو إرشادات خاصة بالتسليم",
+    nameRequired: "يرجى إدخال الاسم بالكامل (3 أحرف على الأقل).",
+    phoneRequired: "يرجى إدخال رقم هاتف محمول مصري صحيح (11 رقم يبدأ بـ 010 أو 011 أو 012 أو 015).",
+    governorateRequired: "يرجى اختيار المحافظة.",
+    cityRequired: "يرجى إدخال المدينة أو الحي.",
+    addressRequired: "يرجى إدخال العنوان التفصيلي (5 أحرف على الأقل).",
+    shippingHeader: "رسوم التوصيل",
+    shippingPending: "يتم تحديدها لاحقًا من قِبل المتجر",
+    shippingNotice:
+      "لا يتم احتساب أو تخمين رسوم التوصيل من الواجهة؛ سيتم تحديدها واعتمادها عبر نظام المتجر عند تأكيد الطلب.",
+    payableTotalNotice: "الإجمالي النهائي المستحق يُحدد بعد اعتماد رسوم التوصيل.",
+    itemsSubtotal: "المجموع المعتمد للمنتجات",
+    disabledNotice: "خاصية إتمام الطلبات والدفع معطّلة حاليًا في هذه النسخة التجريبية.",
+    qaBadge: "معاينة ضبط الجودة (QA)",
+    previewBadge: "معاينة تجريبية",
+    qaSimulateButton: "التحقق من بيانات التوصيل (محاكاة QA)",
+    disabledSubmitButton: "إتمام الطلب معطّل حاليًا",
+    qaSuccessTitle: "تم التحقق من بيانات التوصيل بنجاح (محاكاة QA)",
+    qaSuccessNotice:
+      "هذه محاكاة تدقيق فني فقط. إتمام الطلبات الفعلي، وتحديد رسوم الشحن، ومعالجة الدفع معطّلة بالكامل حتى اعتماد مسار الدفع المركزي.",
+    emailLabel: "البريد الإلكتروني",
+    emailPlaceholder: "name@example.com",
+    emailRequired: "يرجى إدخال بريد إلكتروني صحيح.",
+    firstNameLabel: "الاسم الأول",
+    firstNamePlaceholder: "الاسم الأول",
+    firstNameRequired: "يرجى إدخال الاسم الأول.",
+    lastNameLabel: "اسم العائلة",
+    lastNamePlaceholder: "اسم العائلة أو اللقب",
+    lastNameRequired: "يرجى إدخال اسم العائلة.",
+    readinessHeading: "جاهزية إتمام الطلب (قراءة فنية)",
+    readinessNotice:
+      "هذا العرض يعكس محددات الجاهزية المعتمدة لدى النظام المركزي. لا يتم تفعيل إتمام الطلبات أو الدفع من المتصفح.",
+    readinessBadgeQa: "محاكاة الجاهزية الفنية (QA)",
+    readinessBadgeLive: "حالة النظام المركزي",
+    deliveryAddressLabel: "عنوان التوصيل",
+    shippingMethodLabel: "وسيلة الشحن",
+    shippingPriceLabel: "تسعيرة الشحن",
+    payableTotalLabel: "الإجمالي القابل للدفع",
+    ownershipLabel: "ملكية جلسة الدفع",
+    statusMet: "مستوفى",
+    statusPending: "قيد الانتظار",
+    statusBlocked: "معطّل",
+    blockers: {
+      CHECKOUT_OWNERSHIP_UNAVAILABLE:
+        "جلسة إتمام الطلب الموثوقة غير متاحة حالياً؛ التحقق من ملكية السلة يتطلب ربطاً مركزياً.",
+      GUEST_DELIVERY_INVALID: "بيانات التوصيل غير مكتملة أو تحتوي على حقول غير صالحة.",
+      MISSING_SHIPPING_ADDRESS: "عنوان التوصيل غير مسجل في جلسة السلة.",
+      MISSING_SHIPPING_METHOD: "لم يتم تحديد وسيلة شحن معتمدة من المتجر.",
+      SHIPPING_PRICE_UNAVAILABLE: "تسعيرة الشحن الرسمية غير متاحة من نظام المتجر.",
+      PAYABLE_TOTAL_UNAVAILABLE: "الإجمالي النهائي القابل للدفع غير متاح من نظام المتجر.",
+      CHECKOUT_IN_PROGRESS: "عملية إتمام الطلب قيد المعالجة حالياً عبر النظام.",
+      CHECKOUT_ALREADY_COMPLETED: "تم تحويل هذا الطلب وإتمامه مسبقاً.",
+      CART_UNAVAILABLE: "بيانات السلة غير متاحة.",
+      CART_REGION_UNAVAILABLE: "المنطقة الجغرافية للسلة غير محددة.",
+      CART_REGION_NOT_EGYPT_EGP: "المنطقة المحددة ليست جمهورية مصر العربية (EGP).",
+      CART_CURRENCY_NOT_EGP: "عملة السلة ليست الجنيه المصري (EGP).",
+      CHECKOUT_SESSION_UNAVAILABLE: "جلسة إتمام الطلب غير متوفرة أو منتهية الصلاحية.",
+    },
+    emptyCartNotice: "سلة المشتريات فارغة. يرجى إضافة منتجات أولاً قبل متابعة التوصيل.",
+    backToShop: "تصفح المنتجات",
   },
 }
 
@@ -570,6 +724,85 @@ const en: Dictionary = {
     addedSuccess: "Successfully added to cart",
     disabledNotice: "Purchasing actions are disabled in this release.",
     checkoutDisabledNotice: "Checkout and payment are not active in this stage.",
+    goToCheckout: "Proceed to Delivery Details (Preview)",
+  },
+  checkout: {
+    title: "Guest Checkout",
+    subtitle: "Customer Details & Delivery Address",
+    backToCart: "Back to Shopping Cart",
+    guestInfoHeading: "Delivery Information",
+    orderSummaryHeading: "Authoritative Order Summary",
+    fullNameLabel: "Full Name",
+    fullNamePlaceholder: "First and last name",
+    phoneLabel: "Mobile Number (Egypt)",
+    phonePlaceholder: "e.g. 01012345678",
+    governorateLabel: "Governorate",
+    selectGovernorate: "Select Governorate",
+    cityLabel: "City / District",
+    cityPlaceholder: "e.g. Nasr City, Dokki, Maadi...",
+    addressLabel: "Detailed Address",
+    addressPlaceholder: "Street, building number, apartment/floor",
+    notesLabel: "Delivery Notes (Optional)",
+    notesPlaceholder: "Landmarks or specific delivery instructions",
+    nameRequired: "Please enter your full name (at least 3 characters).",
+    phoneRequired: "Please enter a valid Egyptian mobile number (11 digits starting with 010, 011, 012, or 015).",
+    governorateRequired: "Please select a governorate.",
+    cityRequired: "Please enter your city or district.",
+    addressRequired: "Please enter detailed delivery address (at least 5 characters).",
+    shippingHeader: "Delivery Fee",
+    shippingPending: "Pending store confirmation",
+    shippingNotice:
+      "Delivery fees are never calculated or estimated by the browser; they will be confirmed via the store system.",
+    payableTotalNotice: "Final payable total is confirmed upon shipping quote.",
+    itemsSubtotal: "Items Authoritative Subtotal",
+    disabledNotice: "Order placement and payment collection are disabled in this preview release.",
+    qaBadge: "QA Simulation Mode",
+    previewBadge: "Nonproduction Preview",
+    qaSimulateButton: "Validate Delivery Details (QA Simulation)",
+    disabledSubmitButton: "Checkout Disabled",
+    qaSuccessTitle: "Delivery Details Validated (QA Simulation)",
+    qaSuccessNotice:
+      "This is a technical validation preview only. Real order creation, live shipping quotes, and payment gateways remain locked until central store authorization.",
+    emailLabel: "Email Address",
+    emailPlaceholder: "name@example.com",
+    emailRequired: "Please enter a valid email address.",
+    firstNameLabel: "First Name",
+    firstNamePlaceholder: "First name",
+    firstNameRequired: "Please enter your first name.",
+    lastNameLabel: "Last Name",
+    lastNamePlaceholder: "Last name / surname",
+    lastNameRequired: "Please enter your last name.",
+    readinessHeading: "Checkout Readiness (Technical Overview)",
+    readinessNotice:
+      "This display reflects authoritative backend readiness constraints. Order creation and payment are never authorized by the client.",
+    readinessBadgeQa: "QA Readiness Simulation",
+    readinessBadgeLive: "Central Store Status",
+    deliveryAddressLabel: "Delivery Address",
+    shippingMethodLabel: "Shipping Method",
+    shippingPriceLabel: "Shipping Quote",
+    payableTotalLabel: "Payable Total",
+    ownershipLabel: "Session Ownership",
+    statusMet: "Met",
+    statusPending: "Pending",
+    statusBlocked: "Blocked",
+    blockers: {
+      CHECKOUT_OWNERSHIP_UNAVAILABLE:
+        "Trusted checkout session ownership is not available; central cart ownership verification required.",
+      GUEST_DELIVERY_INVALID: "Guest delivery information is incomplete or contains invalid fields.",
+      MISSING_SHIPPING_ADDRESS: "Shipping address is not recorded on the cart.",
+      MISSING_SHIPPING_METHOD: "No approved shipping method has been selected.",
+      SHIPPING_PRICE_UNAVAILABLE: "Official shipping quote is unavailable from the store system.",
+      PAYABLE_TOTAL_UNAVAILABLE: "Authoritative payable total is unavailable from the store system.",
+      CHECKOUT_IN_PROGRESS: "Checkout is currently in progress.",
+      CHECKOUT_ALREADY_COMPLETED: "This checkout has already been completed.",
+      CART_UNAVAILABLE: "Cart data is unavailable.",
+      CART_REGION_UNAVAILABLE: "Cart region is unavailable.",
+      CART_REGION_NOT_EGYPT_EGP: "Cart region is not Egypt (EGP).",
+      CART_CURRENCY_NOT_EGP: "Cart currency is not EGP.",
+      CHECKOUT_SESSION_UNAVAILABLE: "Checkout session is unavailable or expired.",
+    },
+    emptyCartNotice: "Your cart is currently empty. Please add items before proceeding to checkout.",
+    backToShop: "Browse Products",
   },
 }
 
