@@ -8,7 +8,7 @@ import {
 
 const require = registerTsNode()
 const { markOrderCreationStarted, reconcileOrderCreation, runOrderCreationWithFence, CorrelationConflict } =
-  require("../src/modules/batch-inventory/order-correlation.ts")
+  require(path.join(repositoryRoot, "apps/backend/src/modules/batch-inventory/order-correlation.ts"))
 const start = new Date().toISOString(), meta = await getSystemMetadata()
 let pg, redis, runtime, db, status = "failed", blocker = null
 const assertions=[], cleanupErrors=[], logLines=[], errLines=[]
