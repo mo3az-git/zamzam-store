@@ -58,6 +58,7 @@ check("malformed_amount_and_payable_totals_fail_closed", [
   { ...nativeQuote, amount: 125.5 },
   { ...nativeQuote, amount: "NaN" },
   { ...nativeQuote, payableTotal: "-1" },
+  { ...nativeQuote, payableTotal: "120.00" },
 ].every((quote) => readiness({ nativeQuote: quote }).status === "blocked"))
 check("all_27_governorates_preserve_unknown_unapproved_blocked_state", EGYPTIAN_GOVERNORATES.length === 27 &&
   EGYPTIAN_GOVERNORATES.every((governorate) => {
