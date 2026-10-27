@@ -2,6 +2,7 @@ import { ContainerRegistrationKeys, MedusaError, Modules } from "@medusajs/frame
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { InventoryLedger, type InventoryAuthority, type LedgerHooks } from "./ledger"
 import { completeNativeCartWithFence, type NativeCompletionHooks } from "./native-order-bridge"
+import { normalizeEgpTotal } from "./native-payable-order-snapshot"
 
 type Row = Record<string, unknown>
 type Sql = {
@@ -145,16 +146,33 @@ export async function completeReservedCartWithInventory(
     verifyResponse(priorResponse)
     return { ...result, replayed: true }
   }
-  const persisted = await db.raw(`UPDATE idempotency_key SET status='completed',order_id=?,response_code=200,
-    response_body=?::jsonb,updated_at=NOW() WHERE key=? AND lease_owner_id=? AND status='pending'
-    AND last_heartbeat_at>NOW()-INTERVAL '120 seconds' AND deleted_at IS NULL RETURNING key`, [correlation.orderId, JSON.stringify({
-      orderId: result.orderId,
-      conversionStatus: result.conversionStatus,
-      orderVersion: result.orderVersion,
-      allocationIds: result.allocationIds,
-      movementIds: result.movementIds,
-      replayed: false,
-    }), attempt.idempotency_key, authority.ownerId])
+  const persisted = await db.transaction(async (tx) => {
+    await tx.raw("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", ["phase0:order:" + result.orderId])
+    const session = (await rows(tx, `SELECT current_attempt_id::text AS current_attempt_id,epoch,status
+      FROM cart_checkout_session WHERE cart_id=? AND deleted_at IS NULL FOR UPDATE`, [authority.cartId]))[0]
+    const current = (await rows(tx, `SELECT checkout_attempt_id::text AS id,cart_id,epoch,lease_owner_id,idempotency_key,
+      order_id,order_correlation_status,attempt_status FROM cart_checkout_attempt WHERE checkout_attempt_id=?::uuid FOR UPDATE`,
+    [authority.attemptId]))[0]
+    if (!session || !current || session.current_attempt_id !== authority.attemptId || Number(session.epoch) !== authority.epoch ||
+        session.status !== "completed" || current.cart_id !== authority.cartId || Number(current.epoch) !== authority.epoch ||
+        current.lease_owner_id !== authority.ownerId || current.idempotency_key !== attempt.idempotency_key ||
+        current.order_id !== result.orderId || current.order_correlation_status !== "correlated" || current.attempt_status !== "allocated") {
+      throw conflict("STALE_OR_UNAUTHORIZED_ATTEMPT")
+    }
+    const query = container.resolve(ContainerRegistrationKeys.QUERY) as unknown as { graph(input: Row): Promise<{ data: Row[] }> }
+    const order = (await query.graph({ entity: "order", fields: ["id","version","currency_code","total","raw_total"],
+      filters: { id: result.orderId } })).data[0]
+    if (!order || order.id !== result.orderId || Number(order.version) !== result.orderVersion ||
+        typeof order.currency_code !== "string") throw conflict("CHECKOUT_RESPONSE_ORDER_CHANGED")
+    const currency = order.currency_code.toLowerCase()
+    const totalMinor = currency === "egp" ? normalizeEgpTotal(order.raw_total, true).minor : null
+    return tx.raw(`UPDATE idempotency_key SET status='completed',order_id=?,response_code=200,
+      response_body=?::jsonb,updated_at=NOW() WHERE key=? AND lease_owner_id=? AND status='pending'
+      AND last_heartbeat_at>NOW()-INTERVAL '120 seconds' AND deleted_at IS NULL RETURNING key`,
+    [correlation.orderId, JSON.stringify({ orderId: result.orderId, conversionStatus: result.conversionStatus,
+      orderVersion: result.orderVersion, allocationIds: result.allocationIds, movementIds: result.movementIds,
+      currency, totalMinor, replayed: false }), attempt.idempotency_key, authority.ownerId])
+  })
   if (persisted.rowCount !== 1) {
     verifyResponse(await readResponse())
     return { ...result, replayed: true }

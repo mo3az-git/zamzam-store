@@ -2,9 +2,9 @@ import type { MedusaContainer } from "@medusajs/framework/types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
 type Row = Record<string, unknown>
-type Sql = {
+export type SnapshotSql = {
   raw(sql: string, values?: unknown[]): Promise<{ rows: Row[] }>
-  transaction<T>(callback: (tx: Sql) => Promise<T>): Promise<T>
+  transaction<T>(callback: (tx: SnapshotSql) => Promise<T>): Promise<T>
 }
 export class NativePayableSnapshotError extends Error {
   constructor(public readonly code: string) { super(code); this.name = "NativePayableSnapshotError" }
@@ -24,22 +24,26 @@ export function normalizeEgpTotal(raw: unknown, allowZero = false) {
   return { major: `${minor / 100n}.${String(minor % 100n).padStart(2, "0")}`, minor: minor.toString() }
 }
 
-type Expected = { cartId: string; orderId: string; expectedVersion?: number; expectedTotalMinor?: string }
+export type Expected = { cartId: string; orderId: string; expectedVersion?: number; expectedTotalMinor?: string }
 /**
  * Trusted, read-only boundary for the payment coordinator. It verifies the
  * native link and snapshots the current native order under the order advisory
  * root; callers must revalidate under that root when committing later writes.
  */
 export async function readNativePayableOrderSnapshot(container: MedusaContainer, expected: Expected) {
+  const db = container.resolve(ContainerRegistrationKeys.PG_CONNECTION) as unknown as SnapshotSql
+  return db.transaction((tx) => readNativePayableOrderSnapshotInTransaction(container, tx, expected))
+}
+
+/** Caller must invoke this before checkout child locks, in the same transaction as its later writes. */
+export async function readNativePayableOrderSnapshotInTransaction(container: MedusaContainer, tx: Pick<SnapshotSql, "raw">, expected: Expected) {
   if (!expected.cartId || !expected.orderId) return fail("INVALID_NATIVE_ORDER_IDENTITY")
   if (expected.expectedVersion !== undefined &&
       (!Number.isSafeInteger(expected.expectedVersion) || expected.expectedVersion < 1)) return fail("INVALID_EXPECTED_VERSION")
   if (expected.expectedTotalMinor !== undefined && !/^[1-9]\d*$/.test(expected.expectedTotalMinor)) return fail("INVALID_EXPECTED_TOTAL")
-  const db = container.resolve(ContainerRegistrationKeys.PG_CONNECTION) as unknown as Sql
   const query = container.resolve(ContainerRegistrationKeys.QUERY) as unknown as {
     graph(input: Row): Promise<{ data: Row[] }>
   }
-  return db.transaction(async (tx) => {
     await tx.raw("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", ["phase0:order:" + expected.orderId])
     const readLinks = async () => (await tx.raw(`SELECT oc.order_id,oc.cart_id FROM order_cart oc
       INNER JOIN "order" o ON o.id=oc.order_id AND o.deleted_at IS NULL
@@ -57,8 +61,10 @@ export async function readNativePayableOrderSnapshot(container: MedusaContainer,
       const order = result.data[0]
       const version = Number(order.version)
       if (order.id !== expected.orderId || !Number.isSafeInteger(version) || version < 1) return fail("NATIVE_ORDER_VERSION_INVALID")
+      if (expected.expectedVersion !== undefined && expected.expectedVersion !== version) return fail("NATIVE_ORDER_VERSION_CONFLICT")
       if (String(order.currency_code).toLowerCase() !== "egp") return fail("NATIVE_ORDER_CURRENCY_MISMATCH")
       const total = normalizeEgpTotal(order.raw_total)
+      if (expected.expectedTotalMinor !== undefined && expected.expectedTotalMinor !== total.minor) return fail("NATIVE_ORDER_TOTAL_CONFLICT")
       if (!Array.isArray(order.items) || !order.items.length) return fail("NATIVE_ORDER_LINES_INVALID")
       const seen = new Set<string>()
       const lines = (order.items as Row[]).map((line) => {
@@ -85,5 +91,4 @@ export async function readNativePayableOrderSnapshot(container: MedusaContainer,
     if (expected.expectedVersion !== undefined && expected.expectedVersion !== first.orderVersion) return fail("NATIVE_ORDER_VERSION_CONFLICT")
     if (expected.expectedTotalMinor !== undefined && expected.expectedTotalMinor !== first.totalMinor) return fail("NATIVE_ORDER_TOTAL_CONFLICT")
     return first
-  })
 }
