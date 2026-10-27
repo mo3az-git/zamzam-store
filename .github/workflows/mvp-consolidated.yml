@@ -59,6 +59,8 @@ jobs:
         run: node --experimental-strip-types --test apps/backend/scripts/test-mvp-payment-quote.mjs
       - name: Cart mutation boundary regression (not formal TP)
         run: node apps/backend/scripts/test-cart-mutation-boundary.mjs
+      - name: Cart completion remains disabled until authorized checkout is wired
+        run: node --experimental-strip-types --test apps/backend/scripts/test-cart-completion-disabled.test.mjs
       - name: Guest checkout read-only preflight (not formal TP)
         run: node --experimental-strip-types apps/backend/scripts/test-guest-checkout-preflight.mjs
       - name: Cross-layer governorate/Medusa province code contract (not formal TP)
