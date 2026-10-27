@@ -39,6 +39,16 @@ export interface CartBffDependencies {
   shippingReadiness(governorateId: string | null, snapshot: CartOrchestrationSnapshot): Promise<readonly CartBffBlocker[]>
   /** Agent 4 interface; describes readiness only, never creates payment or order state. */
   paymentReadiness(method: "cod" | "electronic", snapshot: CartOrchestrationSnapshot): Promise<boolean>
+  /** Optional read-only aggregate preflight; never authorizes completion. */
+  composedCheckoutReadiness?(input: {
+    snapshot: CartOrchestrationSnapshot
+    cartId: string
+    ownershipProof: unknown
+    ownerKey: string
+    requestId: string
+    expectedVersion: string
+    paymentMethod: "cod" | "electronic"
+  }): Promise<{ status: "blocked" | "ready_for_review"; blockers: readonly { code: string }[] }>
   checkoutReadiness(snapshot: CartOrchestrationSnapshot, proof: unknown): Promise<{
     blockers: readonly CartBffBlocker[]
     status: "blocked" | "ready_for_review"
@@ -114,6 +124,43 @@ export async function executeCartBffRequest(input: {
   if (operation.operation === "checkout_preflight") {
     if (operation.expectedVersion !== current.version) return fail(operation.operation, "CART_VERSION_CONFLICT", current.public)
     try {
+      if (deps.composedCheckoutReadiness) {
+        const composed = await deps.composedCheckoutReadiness({
+          snapshot: current, cartId: authority.cartId, ownershipProof: authority.proof,
+          ownerKey: authority.ownerKey, requestId: operation.requestId,
+          expectedVersion: operation.expectedVersion, paymentMethod: operation.paymentMethod,
+        })
+        // Keep the public BFF blocker vocabulary stable, without leaking internal states.
+        const known = new Set<CartBffBlocker>([
+          "CART_UNAVAILABLE", "CART_VERSION_CONFLICT", "CART_MUTATION_LOCKED",
+          "CART_COMPLETED", "CART_IDEMPOTENCY_CONFLICT", "CART_IDEMPOTENCY_UNAVAILABLE",
+          "CART_REGION_NOT_EGYPT_EGP", "GUEST_DELIVERY_INVALID", "INVENTORY_UNKNOWN",
+          "INVENTORY_UNAVAILABLE", "SHIPPING_COVERAGE_UNCONFIGURED", "SHIPPING_RATE_UNCONFIGURED",
+          "SHIPPING_PROVIDER_UNDECIDED", "SHIPPING_QUOTE_UNAVAILABLE", "SHIPPING_RATE_INVALID",
+          "SHIPPING_GOVERNORATE_UNKNOWN", "CART_REGION_UNAVAILABLE", "CART_CURRENCY_NOT_EGP",
+          "CHECKOUT_OWNERSHIP_UNAVAILABLE", "MISSING_SHIPPING_ADDRESS", "MISSING_SHIPPING_METHOD",
+          "SHIPPING_PRICE_UNAVAILABLE", "PAYABLE_TOTAL_UNAVAILABLE", "CHECKOUT_SESSION_UNAVAILABLE",
+          "PAYMENT_METHOD_UNAVAILABLE", "CHECKOUT_IN_PROGRESS", "CHECKOUT_ALREADY_COMPLETED",
+          "ORDER_COMPLETION_DISABLED", "UPSTREAM_UNAVAILABLE",
+        ])
+        const blockers = new Set<CartBffBlocker>()
+        if (!composed || !Array.isArray(composed.blockers) ||
+            (composed.status !== "blocked" && composed.status !== "ready_for_review")) {
+          blockers.add("UPSTREAM_UNAVAILABLE")
+        } else {
+          for (const item of composed.blockers) {
+            const code = item?.code
+            blockers.add(code === "PREFLIGHT_REPLAY_CONFLICT" ? "CART_IDEMPOTENCY_CONFLICT"
+              : code === "CART_VERSION_STALE" ? "CART_VERSION_CONFLICT"
+              : known.has(code as CartBffBlocker) ? code as CartBffBlocker : "UPSTREAM_UNAVAILABLE")
+          }
+          if (composed.status === "blocked" && blockers.size === 0) blockers.add("UPSTREAM_UNAVAILABLE")
+        }
+        const status = blockers.size ? "blocked" : "ready_for_review"
+        return { response: { ok: status === "ready_for_review", operation: operation.operation,
+          cart: current.public, blockers: [...blockers],
+          checkout: { status, paymentMethod: operation.paymentMethod } }, rejectedBeforeMutation: true }
+      }
       const [availability, shippingBlockers, paymentReady, checkout] = await Promise.all([
         deps.readAvailability(current.lines),
         deps.shippingReadiness(current.governorateId, current),
