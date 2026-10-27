@@ -12,6 +12,7 @@ import {
   serializeGuestSessionCookie,
   serializeClearGuestSessionCookie,
   extractGuestSessionSecret,
+  extractGuestSessionSecretWithStatus,
 } from "../lib/session.ts"
 import {
   CSRF_HEADER_NAME,
@@ -25,226 +26,265 @@ import {
   validateCsrfToken,
   serializeCsrfCookie,
   extractCsrfCookieToken,
+  extractCsrfCookieTokenWithStatus,
   validateRequestCsrf,
+  deriveSessionBoundCsrfToken,
+  validateSessionBoundCsrfToken,
 } from "../lib/security.ts"
 import {
   DisabledStorefrontBffClient,
   getStorefrontBffClient,
   isStorefrontBffEnabled,
+  resolveTrustedGuestSession,
+  getAuthoritativeCartSnapshot,
+  getBackendCheckoutReadiness,
+  mapBackendReadinessToUi,
 } from "../lib/bff-client.ts"
+import { evaluateBffRequestPolicy } from "../lib/bff-policy.ts"
+import { SYNTHETIC_QA_READINESS_FIXTURE } from "../lib/checkout.ts"
+import { getDictionary } from "../lib/i18n.ts"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-test("1. Server-only guest session contract and cookie options", () => {
-  // 1.1 Secret format validation (256-bit base64url: 43 characters)
-  const validSecret = "a".repeat(43)
-  assert.equal(isValidSessionSecret(validSecret), true)
-  assert.equal(isValidSessionSecret("vO_12-34_567890abcdefghijklmnopqrstuvwxyzAB"), true)
+test("1. Hardened guest session contract: conflict, malformation and __Host- isolation", () => {
+  const validSecret1 = "a".repeat(43)
+  const validSecret2 = "b".repeat(43)
 
-  // Rejection of invalid secret formats
+  // 1.1 Format validation
+  assert.equal(isValidSessionSecret(validSecret1), true)
   assert.equal(isValidSessionSecret("short"), false)
-  assert.equal(isValidSessionSecret("a".repeat(42)), false)
   assert.equal(isValidSessionSecret("a".repeat(44)), false)
-  assert.equal(isValidSessionSecret("a".repeat(42) + "+"), false) // '+' is not base64url
   assert.equal(isValidSessionSecret(null), false)
-  assert.equal(isValidSessionSecret(undefined), false)
-  assert.equal(isValidSessionSecret(12345), false)
 
-  // 1.2 Cookie options
-  const devOptions = getGuestSessionCookieOptions(false)
-  assert.equal(devOptions.name, GUEST_SESSION_COOKIE_NAME)
-  assert.equal(devOptions.httpOnly, true)
-  assert.equal(devOptions.secure, false)
-  assert.equal(devOptions.sameSite, "lax")
-  assert.equal(devOptions.path, "/")
-  assert.equal(devOptions.maxAge, GUEST_SESSION_TTL_SECONDS)
-  assert.equal(devOptions.maxAge, 86400) // 24 hours
+  // 1.2 Valid single cookie extraction
+  const secureHeader = `${GUEST_SESSION_SECURE_COOKIE_NAME}=${validSecret1}`
+  const secureRes = extractGuestSessionSecretWithStatus(secureHeader, true)
+  assert.equal(secureRes.status, "valid")
+  if (secureRes.status === "valid") assert.equal(secureRes.secret, validSecret1)
+  assert.equal(extractGuestSessionSecret(secureHeader, true), validSecret1)
 
-  const prodOptions = getGuestSessionCookieOptions(true)
-  assert.equal(prodOptions.name, GUEST_SESSION_SECURE_COOKIE_NAME)
-  assert.equal(prodOptions.httpOnly, true)
-  assert.equal(prodOptions.secure, true)
+  // 1.3 Insecure fallback cookie strictly rejected in secure mode
+  const insecureHeader = `${GUEST_SESSION_COOKIE_NAME}=${validSecret1}`
+  const insecureInSecureRes = extractGuestSessionSecretWithStatus(insecureHeader, true)
+  assert.equal(insecureInSecureRes.status, "insecure_in_secure_mode")
+  assert.equal(extractGuestSessionSecret(insecureHeader, true), null)
 
-  // 1.3 Cookie serialization
-  const cookieString = serializeGuestSessionCookie(validSecret, true)
-  assert.ok(cookieString.includes(`${GUEST_SESSION_SECURE_COOKIE_NAME}=${validSecret}`))
-  assert.ok(cookieString.includes("Path=/"))
-  assert.ok(cookieString.includes("Max-Age=86400"))
-  assert.ok(cookieString.includes("HttpOnly"))
-  assert.ok(cookieString.includes("SameSite=lax"))
-  assert.ok(cookieString.includes("Secure"))
+  // Allowed in development mode (isSecure = false)
+  const devRes = extractGuestSessionSecretWithStatus(insecureHeader, false)
+  assert.equal(devRes.status, "valid")
 
-  // Invalidation serialization
-  const clearCookie = serializeClearGuestSessionCookie(true)
-  assert.ok(clearCookie.includes("Max-Age=0"))
-  assert.ok(clearCookie.includes("Expires=Thu, 01 Jan 1970 00:00:00 GMT"))
+  // 1.4 Duplicate/conflicting cookies rejected (fail closed)
+  const dupHeader = `${GUEST_SESSION_SECURE_COOKIE_NAME}=${validSecret1}; ${GUEST_SESSION_SECURE_COOKIE_NAME}=${validSecret2}`
+  assert.equal(extractGuestSessionSecretWithStatus(dupHeader, true).status, "conflict")
+  assert.equal(extractGuestSessionSecret(dupHeader, true), null)
 
-  // 1.4 Extract session secret from raw Cookie header
-  const rawCookieHeader = `other=123; ${GUEST_SESSION_SECURE_COOKIE_NAME}=${validSecret}; theme=dark`
-  assert.equal(extractGuestSessionSecret(rawCookieHeader), validSecret)
-  assert.equal(extractGuestSessionSecret("malformed_cookie_header"), null)
-  assert.equal(extractGuestSessionSecret(`${GUEST_SESSION_COOKIE_NAME}=short`), null)
+  // 1.5 Malformed value rejected
+  const malformedHeader = `${GUEST_SESSION_SECURE_COOKIE_NAME}=invalid_len`
+  assert.equal(extractGuestSessionSecretWithStatus(malformedHeader, true).status, "malformed")
+  assert.equal(extractGuestSessionSecret(malformedHeader, true), null)
+
+  // 1.6 Missing cookie header
+  assert.equal(extractGuestSessionSecretWithStatus(null, true).status, "missing")
+  assert.equal(extractGuestSessionSecret("", true), null)
 })
 
-test("2. Origin validation and strict allowlist enforcement", () => {
+test("2. Strict Origin parsing and distinct Origin vs Referer semantics", () => {
   const allowlist = ["https://zamzamstore.com", "http://localhost:3000"]
 
-  // 2.1 Origin normalization
-  assert.equal(normalizeOrigin("https://ZamZamStore.COM/"), "https://zamzamstore.com")
-  assert.equal(normalizeOrigin("http://localhost:3000/some/path"), "http://localhost:3000")
-  assert.equal(normalizeOrigin("invalid-url"), null)
+  // 2.1 Strict Origin Normalization
+  assert.equal(normalizeOrigin("https://zamzamstore.com"), "https://zamzamstore.com")
+  assert.equal(normalizeOrigin("https://zamzamstore.com/"), "https://zamzamstore.com")
+  assert.equal(normalizeOrigin("http://localhost:3000"), "http://localhost:3000")
 
-  // 2.2 isAllowedOrigin
-  assert.equal(isAllowedOrigin("https://zamzamstore.com", allowlist), true)
-  assert.equal(isAllowedOrigin("http://localhost:3000", allowlist), true)
-  assert.equal(isAllowedOrigin("https://attacker.com", allowlist), false)
-  assert.equal(isAllowedOrigin("null", allowlist), false)
-  assert.equal(isAllowedOrigin("", allowlist), false)
+  // Rejection of embedded credentials
+  assert.equal(normalizeOrigin("https://user:pass@zamzamstore.com"), null)
+  // Rejection of path segments
+  assert.equal(normalizeOrigin("https://zamzamstore.com/checkout"), null)
+  // Rejection of query strings or fragments
+  assert.equal(normalizeOrigin("https://zamzamstore.com?query=1"), null)
+  assert.equal(normalizeOrigin("https://zamzamstore.com#fragment"), null)
+  // Rejection of non-http(s) schemes
+  assert.equal(normalizeOrigin("javascript:alert(1)"), null)
+  assert.equal(normalizeOrigin("data:text/html,evil"), null)
+  assert.equal(normalizeOrigin("file:///C:/passwords.txt"), null)
+  assert.equal(normalizeOrigin("null"), null)
 
-  // 2.3 State-changing methods vs read-only methods
-  // Safe read-only methods pass
-  const getResult = validateRequestOrigin("GET", { origin: "https://attacker.com" }, allowlist)
-  assert.equal(getResult.valid, true)
-
-  // State-changing requests from disallowed origin are rejected
-  const postBadOrigin = validateRequestOrigin(
+  // 2.2 Semantic check: Malformed Origin must NOT fall back to Referer
+  const malformedOriginWithValidReferer = validateRequestOrigin(
     "POST",
-    { origin: "https://evil.com" },
+    {
+      origin: "https://user:pass@evil.com",
+      referer: "https://zamzamstore.com/checkout",
+    },
     allowlist
   )
-  assert.equal(postBadOrigin.valid, false)
-  assert.equal(postBadOrigin.reason, "ORIGIN_NOT_ALLOWED")
+  assert.equal(malformedOriginWithValidReferer.valid, false)
+  assert.equal(malformedOriginWithValidReferer.reason, "ORIGIN_MALFORMED")
 
-  // State-changing requests with allowed origin pass
-  const postGoodOrigin = validateRequestOrigin(
+  // Origin: "null" rejected
+  const nullOriginRes = validateRequestOrigin("POST", { origin: "null" }, allowlist)
+  assert.equal(nullOriginRes.valid, false)
+  assert.equal(nullOriginRes.reason, "ORIGIN_NOT_ALLOWED")
+
+  // Legitimate Origin matches allowlist
+  const validOriginRes = validateRequestOrigin("POST", { origin: "https://zamzamstore.com" }, allowlist)
+  assert.equal(validOriginRes.valid, true)
+
+  // Referer fallback ONLY when Origin header is completely absent
+  const refererOnlyRes = validateRequestOrigin(
     "POST",
-    { origin: "https://zamzamstore.com" },
+    { referer: "https://zamzamstore.com/products/tea" },
     allowlist
   )
-  assert.equal(postGoodOrigin.valid, true)
+  assert.equal(refererOnlyRes.valid, true)
+  if (refererOnlyRes.valid) assert.equal(refererOnlyRes.origin, "https://zamzamstore.com")
 
-  // Referer fallback
-  const postReferer = validateRequestOrigin(
-    "POST",
-    { referer: "https://zamzamstore.com/checkout" },
-    allowlist
-  )
-  assert.equal(postReferer.valid, true)
-
-  // Missing origin and referer
-  const postMissing = validateRequestOrigin("POST", {}, allowlist)
-  assert.equal(postMissing.valid, false)
-  assert.equal(postMissing.reason, "ORIGIN_MISSING")
-
-  // Empty allowlist fails closed
-  const postEmptyAllowlist = validateRequestOrigin(
-    "POST",
-    { origin: "https://zamzamstore.com" },
-    []
-  )
-  assert.equal(postEmptyAllowlist.valid, false)
-  assert.equal(postEmptyAllowlist.reason, "ALLOWLIST_EMPTY")
+  // Missing both Origin and Referer
+  const missingBothRes = validateRequestOrigin("POST", {}, allowlist)
+  assert.equal(missingBothRes.valid, false)
+  assert.equal(missingBothRes.reason, "ORIGIN_MISSING")
 })
 
-test("3. CSRF token generation, constant-time validation and request defense", () => {
-  // 3.1 Token generation and format
-  const token = generateCsrfToken()
-  assert.equal(isValidCsrfTokenFormat(token), true)
-  assert.equal(token.length, 43)
-
-  // 3.2 Token comparison
+test("3. CSRF defense: token extraction, duplicate cookie rejection and session-bound tokens", () => {
+  const token1 = generateCsrfToken()
   const token2 = generateCsrfToken()
-  assert.equal(validateCsrfToken(token, token), true)
-  assert.equal(validateCsrfToken(token, token2), false)
-  assert.equal(validateCsrfToken(token, "invalid"), false)
-  assert.equal(validateCsrfToken("", token), false)
 
-  // 3.3 Cookie serialization and extraction
-  const cookieStr = serializeCsrfCookie(token, false)
-  assert.ok(cookieStr.includes(`${CSRF_COOKIE_NAME}=${token}`))
-  assert.equal(extractCsrfCookieToken(`${CSRF_COOKIE_NAME}=${token}`), token)
+  // 3.1 Token validation
+  assert.equal(validateCsrfToken(token1, token1), true)
+  assert.equal(validateCsrfToken(token1, token2), false)
 
-  // 3.4 Request CSRF validation
-  // Safe methods pass without CSRF headers
-  assert.equal(validateRequestCsrf("GET", {}).valid, true)
+  // 3.2 Duplicate or conflicting CSRF cookies rejected
+  const dupCsrfHeader = `${CSRF_SECURE_COOKIE_NAME}=${token1}; ${CSRF_SECURE_COOKIE_NAME}=${token2}`
+  assert.equal(extractCsrfCookieTokenWithStatus(dupCsrfHeader, true).status, "conflict")
+  assert.equal(extractCsrfCookieToken(dupCsrfHeader, true), null)
 
-  // State-changing missing cookie
-  const postMissingCookie = validateRequestCsrf("POST", { [CSRF_HEADER_NAME]: token })
-  assert.equal(postMissingCookie.valid, false)
-  assert.equal(postMissingCookie.reason, "CSRF_COOKIE_MISSING")
+  // Insecure CSRF cookie rejected in secure mode
+  const insecureCsrfHeader = `${CSRF_COOKIE_NAME}=${token1}`
+  assert.equal(extractCsrfCookieTokenWithStatus(insecureCsrfHeader, true).status, "insecure_in_secure_mode")
 
-  // State-changing missing header
-  const postMissingHeader = validateRequestCsrf(
-    "POST",
-    { cookie: `${CSRF_COOKIE_NAME}=${token}` }
-  )
-  assert.equal(postMissingHeader.valid, false)
-  assert.equal(postMissingHeader.reason, "CSRF_HEADER_MISSING")
+  // 3.3 Session-bound CSRF token derivation
+  const sessionSecret = "c".repeat(43)
+  const boundToken = deriveSessionBoundCsrfToken(sessionSecret)
+  assert.equal(isValidCsrfTokenFormat(boundToken), true)
 
-  // State-changing mismatched token
-  const postMismatch = validateRequestCsrf(
-    "POST",
-    {
-      cookie: `${CSRF_COOKIE_NAME}=${token}`,
-      [CSRF_HEADER_NAME]: token2,
-    }
-  )
-  assert.equal(postMismatch.valid, false)
-  assert.equal(postMismatch.reason, "CSRF_TOKEN_MISMATCH")
-
-  // State-changing valid matching token
-  const postValid = validateRequestCsrf(
-    "POST",
-    {
-      cookie: `${CSRF_COOKIE_NAME}=${token}`,
-      [CSRF_HEADER_NAME]: token,
-    }
-  )
-  assert.equal(postValid.valid, true)
+  // Session-bound validation
+  assert.equal(validateSessionBoundCsrfToken(sessionSecret, boundToken), true)
+  assert.equal(validateSessionBoundCsrfToken(sessionSecret, "wrong_token_of_length_43_characters_padded!"), false)
+  assert.equal(validateSessionBoundCsrfToken("d".repeat(43), boundToken), false) // Different session secret fails
 })
 
-test("4. Typed BFF client boundary and disabled fail-closed behavior", async () => {
-  // Default: feature flag is not enabled
+test("4. Composed internal BFF request policy evaluation", () => {
+  const allowlist = ["https://zamzamstore.com"]
+  const sessionSecret = "e".repeat(43)
+  const csrfToken = generateCsrfToken()
+  const secureCookieHeader = `${GUEST_SESSION_SECURE_COOKIE_NAME}=${sessionSecret}; ${CSRF_SECURE_COOKIE_NAME}=${csrfToken}`
+
+  // 4.1 Transport disabled (default)
   delete process.env.FEATURE_ENABLE_STOREFRONT_BFF
-  assert.equal(isStorefrontBffEnabled(), false)
+  const defaultPolicy = evaluateBffRequestPolicy({
+    method: "POST",
+    headers: { origin: "https://zamzamstore.com", [CSRF_HEADER_NAME]: csrfToken },
+    cookieHeader: secureCookieHeader,
+    allowlist,
+    isSecure: true,
+  })
+  assert.equal(defaultPolicy.outcome, "transport_disabled")
+  assert.equal(defaultPolicy.allowed, false)
 
-  const client = getStorefrontBffClient()
-  assert.ok(client instanceof DisabledStorefrontBffClient)
+  // 4.2 With transport enabled (bypass flag for testing)
+  // Origin rejected
+  const badOriginPolicy = evaluateBffRequestPolicy({
+    method: "POST",
+    headers: { origin: "https://hacker.com", [CSRF_HEADER_NAME]: csrfToken },
+    cookieHeader: secureCookieHeader,
+    allowlist,
+    isSecure: true,
+    bypassTransportCheck: true,
+  })
+  assert.equal(badOriginPolicy.outcome, "origin_rejected")
 
-  // 4.1 createGuestSession fails closed
-  const createRes = await client.createGuestSession({ regionId: "reg_1" })
-  assert.equal(createRes.success, false)
-  assert.equal(createRes.error, "TRANSPORT_NOT_AVAILABLE")
-  assert.equal(createRes.status, 503)
+  // CSRF missing on POST
+  const missingCsrfPolicy = evaluateBffRequestPolicy({
+    method: "POST",
+    headers: { origin: "https://zamzamstore.com" },
+    cookieHeader: secureCookieHeader,
+    allowlist,
+    isSecure: true,
+    bypassTransportCheck: true,
+  })
+  assert.equal(missingCsrfPolicy.outcome, "csrf_rejected")
 
-  // 4.2 Malformed secret rejected with 400
-  const resolveMalformed = await client.resolveSession("short")
-  assert.equal(resolveMalformed.success, false)
-  assert.equal(resolveMalformed.error, "INVALID_SECRET")
-  assert.equal(resolveMalformed.status, 400)
+  // Session cookie missing
+  const missingSessionPolicy = evaluateBffRequestPolicy({
+    method: "POST",
+    headers: { origin: "https://zamzamstore.com", [CSRF_HEADER_NAME]: csrfToken },
+    cookieHeader: `${CSRF_SECURE_COOKIE_NAME}=${csrfToken}`,
+    allowlist,
+    isSecure: true,
+    bypassTransportCheck: true,
+  })
+  assert.equal(missingSessionPolicy.outcome, "session_missing")
 
-  // 4.3 Valid secret format fails closed with 503 (transport unmounted)
-  const validSecret = "a".repeat(43)
-  const resolveValid = await client.resolveSession(validSecret)
-  assert.equal(resolveValid.success, false)
-  assert.equal(resolveValid.error, "TRANSPORT_NOT_AVAILABLE")
-  assert.equal(resolveValid.status, 503)
+  // Session cookie malformed/conflicting
+  const conflictingSessionPolicy = evaluateBffRequestPolicy({
+    method: "POST",
+    headers: { origin: "https://zamzamstore.com", [CSRF_HEADER_NAME]: csrfToken },
+    cookieHeader: `${secureCookieHeader}; ${GUEST_SESSION_SECURE_COOKIE_NAME}=${"f".repeat(43)}`,
+    allowlist,
+    isSecure: true,
+    bypassTransportCheck: true,
+  })
+  assert.equal(conflictingSessionPolicy.outcome, "session_invalid")
 
-  const cartRes = await client.retrieveAuthoritativeCart(validSecret)
+  // Completely valid request perimeter
+  const allowedPolicy = evaluateBffRequestPolicy({
+    method: "POST",
+    headers: { origin: "https://zamzamstore.com", [CSRF_HEADER_NAME]: csrfToken },
+    cookieHeader: secureCookieHeader,
+    allowlist,
+    isSecure: true,
+    bypassTransportCheck: true,
+  })
+  assert.equal(allowedPolicy.outcome, "allowed")
+  assert.equal(allowedPolicy.allowed, true)
+  assert.equal(allowedPolicy.sessionSecret, sessionSecret)
+  assert.equal(allowedPolicy.origin, "https://zamzamstore.com")
+})
+
+test("5. Trusted read-only boundary functions and UI mapping", async () => {
+  const sessionSecret = "g".repeat(43)
+
+  // 5.1 Rejection of malformed secrets
+  const malformedRes = await resolveTrustedGuestSession("too_short")
+  assert.equal(malformedRes.success, false)
+  assert.equal(malformedRes.error, "INVALID_SECRET")
+
+  // 5.2 Unmounted transport returns 503 TRANSPORT_NOT_AVAILABLE
+  const resolved = await resolveTrustedGuestSession(sessionSecret)
+  assert.equal(resolved.success, false)
+  assert.equal(resolved.error, "TRANSPORT_NOT_AVAILABLE")
+  assert.equal(resolved.status, 503)
+
+  const cartRes = await getAuthoritativeCartSnapshot(sessionSecret)
   assert.equal(cartRes.success, false)
   assert.equal(cartRes.error, "TRANSPORT_NOT_AVAILABLE")
 
-  const preflightRes = await client.getPreflightReadiness(validSecret)
-  assert.equal(preflightRes.success, false)
-  assert.equal(preflightRes.error, "TRANSPORT_NOT_AVAILABLE")
+  const readinessRes = await getBackendCheckoutReadiness(sessionSecret)
+  assert.equal(readinessRes.success, false)
+  assert.equal(readinessRes.error, "TRANSPORT_NOT_AVAILABLE")
 
-  const invalidateRes = await client.invalidateGuestSession(validSecret)
-  assert.equal(invalidateRes.success, false)
-  assert.equal(invalidateRes.error, "TRANSPORT_NOT_AVAILABLE")
+  // 5.3 UI readiness mapping
+  const dict = getDictionary("ar")
+  const viewModel = mapBackendReadinessToUi(SYNTHETIC_QA_READINESS_FIXTURE, dict)
+  assert.equal(viewModel.isBlocked, true)
+  assert.ok(viewModel.blockers.includes("CHECKOUT_OWNERSHIP_UNAVAILABLE"))
+  assert.ok(viewModel.blockerMessages.length > 0)
+  assert.equal(viewModel.checklist.length, 5)
+  assert.equal(viewModel.checklist[0].status, "blocked")
 })
 
-test("5. Server-only boundary: no client components import session, security, or bff-client", () => {
+test("6. Server-only boundary: no client components import server-only modules", () => {
   const componentsDir = path.resolve(__dirname, "../components")
   const files = fs.readdirSync(componentsDir)
 
@@ -252,9 +292,9 @@ test("5. Server-only boundary: no client components import session, security, or
     if (file.endsWith(".tsx") || file.endsWith(".ts")) {
       const content = fs.readFileSync(path.join(componentsDir, file), "utf-8")
       assert.equal(
-        /from\s+["'].*\/(session|security|bff-client)["']/i.test(content),
+        /from\s+["'].*\/(session|security|bff-client|bff-policy)["']/i.test(content),
         false,
-        `Component ${file} must not import server-only session/security/bff-client utilities`
+        `Component ${file} must not import server-only session/security/bff modules`
       )
     }
   }

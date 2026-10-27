@@ -1,5 +1,5 @@
 /**
- * Server-Only Storefront BFF Client Boundary (Phase 4.5 BFF Foundation)
+ * Server-Only Storefront BFF Client Boundary (Phase 4.6 BFF Foundation)
  *
  * Defines the typed server-only contract for future secure guest session and cart
  * ownership operations between Next.js server actions and the backend.
@@ -11,10 +11,12 @@
  * - This client is deliberately unmounted and fails closed until transport and backend
  *   authorization are approved by the integration coordinator.
  * - Never invents operational endpoints, makes live unverified calls, or bypasses ownership.
+ * - Never accepts a browser-supplied cart ID as ownership proof.
  */
 
 import type { SanitizedCart } from "./cart-types.ts"
 import type { CheckoutReadinessState, GuestCheckoutInput } from "./checkout.ts"
+import type { Dictionary } from "./i18n.ts"
 import { isValidSessionSecret } from "./session.ts"
 
 export const FEATURE_ENABLE_STOREFRONT_BFF = "FEATURE_ENABLE_STOREFRONT_BFF" as const
@@ -156,4 +158,143 @@ export class DisabledStorefrontBffClient implements StorefrontBffClient {
  */
 export function getStorefrontBffClient(): StorefrontBffClient {
   return new DisabledStorefrontBffClient()
+}
+
+/* ==========================================================================
+   Task 3: Trusted Read-Only Integration Functions
+   ========================================================================== */
+
+/**
+ * Resolves trusted guest cart session ownership from the opaque session secret.
+ * Fails closed if the secret is malformed or transport is unmounted.
+ */
+export async function resolveTrustedGuestSession(
+  sessionSecret: unknown,
+  client: StorefrontBffClient = getStorefrontBffClient()
+): Promise<BffResult<SessionOwnershipResolved>> {
+  if (!isValidSessionSecret(sessionSecret)) {
+    return {
+      success: false,
+      error: "INVALID_SECRET",
+      status: 400,
+      message: "Malformed guest session secret format.",
+    }
+  }
+  return client.resolveSession(sessionSecret)
+}
+
+/**
+ * Obtains an authoritative Medusa cart snapshot for the trusted session.
+ * Never accepts a client-provided cart ID as identity.
+ */
+export async function getAuthoritativeCartSnapshot(
+  sessionSecret: unknown,
+  client: StorefrontBffClient = getStorefrontBffClient()
+): Promise<BffResult<SanitizedCart>> {
+  if (!isValidSessionSecret(sessionSecret)) {
+    return {
+      success: false,
+      error: "INVALID_SECRET",
+      status: 400,
+      message: "Malformed guest session secret format.",
+    }
+  }
+  return client.retrieveAuthoritativeCart(sessionSecret)
+}
+
+/**
+ * Retrieves authoritative backend checkout readiness blockers.
+ */
+export async function getBackendCheckoutReadiness(
+  sessionSecret: unknown,
+  guestDelivery?: Partial<GuestCheckoutInput>,
+  client: StorefrontBffClient = getStorefrontBffClient()
+): Promise<BffResult<CheckoutReadinessState>> {
+  if (!isValidSessionSecret(sessionSecret)) {
+    return {
+      success: false,
+      error: "INVALID_SECRET",
+      status: 400,
+      message: "Malformed guest session secret format.",
+    }
+  }
+  return client.getPreflightReadiness(sessionSecret, guestDelivery)
+}
+
+export interface UiReadinessChecklistItem {
+  label: string
+  status: "met" | "pending" | "blocked"
+  statusText: string
+}
+
+export interface UiReadinessViewModel {
+  isBlocked: boolean
+  overallStatusText: string
+  blockers: string[]
+  blockerMessages: string[]
+  checklist: UiReadinessChecklistItem[]
+}
+
+/**
+ * Safely maps the backend checkout readiness state into the existing bilingual Checkout UI view model.
+ * - Does NOT recalculate Medusa prices or totals.
+ * - Does NOT fabricate shipping fees or grant purchasing authorization.
+ * - Maps blocker codes to localized explanatory alerts.
+ */
+export function mapBackendReadinessToUi(
+  readinessState: CheckoutReadinessState,
+  dict: Dictionary
+): UiReadinessViewModel {
+  const isBlocked = readinessState.status === "blocked" || readinessState.blockers.length > 0
+  const overallStatusText = isBlocked
+    ? dict.checkout.statusBlocked
+    : dict.checkout.statusMet
+
+  const blockerMessages = readinessState.blockers.map((code) => {
+    return dict.checkout.blockers[code] ?? code
+  })
+
+  const checklist: UiReadinessChecklistItem[] = [
+    {
+      label: dict.checkout.ownershipLabel,
+      status: "blocked",
+      statusText: dict.checkout.statusBlocked,
+    },
+    {
+      label: dict.checkout.deliveryAddressLabel,
+      status: readinessState.readiness.deliveryAddress ? "met" : "pending",
+      statusText: readinessState.readiness.deliveryAddress
+        ? dict.checkout.statusMet
+        : dict.checkout.statusPending,
+    },
+    {
+      label: dict.checkout.shippingMethodLabel,
+      status: readinessState.readiness.shippingMethod ? "met" : "pending",
+      statusText: readinessState.readiness.shippingMethod
+        ? dict.checkout.statusMet
+        : dict.checkout.statusPending,
+    },
+    {
+      label: dict.checkout.shippingPriceLabel,
+      status: readinessState.readiness.shippingPrice ? "met" : "pending",
+      statusText: readinessState.readiness.shippingPrice
+        ? dict.checkout.statusMet
+        : dict.checkout.statusPending,
+    },
+    {
+      label: dict.checkout.payableTotalLabel,
+      status: readinessState.readiness.payableTotal ? "met" : "pending",
+      statusText: readinessState.readiness.payableTotal
+        ? dict.checkout.statusMet
+        : dict.checkout.statusPending,
+    },
+  ]
+
+  return {
+    isBlocked,
+    overallStatusText,
+    blockers: [...readinessState.blockers],
+    blockerMessages,
+    checklist,
+  }
 }
