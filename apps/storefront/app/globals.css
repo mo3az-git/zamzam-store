@@ -628,3 +628,57 @@ html[lang="en"] .catalog-intro h1, html[lang="en"] .detail-copy h1 { font-size: 
   .detail-thumbs img { width: 72px; height: 72px; }
   html[lang="en"] .lux-hero h1 { font-size: clamp(38px,9vw,54px); }
 }
+
+
+/* Interactive product image gallery & language switch accessibility */
+.detail-main-wrapper {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 15px;
+  background: #f5f7f2;
+}
+
+.detail-thumb-button {
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  padding: 0;
+  cursor: pointer;
+  overflow: hidden;
+  display: inline-flex;
+  transition: border-color 0.18s ease, transform 0.18s ease;
+  outline-offset: 3px;
+}
+
+.detail-thumb-button:hover {
+  transform: translateY(-2px);
+}
+
+.detail-thumb-button.is-active {
+  border-color: #ad8156;
+}
+
+.detail-thumb-button:focus-visible {
+  outline: 2px solid #8dc9b1;
+}
+
+.detail-thumb-image {
+  width: 92px;
+  height: 92px;
+  object-fit: cover;
+  display: block;
+}
+
+.lux-lang-icon {
+  font-size: 13px;
+  margin-inline-end: 6px;
+  line-height: 1;
+}
+
+@media (max-width: 640px) {
+  .detail-thumb-image {
+    width: 72px;
+    height: 72px;
+  }
+}

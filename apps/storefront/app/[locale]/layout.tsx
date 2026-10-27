@@ -83,8 +83,10 @@ export default async function LocaleLayout({
               lang={switchLocale}
               dir={localeDirection[switchLocale]}
               aria-label={dict.language.switchTo}
+              title={dict.language.switchTo}
             >
-              {localeLabel[switchLocale]}
+              <span className="lux-lang-icon" aria-hidden="true">🌐</span>
+              <span>{localeLabel[switchLocale]}</span>
             </Link>
           </div>
         </div>
@@ -105,7 +107,7 @@ export default async function LocaleLayout({
             </nav>
             <Link className="lux-header-action" href={catalog}>
               {dict.nav.discover}
-              <span aria-hidden="true">↖</span>
+              <span aria-hidden="true">{locale === "en" ? "↗" : "↖"}</span>
             </Link>
           </div>
         </header>

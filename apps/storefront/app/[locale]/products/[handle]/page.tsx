@@ -1,9 +1,9 @@
 import type { Metadata } from "next"
-import Image from "next/image"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { cache } from "react"
 import { VariantSelector } from "../../../../components/variant-selector"
+import { ProductGallery } from "../../../../components/product-gallery"
 import { getDictionary, isLocale, localePath } from "../../../../lib/i18n"
 import {
   listStoreProducts,
@@ -82,7 +82,7 @@ export default async function ProductPage({ params }: { params: Promise<ProductP
     return (
       <main className="shell detail-page" id="main-content">
         <Link href={catalog} className="subtle-link">
-          ← {dict.product.backToCatalog}
+          <span aria-hidden="true">{locale === "en" ? "←" : "→"}</span> {dict.product.backToCatalog}
         </Link>
         <div className="notice" role="status">
           <strong>{dict.catalog.errorTitle}</strong>
@@ -95,7 +95,7 @@ export default async function ProductPage({ params }: { params: Promise<ProductP
   if (!product) notFound()
 
   const images = productImageUrls(product)
-  const [mainImage, ...extraImages] = images
+  const mainImage = images[0]
   const priceAmount = productPriceAmount(product)
   const singleSku =
     (product.variants ?? []).length === 1 ? (product.variants?.[0]?.sku?.trim() ?? "") : ""
@@ -129,35 +129,12 @@ export default async function ProductPage({ params }: { params: Promise<ProductP
         <span>{product.title}</span>
       </nav>
       <div className="detail-grid">
-        <div className="detail-gallery" aria-label={dict.product.galleryLabel}>
-          {mainImage ? (
-            <Image
-              src={mainImage}
-              alt={product.title}
-              width={800}
-              height={800}
-              unoptimized
-              className="detail-main-photo"
-              priority
-            />
-          ) : (
-            <div className="detail-no-photo">{dict.product.noImage}</div>
-          )}
-          {extraImages.length ? (
-            <div className="detail-thumbs" aria-hidden="true">
-              {extraImages.slice(0, 4).map((url) => (
-                <Image
-                  key={url}
-                  src={url}
-                  alt=""
-                  width={180}
-                  height={180}
-                  unoptimized
-                />
-              ))}
-            </div>
-          ) : null}
-        </div>
+        <ProductGallery
+          images={images}
+          title={product.title}
+          galleryLabel={dict.product.galleryLabel}
+          noImageText={dict.product.noImage}
+        />
         <div className="detail-copy">
           <span className="lux-eyebrow">{dict.product.kicker}</span>
           <h1>{product.title}</h1>
@@ -175,7 +152,7 @@ export default async function ProductPage({ params }: { params: Promise<ProductP
             <p>{dict.product.stockNote}</p>
           </div>
           <Link className="button button-secondary" href={catalog}>
-            {dict.product.continueShopping} <span aria-hidden="true">←</span>
+            {dict.product.continueShopping} <span aria-hidden="true">{locale === "en" ? "→" : "←"}</span>
           </Link>
         </div>
       </div>
