@@ -245,6 +245,42 @@ export type Dictionary = {
     disabledSubmitButton: string
     qaSuccessTitle: string
     qaSuccessNotice: string
+    emailLabel: string
+    emailPlaceholder: string
+    emailRequired: string
+    firstNameLabel: string
+    firstNamePlaceholder: string
+    firstNameRequired: string
+    lastNameLabel: string
+    lastNamePlaceholder: string
+    lastNameRequired: string
+    readinessHeading: string
+    readinessNotice: string
+    readinessBadgeQa: string
+    readinessBadgeLive: string
+    deliveryAddressLabel: string
+    shippingMethodLabel: string
+    shippingPriceLabel: string
+    payableTotalLabel: string
+    ownershipLabel: string
+    statusMet: string
+    statusPending: string
+    statusBlocked: string
+    blockers: {
+      CHECKOUT_OWNERSHIP_UNAVAILABLE: string
+      GUEST_DELIVERY_INVALID: string
+      MISSING_SHIPPING_ADDRESS: string
+      MISSING_SHIPPING_METHOD: string
+      SHIPPING_PRICE_UNAVAILABLE: string
+      PAYABLE_TOTAL_UNAVAILABLE: string
+      CHECKOUT_IN_PROGRESS: string
+      CHECKOUT_ALREADY_COMPLETED: string
+      CART_UNAVAILABLE: string
+      CART_REGION_UNAVAILABLE: string
+      CART_REGION_NOT_EGYPT_EGP: string
+      CART_CURRENCY_NOT_EGP: string
+      CHECKOUT_SESSION_UNAVAILABLE: string
+    }
     emptyCartNotice: string
     backToShop: string
   }
@@ -467,6 +503,44 @@ const ar: Dictionary = {
     qaSuccessTitle: "تم التحقق من بيانات التوصيل بنجاح (محاكاة QA)",
     qaSuccessNotice:
       "هذه محاكاة تدقيق فني فقط. إتمام الطلبات الفعلي، وتحديد رسوم الشحن، ومعالجة الدفع معطّلة بالكامل حتى اعتماد مسار الدفع المركزي.",
+    emailLabel: "البريد الإلكتروني",
+    emailPlaceholder: "name@example.com",
+    emailRequired: "يرجى إدخال بريد إلكتروني صحيح.",
+    firstNameLabel: "الاسم الأول",
+    firstNamePlaceholder: "الاسم الأول",
+    firstNameRequired: "يرجى إدخال الاسم الأول.",
+    lastNameLabel: "اسم العائلة",
+    lastNamePlaceholder: "اسم العائلة أو اللقب",
+    lastNameRequired: "يرجى إدخال اسم العائلة.",
+    readinessHeading: "جاهزية إتمام الطلب (قراءة فنية)",
+    readinessNotice:
+      "هذا العرض يعكس محددات الجاهزية المعتمدة لدى النظام المركزي. لا يتم تفعيل إتمام الطلبات أو الدفع من المتصفح.",
+    readinessBadgeQa: "محاكاة الجاهزية الفنية (QA)",
+    readinessBadgeLive: "حالة النظام المركزي",
+    deliveryAddressLabel: "عنوان التوصيل",
+    shippingMethodLabel: "وسيلة الشحن",
+    shippingPriceLabel: "تسعيرة الشحن",
+    payableTotalLabel: "الإجمالي القابل للدفع",
+    ownershipLabel: "ملكية جلسة الدفع",
+    statusMet: "مستوفى",
+    statusPending: "قيد الانتظار",
+    statusBlocked: "معطّل",
+    blockers: {
+      CHECKOUT_OWNERSHIP_UNAVAILABLE:
+        "جلسة إتمام الطلب الموثوقة غير متاحة حالياً؛ التحقق من ملكية السلة يتطلب ربطاً مركزياً.",
+      GUEST_DELIVERY_INVALID: "بيانات التوصيل غير مكتملة أو تحتوي على حقول غير صالحة.",
+      MISSING_SHIPPING_ADDRESS: "عنوان التوصيل غير مسجل في جلسة السلة.",
+      MISSING_SHIPPING_METHOD: "لم يتم تحديد وسيلة شحن معتمدة من المتجر.",
+      SHIPPING_PRICE_UNAVAILABLE: "تسعيرة الشحن الرسمية غير متاحة من نظام المتجر.",
+      PAYABLE_TOTAL_UNAVAILABLE: "الإجمالي النهائي القابل للدفع غير متاح من نظام المتجر.",
+      CHECKOUT_IN_PROGRESS: "عملية إتمام الطلب قيد المعالجة حالياً عبر النظام.",
+      CHECKOUT_ALREADY_COMPLETED: "تم تحويل هذا الطلب وإتمامه مسبقاً.",
+      CART_UNAVAILABLE: "بيانات السلة غير متاحة.",
+      CART_REGION_UNAVAILABLE: "المنطقة الجغرافية للسلة غير محددة.",
+      CART_REGION_NOT_EGYPT_EGP: "المنطقة المحددة ليست جمهورية مصر العربية (EGP).",
+      CART_CURRENCY_NOT_EGP: "عملة السلة ليست الجنيه المصري (EGP).",
+      CHECKOUT_SESSION_UNAVAILABLE: "جلسة إتمام الطلب غير متوفرة أو منتهية الصلاحية.",
+    },
     emptyCartNotice: "سلة المشتريات فارغة. يرجى إضافة منتجات أولاً قبل متابعة التوصيل.",
     backToShop: "تصفح المنتجات",
   },
@@ -689,6 +763,44 @@ const en: Dictionary = {
     qaSuccessTitle: "Delivery Details Validated (QA Simulation)",
     qaSuccessNotice:
       "This is a technical validation preview only. Real order creation, live shipping quotes, and payment gateways remain locked until central store authorization.",
+    emailLabel: "Email Address",
+    emailPlaceholder: "name@example.com",
+    emailRequired: "Please enter a valid email address.",
+    firstNameLabel: "First Name",
+    firstNamePlaceholder: "First name",
+    firstNameRequired: "Please enter your first name.",
+    lastNameLabel: "Last Name",
+    lastNamePlaceholder: "Last name / surname",
+    lastNameRequired: "Please enter your last name.",
+    readinessHeading: "Checkout Readiness (Technical Overview)",
+    readinessNotice:
+      "This display reflects authoritative backend readiness constraints. Order creation and payment are never authorized by the client.",
+    readinessBadgeQa: "QA Readiness Simulation",
+    readinessBadgeLive: "Central Store Status",
+    deliveryAddressLabel: "Delivery Address",
+    shippingMethodLabel: "Shipping Method",
+    shippingPriceLabel: "Shipping Quote",
+    payableTotalLabel: "Payable Total",
+    ownershipLabel: "Session Ownership",
+    statusMet: "Met",
+    statusPending: "Pending",
+    statusBlocked: "Blocked",
+    blockers: {
+      CHECKOUT_OWNERSHIP_UNAVAILABLE:
+        "Trusted checkout session ownership is not available; central cart ownership verification required.",
+      GUEST_DELIVERY_INVALID: "Guest delivery information is incomplete or contains invalid fields.",
+      MISSING_SHIPPING_ADDRESS: "Shipping address is not recorded on the cart.",
+      MISSING_SHIPPING_METHOD: "No approved shipping method has been selected.",
+      SHIPPING_PRICE_UNAVAILABLE: "Official shipping quote is unavailable from the store system.",
+      PAYABLE_TOTAL_UNAVAILABLE: "Authoritative payable total is unavailable from the store system.",
+      CHECKOUT_IN_PROGRESS: "Checkout is currently in progress.",
+      CHECKOUT_ALREADY_COMPLETED: "This checkout has already been completed.",
+      CART_UNAVAILABLE: "Cart data is unavailable.",
+      CART_REGION_UNAVAILABLE: "Cart region is unavailable.",
+      CART_REGION_NOT_EGYPT_EGP: "Cart region is not Egypt (EGP).",
+      CART_CURRENCY_NOT_EGP: "Cart currency is not EGP.",
+      CHECKOUT_SESSION_UNAVAILABLE: "Checkout session is unavailable or expired.",
+    },
     emptyCartNotice: "Your cart is currently empty. Please add items before proceeding to checkout.",
     backToShop: "Browse Products",
   },

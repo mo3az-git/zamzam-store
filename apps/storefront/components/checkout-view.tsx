@@ -1,7 +1,6 @@
 "use client"
 
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
 import { useState } from "react"
 import { getDictionary, localePath, type Locale } from "../lib/i18n"
 import { formatEgpAmount } from "../lib/medusa"
@@ -10,10 +9,13 @@ import { SYNTHETIC_CART_PREVIEW_FIXTURE } from "../lib/cart-types"
 import {
   EGYPTIAN_GOVERNORATES,
   getInMemoryCheckoutState,
+  mapGuestCheckoutToBackend,
   setInMemoryCheckoutState,
-  validateGuestCheckout,
+  SYNTHETIC_QA_READINESS_FIXTURE,
+  type CheckoutReadinessState,
   type GuestCheckoutFieldErrors,
   type GuestCheckoutInput,
+  type PreflightBlocker,
 } from "../lib/checkout"
 
 export interface CheckoutViewProps {
@@ -23,23 +25,22 @@ export interface CheckoutViewProps {
 }
 
 /**
- * Bilingual Guest Checkout Details & Delivery UI (Phase 4.3 MVP).
+ * Bilingual Guest Checkout Details & Readiness UI (Phase 4.4 MVP).
  *
- * Safe nonproduction preview:
- * - Controlled guest information form (Name, Egyptian Mobile, Governorate, City, Address, Notes).
- * - Authoritative cart summary display (Medusa items & subtotal; delivery fees strictly marked pending).
- * - Preserves entered form data across client preview navigation in RAM (never written to localStorage or URL query strings).
- * - Interactive validation simulation is gated exclusively by server-verified `isQaMode`.
- * - Production/customer mode renders disabled checkout without payment or order mutations.
+ * Aligned with backend preflight contract:
+ * - Synthetic fixtures strictly gated by server-verified `isQaMode` (URL query parameters cannot activate).
+ * - Validated first/last name, email, normalized Egyptian mobile, and governorate/province mapping.
+ * - Optional delivery notes kept strictly outside the Medusa CartAddress payload.
+ * - Read-only Checkout Readiness display observing backend preflight blockers.
+ * - Place Order and Payment buttons remain hard-disabled.
  */
 export function CheckoutView({ locale, isQaMode, initialCart = null }: CheckoutViewProps) {
   const dict = getDictionary(locale)
-  const searchParams = useSearchParams()
-  const isSamplePreview = searchParams?.get("preview") === "sample"
 
-  // Active cart resolution: live initialCart -> synthetic preview fixture in QA or sample preview mode -> null
+  // Priority 1: Synthetic fixtures are ONLY accessible when server-verified isQaMode === true.
+  // URL query parameters (e.g. ?preview=sample) alone CANNOT activate synthetic fixtures.
   const activeCart: SanitizedCart | null =
-    initialCart ?? (isQaMode || isSamplePreview ? SYNTHETIC_CART_PREVIEW_FIXTURE : null)
+    initialCart ?? (isQaMode ? SYNTHETIC_CART_PREVIEW_FIXTURE : null)
 
   const items = activeCart?.items ?? []
   const hasItems = items.length > 0
@@ -48,6 +49,27 @@ export function CheckoutView({ locale, isQaMode, initialCart = null }: CheckoutV
   const [formData, setFormData] = useState<GuestCheckoutInput>(() => getInMemoryCheckoutState())
   const [errors, setErrors] = useState<GuestCheckoutFieldErrors>({})
   const [qaSimulatedSuccess, setQaSimulatedSuccess] = useState<boolean>(false)
+
+  // Read-only readiness state: In QA mode, initialized with synthetic preflight fixture.
+  // In non-QA mode, authoritative blockers strictly prevent checkout.
+  const [readinessState, setReadinessState] = useState<CheckoutReadinessState>(() => {
+    if (isQaMode) return { ...SYNTHETIC_QA_READINESS_FIXTURE }
+    return {
+      status: "blocked",
+      blockers: [
+        "CHECKOUT_OWNERSHIP_UNAVAILABLE",
+        "MISSING_SHIPPING_ADDRESS",
+        "MISSING_SHIPPING_METHOD",
+        "SHIPPING_PRICE_UNAVAILABLE",
+      ],
+      readiness: {
+        deliveryAddress: false,
+        shippingMethod: false,
+        shippingPrice: false,
+        payableTotal: Boolean(activeCart?.subtotal),
+      },
+    }
+  })
 
   const handleFieldChange = (field: keyof GuestCheckoutInput, value: string) => {
     const updated = { ...formData, [field]: value }
@@ -66,15 +88,26 @@ export function CheckoutView({ locale, isQaMode, initialCart = null }: CheckoutV
     e.preventDefault()
     if (!isQaMode) return
 
-    const validation = validateGuestCheckout(formData, dict)
-    if (!validation.isValid) {
-      setErrors(validation.errors)
+    const mapping = mapGuestCheckoutToBackend(formData, dict)
+    if (!mapping.success) {
+      setErrors(mapping.errors)
       setQaSimulatedSuccess(false)
+      setReadinessState((prev) => ({
+        ...prev,
+        readiness: { ...prev.readiness, deliveryAddress: false },
+        blockers: Array.from(new Set([...prev.blockers, "GUEST_DELIVERY_INVALID" as PreflightBlocker])),
+      }))
       return
     }
 
+    // Contract successfully mapped without ambiguous heuristics
     setErrors({})
     setQaSimulatedSuccess(true)
+    setReadinessState((prev) => ({
+      ...prev,
+      readiness: { ...prev.readiness, deliveryAddress: true },
+      blockers: prev.blockers.filter((b) => b !== "GUEST_DELIVERY_INVALID" && b !== "MISSING_SHIPPING_ADDRESS"),
+    }))
   }
 
   const cartUrl = localePath(locale, "/cart")
@@ -148,26 +181,76 @@ export function CheckoutView({ locale, isQaMode, initialCart = null }: CheckoutV
               noValidate
               autoComplete="off"
             >
-              {/* Full Name */}
+              {/* First Name & Last Name (Unambiguous Name Separation) */}
+              <div className="lux-form-row">
+                <div className="lux-form-group">
+                  <label htmlFor="firstName" className="lux-label">
+                    {dict.checkout.firstNameLabel} <span aria-hidden="true">*</span>
+                  </label>
+                  <input
+                    id="firstName"
+                    name="firstName"
+                    type="text"
+                    className={`lux-input ${errors.firstName ? "lux-input-error" : ""}`}
+                    placeholder={dict.checkout.firstNamePlaceholder}
+                    value={formData.firstName}
+                    onChange={(e) => handleFieldChange("firstName", e.target.value)}
+                    aria-required="true"
+                    aria-invalid={Boolean(errors.firstName)}
+                    aria-describedby={errors.firstName ? "firstName-error" : undefined}
+                  />
+                  {errors.firstName ? (
+                    <span id="firstName-error" className="lux-field-error" role="alert">
+                      {errors.firstName}
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="lux-form-group">
+                  <label htmlFor="lastName" className="lux-label">
+                    {dict.checkout.lastNameLabel} <span aria-hidden="true">*</span>
+                  </label>
+                  <input
+                    id="lastName"
+                    name="lastName"
+                    type="text"
+                    className={`lux-input ${errors.lastName ? "lux-input-error" : ""}`}
+                    placeholder={dict.checkout.lastNamePlaceholder}
+                    value={formData.lastName}
+                    onChange={(e) => handleFieldChange("lastName", e.target.value)}
+                    aria-required="true"
+                    aria-invalid={Boolean(errors.lastName)}
+                    aria-describedby={errors.lastName ? "lastName-error" : undefined}
+                  />
+                  {errors.lastName ? (
+                    <span id="lastName-error" className="lux-field-error" role="alert">
+                      {errors.lastName}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* Email Address */}
               <div className="lux-form-group">
-                <label htmlFor="fullName" className="lux-label">
-                  {dict.checkout.fullNameLabel} <span aria-hidden="true">*</span>
+                <label htmlFor="email" className="lux-label">
+                  {dict.checkout.emailLabel} <span aria-hidden="true">*</span>
                 </label>
                 <input
-                  id="fullName"
-                  name="fullName"
-                  type="text"
-                  className={`lux-input ${errors.fullName ? "lux-input-error" : ""}`}
-                  placeholder={dict.checkout.fullNamePlaceholder}
-                  value={formData.fullName}
-                  onChange={(e) => handleFieldChange("fullName", e.target.value)}
+                  id="email"
+                  name="email"
+                  type="email"
+                  dir="ltr"
+                  className={`lux-input ${errors.email ? "lux-input-error" : ""}`}
+                  placeholder={dict.checkout.emailPlaceholder}
+                  value={formData.email}
+                  onChange={(e) => handleFieldChange("email", e.target.value)}
                   aria-required="true"
-                  aria-invalid={Boolean(errors.fullName)}
-                  aria-describedby={errors.fullName ? "fullName-error" : undefined}
+                  aria-invalid={Boolean(errors.email)}
+                  aria-describedby={errors.email ? "email-error" : undefined}
                 />
-                {errors.fullName ? (
-                  <span id="fullName-error" className="lux-field-error" role="alert">
-                    {errors.fullName}
+                {errors.email ? (
+                  <span id="email-error" className="lux-field-error" role="alert">
+                    {errors.email}
                   </span>
                 ) : null}
               </div>
@@ -313,64 +396,142 @@ export function CheckoutView({ locale, isQaMode, initialCart = null }: CheckoutV
             </form>
           </section>
 
-          {/* Cart & Order Summary */}
-          <aside className="lux-checkout-summary" aria-labelledby="order-summary-heading">
-            <h2 id="order-summary-heading" className="lux-section-heading">
-              {dict.checkout.orderSummaryHeading}
-            </h2>
+          {/* Cart & Order Summary + Read-Only Checkout Readiness */}
+          <aside className="lux-checkout-sidebar" aria-label={dict.checkout.orderSummaryHeading}>
+            {/* Cart Summary */}
+            <div className="lux-checkout-summary" aria-labelledby="order-summary-heading">
+              <h2 id="order-summary-heading" className="lux-section-heading">
+                {dict.checkout.orderSummaryHeading}
+              </h2>
 
-            {/* Line items list */}
-            <ul className="lux-checkout-items" aria-label={dict.checkout.orderSummaryHeading}>
-              {items.map((item, index) => {
-                const lineTotalFormatted = formatEgpAmount(item.total, locale)
-                return (
-                  <li key={item.id || `item-${index}`} className="lux-checkout-item">
-                    <div className="lux-checkout-item-info">
-                      <strong className="lux-checkout-item-title">
-                        {item.title || dict.product.variantFallback(index + 1)}
-                      </strong>
-                      <span className="lux-checkout-item-meta">
-                        {dict.cart.quantityHeader}: {item.quantity} · {dict.cart.variantLabel}:{" "}
-                        <bdi dir="ltr">{item.variant_id}</bdi>
-                      </span>
-                    </div>
-                    <div className="lux-checkout-item-total">
-                      <strong>{lineTotalFormatted ?? dict.product.priceUnavailable}</strong>
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
+              {/* Line items list */}
+              <ul className="lux-checkout-items" aria-label={dict.checkout.orderSummaryHeading}>
+                {items.map((item, index) => {
+                  const lineTotalFormatted = formatEgpAmount(item.total, locale)
+                  return (
+                    <li key={item.id || `item-${index}`} className="lux-checkout-item">
+                      <div className="lux-checkout-item-info">
+                        <strong className="lux-checkout-item-title">
+                          {item.title || dict.product.variantFallback(index + 1)}
+                        </strong>
+                        <span className="lux-checkout-item-meta">
+                          {dict.cart.quantityHeader}: {item.quantity} · {dict.cart.variantLabel}:{" "}
+                          <bdi dir="ltr">{item.variant_id}</bdi>
+                        </span>
+                      </div>
+                      <div className="lux-checkout-item-total">
+                        <strong>{lineTotalFormatted ?? dict.product.priceUnavailable}</strong>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
 
-            {/* Subtotal */}
-            <div className="lux-cart-summary-row">
-              <span>{dict.checkout.itemsSubtotal}</span>
-              <strong>
-                {formatEgpAmount(activeCart?.subtotal, locale) ?? dict.product.priceUnavailable}
-              </strong>
+              {/* Subtotal */}
+              <div className="lux-cart-summary-row">
+                <span>{dict.checkout.itemsSubtotal}</span>
+                <strong>
+                  {formatEgpAmount(activeCart?.subtotal, locale) ?? dict.product.priceUnavailable}
+                </strong>
+              </div>
+
+              {/* Shipping / Delivery Status */}
+              <div className="lux-cart-summary-row lux-shipping-row">
+                <span>{dict.checkout.shippingHeader}</span>
+                <span className="lux-pending-badge" role="note">
+                  {dict.checkout.shippingPending}
+                </span>
+              </div>
+              <p className="lux-shipping-notice">{dict.checkout.shippingNotice}</p>
+
+              {/* Payable Total */}
+              <div className="lux-cart-summary-row lux-cart-summary-total">
+                <span>{dict.cart.totalLabel}</span>
+                <strong className="lux-cart-grand-total">
+                  {formatEgpAmount(activeCart?.subtotal, locale) ?? dict.product.priceUnavailable}*
+                </strong>
+              </div>
+              <p className="lux-total-notice">*{dict.checkout.payableTotalNotice}</p>
+
+              {/* Authoritative Medusa Notice */}
+              <div className="lux-cart-notices">
+                <p className="lux-cart-notice-authoritative">{dict.cart.authoritativeNotice}</p>
+              </div>
             </div>
 
-            {/* Shipping / Delivery Status */}
-            <div className="lux-cart-summary-row lux-shipping-row">
-              <span>{dict.checkout.shippingHeader}</span>
-              <span className="lux-pending-badge" role="note">
-                {dict.checkout.shippingPending}
-              </span>
-            </div>
-            <p className="lux-shipping-notice">{dict.checkout.shippingNotice}</p>
+            {/* Priority 3: Read-Only Checkout Readiness Display */}
+            <div className="lux-readiness-card" aria-labelledby="readiness-heading">
+              <div className="lux-readiness-header">
+                <h3 id="readiness-heading" className="lux-readiness-title">
+                  {dict.checkout.readinessHeading}
+                </h3>
+                <span className="lux-readiness-badge">
+                  {isQaMode ? dict.checkout.readinessBadgeQa : dict.checkout.readinessBadgeLive}
+                </span>
+              </div>
 
-            {/* Payable Total */}
-            <div className="lux-cart-summary-row lux-cart-summary-total">
-              <span>{dict.cart.totalLabel}</span>
-              <strong className="lux-cart-grand-total">
-                {formatEgpAmount(activeCart?.subtotal, locale) ?? dict.product.priceUnavailable}*
-              </strong>
-            </div>
-            <p className="lux-total-notice">*{dict.checkout.payableTotalNotice}</p>
+              <div className="lux-readiness-status-row">
+                <span>{dict.checkout.ownershipLabel}:</span>
+                <span className="lux-status-tag lux-status-blocked">{dict.checkout.statusBlocked}</span>
+              </div>
 
-            {/* Authoritative Medusa Notice */}
-            <div className="lux-cart-notices">
-              <p className="lux-cart-notice-authoritative">{dict.cart.authoritativeNotice}</p>
+              <ul className="lux-readiness-checklist" aria-label={dict.checkout.readinessHeading}>
+                <li className="lux-readiness-item">
+                  <span>{dict.checkout.deliveryAddressLabel}</span>
+                  <span
+                    className={`lux-status-tag ${
+                      readinessState.readiness.deliveryAddress
+                        ? "lux-status-met"
+                        : "lux-status-pending"
+                    }`}
+                  >
+                    {readinessState.readiness.deliveryAddress
+                      ? dict.checkout.statusMet
+                      : dict.checkout.statusPending}
+                  </span>
+                </li>
+                <li className="lux-readiness-item">
+                  <span>{dict.checkout.shippingMethodLabel}</span>
+                  <span className="lux-status-tag lux-status-pending">
+                    {dict.checkout.statusPending}
+                  </span>
+                </li>
+                <li className="lux-readiness-item">
+                  <span>{dict.checkout.shippingPriceLabel}</span>
+                  <span className="lux-status-tag lux-status-pending">
+                    {dict.checkout.statusPending}
+                  </span>
+                </li>
+                <li className="lux-readiness-item">
+                  <span>{dict.checkout.payableTotalLabel}</span>
+                  <span
+                    className={`lux-status-tag ${
+                      readinessState.readiness.payableTotal
+                        ? "lux-status-met"
+                        : "lux-status-pending"
+                    }`}
+                  >
+                    {readinessState.readiness.payableTotal
+                      ? dict.checkout.statusMet
+                      : dict.checkout.statusPending}
+                  </span>
+                </li>
+              </ul>
+
+              {/* Active Central Blockers Explanations */}
+              {readinessState.blockers.length > 0 ? (
+                <div className="lux-blockers-container">
+                  <strong className="lux-blockers-label">{dict.checkout.statusBlocked}:</strong>
+                  <ul className="lux-blockers-list">
+                    {readinessState.blockers.map((code) => {
+                      const msg = dict.checkout.blockers[code] ?? code
+                      return <li key={code}>{msg}</li>
+                    })}
+                  </ul>
+                </div>
+              ) : null}
+
+              <p className="lux-readiness-notice">{dict.checkout.readinessNotice}</p>
             </div>
           </aside>
         </div>
