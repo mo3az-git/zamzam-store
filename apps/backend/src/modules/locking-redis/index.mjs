@@ -68,7 +68,14 @@ export class SafeRedisLockingProvider extends RedisLockingProvider {
   }
 
   async acquire_(keys, args, cancellationToken) {
-    const logicalKeys = [...new Set(Array.isArray(keys) ? keys : [keys])].sort();
+    const requestedKeys = Array.isArray(keys) ? keys : [keys];
+    if (requestedKeys.length === 0 || requestedKeys.some((key) => typeof key !== "string" || !key.trim())) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        "At least one nonempty lock key is required."
+      );
+    }
+    const logicalKeys = [...new Set(requestedKeys)].sort();
     const timeout = Math.max(args?.expire ?? this.waitLockingTimeout, 1);
     const ttl = args?.expire ? timeout : 0;
     const ownerId = args?.ownerId ?? "*";

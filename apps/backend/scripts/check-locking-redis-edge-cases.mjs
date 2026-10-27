@@ -70,6 +70,15 @@ async function cleanup() {
 }
 
 try {
+  await check("empty lock key sets fail before issuing an unscoped Redis command", async () => {
+    const { provider, client } = await openProvider();
+    await assert.rejects(provider.acquire([], { ownerId: "owner-empty-set", expire: 10 }), /nonempty lock key/);
+    await assert.rejects(provider.acquire([""], { ownerId: "owner-empty-key", expire: 10 }), /nonempty lock key/);
+    await assert.rejects(provider.acquire(["valid", "  "], { ownerId: "owner-blank-key", expire: 10 }), /nonempty lock key/);
+    assert.equal(await client.get(""), null, "Invalid input must not create a global empty Redis key.");
+    assert.equal(await client.get(prefix + "undefined"), null, "Invalid input must not create a prefixed fallback key.");
+  });
+
   await check("release of a missing key returns false and is harmless", async () => {
     const { provider, client } = await openProvider();
     assert.equal(await provider.release("missing", { ownerId: "owner-missing" }), false);
