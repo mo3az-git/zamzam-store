@@ -167,6 +167,6 @@ This dashboard is a separate docs-only Draft PR #33 against integration PR #26. 
 
 | Documentation revision | Draft PR | GitHub Actions / checks | Vercel Preview | Notes |
 | --- | --- | --- | --- | --- |
-| Dashboard snapshot refresh | PR #33; follow-up commit pending | No GitHub Actions run is configured/returned for this docs-only branch. | Initial commit `ab578b1` has Vercel Preview deployment `https://zamzam-store-preview-git-codex-mvp-release-6f1dbe-wytshr7-8716.vercel.app`; deployment status was pending at last check, while Vercel Preview Comments check `122431665002` succeeded. Refresh after this follow-up. | Docs-only; no application tests run locally. |
+| Dashboard snapshot refresh | PR #33, commit `481665e4eaf35ee51df411ef88e37269f51bdf9c`. | GitHub Actions API returned zero workflow runs for this docs-only commit. Vercel Preview Comments check `122432384107` succeeded; this reports feedback status, not application CI. | Protected Vercel Preview deployment remained **Building/Pending** at `2026-10-27T19:53:27Z`: [deployment](https://vercel.com/wytshr7-8716/zamzam-store-preview/gv54HmzPqjvQ86Y6S2njd7XMV5hS). | Docs-only; no application tests run locally. The preview result is not release approval. |
 
 
