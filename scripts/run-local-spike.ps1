@@ -1,21 +1,23 @@
 param(
   [string]$PostgresBin,
   [string]$RedisBin,
+  [string]$NodeBin,
   [switch]$SkipInstall,
   [switch]$Targeted,
-  [ValidateSet('TP-02a','TP-02b','TP-02c','TP-03','TP-04a','TP-04b','TP-06a','TP-06b','TP-07a','TP-07b','TP-09','TP-10','TP-21c','TP-24c')]
-  [string[]]$Cases = @('TP-02a','TP-02b','TP-02c','TP-03','TP-04a','TP-04b','TP-06a','TP-06b','TP-07a','TP-07b','TP-09','TP-10','TP-21c','TP-24c')
+  [ValidateSet('TP-02a','TP-02b','TP-02c','TP-03','TP-04a','TP-04b','TP-06a','TP-06b','TP-07a','TP-07b','TP-08-foundation','TP-08-native-integration','TP-09','TP-10','TP-21c','TP-24c')]
+  [string[]]$Cases = @('TP-02a','TP-02b','TP-02c','TP-03','TP-04a','TP-04b','TP-06a','TP-06b','TP-07a','TP-07b','TP-08-foundation','TP-08-native-integration','TP-09','TP-10','TP-21c','TP-24c')
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 if (-not $PostgresBin) { $PostgresBin = Join-Path $repoRoot 'artifacts/tools/postgresql/pgsql/bin' }
 if (-not $RedisBin) { $RedisBin = Join-Path $repoRoot 'artifacts/tools/redis/Redis-7.2.16-Windows-x64-msys2' }
+if (-not $NodeBin) { $NodeBin = Join-Path $repoRoot 'artifacts/tools/node-v24.22.1-win-x64' }
 $PostgresBin = (Resolve-Path -LiteralPath $PostgresBin).Path
 $RedisBin = (Resolve-Path -LiteralPath $RedisBin).Path
-$nodeBin = Join-Path $repoRoot 'artifacts/tools/node-v24.22.1-win-x64'
-$node = Join-Path $nodeBin 'node.exe'
-$npm = Join-Path $nodeBin 'npm.cmd'
-if (-not (Test-Path -LiteralPath $node)) { throw 'Node 24.22.1 portable runtime is required under artifacts/tools.' }
+$NodeBin = (Resolve-Path -LiteralPath $NodeBin).Path
+$node = Join-Path $NodeBin 'node.exe'
+$npm = Join-Path $NodeBin 'npm.cmd'
+if (-not (Test-Path -LiteralPath $node)) { throw 'Node 24.22.1 portable runtime is required.' }
 $steps = [System.Collections.Generic.List[object]]::new()
 $cleanupErrors = [System.Collections.Generic.List[string]]::new()
 $runtimeRoot = Join-Path $repoRoot ('artifacts/local-services/' + [guid]::NewGuid().ToString())
@@ -47,7 +49,7 @@ try {
   $pgVersion = & (Join-Path $PostgresBin 'postgres.exe') --version
   $redisVersion = & (Join-Path $RedisBin 'redis-server.exe') --version
   if ($pgVersion -notmatch 'PostgreSQL\) 16\.15' -or $redisVersion -notmatch 'v=7\.2\.16 ') { throw 'Expected PostgreSQL 16.15 and Redis 7.2.16.' }
-  $env:PATH = $nodeBin + ';' + $env:PATH
+  $env:PATH = $NodeBin + ';' + $env:PATH
   $env:GITHUB_ACTIONS = $null
   $env:PHASE1_DISPOSABLE_TEST_PROFILE = $null
   $env:GITHUB_SHA = (& git rev-parse HEAD).Trim()
