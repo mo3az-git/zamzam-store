@@ -270,6 +270,15 @@ jobs:
           set -o pipefail
           node scripts/run-tp-with-evidence.mjs TP-24c 2>&1 | tee artifacts/tp-24c-ledger-immutability.log
 
+      - name: Run TP-08 correlation foundation prototype (not formal TP-08 acceptance)
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+        run: |
+          set -o pipefail
+          node apps/backend/scripts/test-tp08-correlation-foundation.mjs 2>&1 | tee artifacts/tp-08-correlation-foundation.log
+
       - name: Run TP-21c refund identity and encryption test
         if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
         shell: bash
