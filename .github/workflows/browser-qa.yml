@@ -8,6 +8,9 @@ on:
       - "scripts/browser-qa/**"
       - "docs/mvp-integration-qa.md"
       - ".github/workflows/browser-qa.yml"
+  pull_request:
+    branches:
+      - "integration/**"
   workflow_dispatch:
 permissions:
   contents: read
