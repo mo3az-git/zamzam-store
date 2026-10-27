@@ -2,8 +2,9 @@
 
 **Audit snapshot:** 2026-10-27  
 **Repository:** `mo3az-git/zamzam-store`  
-**Integration candidate:** Draft PR [#26](https://github.com/mo3az-git/zamzam-store/pull/26), branch `integration/mvp-consolidated-20261027`, verified head `90f858e6998288be4b07a8b0e506f1a586896919`.  
-**Baseline verification:** PR metadata reports that exact head, open, not merged, Draft. The PR's recorded parent sources are backend PR #19 and storefront PR #24.  
+**Integration candidate:** Draft PR [#26](https://github.com/mo3az-git/zamzam-store/pull/26), branch `integration/mvp-consolidated-20261027`, verified current head `ca6a407629cb09005b53d3203fa6c03618835998`.
+**Audited application-code baseline:** `90f858e6998288be4b07a8b0e506f1a586896919`. The commits from that baseline through `ca6a407` modify this audit document only; no application-code change occurred in that interval.
+**Baseline verification:** PR metadata reports the PR open, mergeable, not merged, and Draft. Reference SHA `90f858e` is an ancestor of the current PR head. The PR's recorded parent sources are backend PR #19 and storefront PR #24.
 **Scope:** Repository/source/CI/issue audit only. No feature implementation, TP execution, acceptance-state edits, order, payment, shipping quote, deployment, or live customer action.
 
 ## Executive finding
