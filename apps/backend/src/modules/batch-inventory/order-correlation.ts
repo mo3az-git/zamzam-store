@@ -48,7 +48,7 @@ async function current(tx: Sql, x: Authority): Promise<AuthorityRow> {
 }
 
 /** Commit the durable fence BEFORE any native complete-cart invocation. */
-export async function markOrderCreationStarted(db: Sql, authority: Authority) {
+export async function markOrderCreationStarted(db: Sql, authority: Authority, allowStart = true) {
   validate(authority)
   return db.transaction(async (tx) => {
     // Revision 18: a replay for an already bound order must take its order
@@ -82,6 +82,7 @@ export async function markOrderCreationStarted(db: Sql, authority: Authority) {
     if ((a.attempt_status === "order_creation_started" && a.order_correlation_status === "pending_correlation") ||
         (a.attempt_status === "needs_reconciliation" && a.order_correlation_status === "needs_reconciliation"))
       return { fenced: true, replay: true }
+    if (!allowStart) invalid("RECONCILIATION_FENCE_REQUIRED")
     if (!["reserved"].includes(a.attempt_status) || a.order_correlation_status !== "none")
       invalid("INVALID_START_STATE")
     const result = await tx.raw(`UPDATE cart_checkout_attempt SET attempt_status='order_creation_started',
@@ -174,8 +175,8 @@ export async function reconcileOrderCreation(db: Sql, authority: Authority, look
  */
 export async function runOrderCreationWithFence(db: Sql, authority: Authority,
   runNativeCompleteCart: Complete, lookup: Lookup,
-  hooks: { afterFenceCommit?: () => void | Promise<void>; afterNativeReturn?: () => void | Promise<void> } = {}) {
-  const started = await markOrderCreationStarted(db, authority)
+  hooks: { afterFenceCommit?: () => void | Promise<void>; afterNativeReturn?: () => void | Promise<void>; reconciliationOnly?: boolean } = {}) {
+  const started = await markOrderCreationStarted(db, authority, !hooks.reconciliationOnly)
   if (!started.replay) {
     await hooks.afterFenceCommit?.()
     let nativeReturned = false
