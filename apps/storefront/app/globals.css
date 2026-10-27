@@ -551,3 +551,14 @@ body { background: var(--lux-ivory); color: var(--lux-ink); }
     transition: none;
   }
 }
+
+/* Phase 2: genuine Medusa variant selection, display-only until checkout integration. */
+.detail-variant-picker { border-block: 1px solid var(--line); padding-block: 22px; margin-block: 24px; }
+.detail-variant-label { display: block; font-weight: 800; font-size: 15px; margin-block-end: 12px; }
+.detail-variant-select { width: 100%; max-width: 430px; min-height: 50px; padding: 10px 14px; border: 1px solid #9caea2; background: #fff; border-radius: 8px; color: var(--ink); }
+.detail-variant-select:focus-visible { outline: 3px solid #8dc9b1; outline-offset: 3px; }
+.detail-variant-name { font-weight: 600; margin: 0; }
+.detail-variant-picker .detail-price { margin: 16px 0 8px; }
+.detail-sku { font-size: 13px; color: var(--muted); margin: 4px 0; }
+.detail-variant-warning { color: #8b5422; font-size: 13px; }
+.detail-variant-notice { margin-block: 13px 0; font-size: 12px; color: var(--muted); line-height: 1.9; }
