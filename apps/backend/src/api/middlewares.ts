@@ -1,6 +1,9 @@
 import { defineMiddlewares, errorHandler } from "@medusajs/framework/http"
 import { MedusaError } from "@medusajs/framework/utils"
 import { cartMutationGuard } from "./cart-mutation-guard"
+import { guestCartOwnershipGuard } from "./guest-cart-ownership-guard"
+import { OWNED_NATIVE_CART_ROUTE_MATCHER } from "./guest-cart-ownership-policy"
+import { cartBffOriginGuard } from "./cart-bff-origin-guard"
 
 const fallbackErrorHandler = errorHandler()
 const publicCartErrors: Record<string, string> = {
@@ -22,10 +25,18 @@ export default defineMiddlewares({
     return fallbackErrorHandler(error, req, res, next)
   },
   routes: [{
+    matcher: /^\/store\/cart-bff$/,
+    methods: ["POST"],
+    middlewares: [cartBffOriginGuard],
+  }, {
+    matcher: OWNED_NATIVE_CART_ROUTE_MATCHER,
+    methods: ["GET"],
+    middlewares: [guestCartOwnershipGuard],
+  }, {
     // Cover native cart updates and all child mutations; checkout/recovery own
     // their own locking protocols. Cart creation is deliberately excluded.
-    matcher: /^\/store\/carts\/[^/]+(?:\/(?!complete(?:\/|$)|abort-checkout(?:\/|$)|checkout-lock(?:\/|$)).*)?$/,
+    matcher: OWNED_NATIVE_CART_ROUTE_MATCHER,
     methods: ["POST", "PUT", "PATCH", "DELETE"],
-    middlewares: [cartMutationGuard],
+    middlewares: [guestCartOwnershipGuard, cartMutationGuard],
   }],
 })

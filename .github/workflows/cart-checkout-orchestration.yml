@@ -1,0 +1,107 @@
+name: Cart and Checkout Orchestration Contract
+
+on:
+  pull_request:
+    branches:
+      - main
+      - "integration/**"
+    paths:
+      - ".github/workflows/cart-checkout-orchestration.yml"
+      - "apps/backend/src/modules/batch-inventory/cart-bff-*.ts"
+      - "apps/backend/src/modules/batch-inventory/models/cart-bff-*.ts"
+      - "apps/backend/src/modules/batch-inventory/migrations/Migration20261027000009_CreateCartBffStateAndIdempotency.ts"
+      - "apps/backend/src/api/cart-bff-origin-guard.ts"
+      - "apps/backend/src/api/guest-cart-ownership-*.ts"
+      - "apps/backend/src/api/store/cart-bff/route.ts"
+      - "apps/backend/scripts/test-cart-bff-orchestrator.mjs"
+      - "apps/backend/scripts/test-cart-bff-http-integration.mjs"
+      - "docs/cart-checkout-orchestration-contract.md"
+      - "package-lock.json"
+  push:
+    branches:
+      - "codex/cart-bff-lifecycle-*"
+    paths:
+      - ".github/workflows/cart-checkout-orchestration.yml"
+      - "apps/backend/src/modules/batch-inventory/cart-bff-*.ts"
+      - "apps/backend/src/modules/batch-inventory/models/cart-bff-*.ts"
+      - "apps/backend/src/modules/batch-inventory/migrations/Migration20261027000009_CreateCartBffStateAndIdempotency.ts"
+      - "apps/backend/src/api/cart-bff-origin-guard.ts"
+      - "apps/backend/src/api/guest-cart-ownership-*.ts"
+      - "apps/backend/src/api/store/cart-bff/route.ts"
+      - "apps/backend/scripts/test-cart-bff-orchestrator.mjs"
+      - "apps/backend/scripts/test-cart-bff-http-integration.mjs"
+      - "docs/cart-checkout-orchestration-contract.md"
+      - "package-lock.json"
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Synthetic cart lifecycle and preflight contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install pinned dependencies
+        run: npm ci --strict-peer-deps --no-audit --no-fund
+      - name: Run synthetic contract and lifecycle checks (not formal TP)
+        run: node apps/backend/scripts/test-cart-bff-orchestrator.mjs
+      - name: Lint the orchestration contract
+        run: npx eslint apps/backend/src/modules/batch-inventory/cart-bff-contract.ts apps/backend/src/modules/batch-inventory/cart-bff-orchestrator.ts apps/backend/scripts/test-cart-bff-orchestrator.mjs
+      - name: Build backend types and routes
+        run: npm run build:backend
+  disposable-medusa-lifecycle:
+    name: Disposable PostgreSQL, Redis, and Medusa cart lifecycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: zamzam_spike
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: disposable-integration-only
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d zamzam_spike"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:disposable-integration-only@127.0.0.1:5432/zamzam_spike
+      REDIS_URL: redis://127.0.0.1:6379
+      LOCKING_REDIS_URL: redis://127.0.0.1:6379
+      STORE_CORS: http://127.0.0.1:8000
+      ADMIN_CORS: http://127.0.0.1:9000
+      AUTH_CORS: http://127.0.0.1:8000,http://127.0.0.1:9000
+      JWT_SECRET: local-ci-jwt-secret-only-0123456789abcdef
+      COOKIE_SECRET: local-ci-cookie-secret-only-0123456789abcdef
+      PHASE1_DISABLE_ADMIN: "true"
+      PHASE1_DISPOSABLE_TEST_PROFILE: ci_ephemeral_service
+      TS_NODE_PROJECT: ${{ github.workspace }}/apps/backend/tsconfig.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install pinned dependencies
+        run: npm ci --strict-peer-deps --no-audit --no-fund
+      - name: Migrate disposable Medusa database
+        run: npm run db:migrate
+      - name: Run real disposable Medusa Cart BFF lifecycle (not formal TP)
+        run: node apps/backend/scripts/test-cart-bff-http-integration.mjs
+
