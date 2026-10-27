@@ -60,7 +60,9 @@ The backend pins `@medusajs/medusa` and framework packages at 2.22.1. Native ful
 
 The disposable PostgreSQL integration persists and reads back 27 service zones and their 27 province GeoZones. It confirms a native cart shipping-option lookup returns no choices when no shipping options are configured. The fixture deliberately creates no profile, options, prices, or provider selection. Native provider inventory is recorded as evidence only; the built-in `manual_manual` provider is not considered an approved carrier.
 
-The integration establishes the native geography representation and no-option behavior. It does not prove positive address-to-option matching: that requires a shipping option and provider configuration, which are intentionally absent pending owner approval.
+The disposable integration now creates one temporary shipping profile and 27 governorate-specific native shipping options with positive synthetic EGP rates. A test-only `manual_manual` provider ID is used solely because Medusa requires a registered provider to instantiate shipping options; this is not an operator decision and these fixtures are deleted before the run exits. The test verifies Cairo address matching, rejects a malformed uppercase province, calculates a positive synthetic option price, attaches that method to a disposable cart, and reads a positive native shipping total/payable total. No public route or storefront configuration reads these rates. The provider-neutral contract still blocks all 27 governorates because rates are unapproved and the production provider remains undecided.
+
+The test proves Medusa's native destination filtering and price/totals behavior for a disposable fixture. It does not prove operational coverage, an approved price, fulfillment performance, or checkout readiness.
 
 ## Provider-neutral future rate shape
 
@@ -112,3 +114,14 @@ Do not infer a production provider from the current provider list. No topology i
 5. Approve any required tax, free-shipping, or provider-quote policy.
 
 Until these are resolved and the native configuration is installed, checkout readiness stays blocked.
+
+## Exact configuration steps after approval
+
+1. Record the owner's explicit approval for the fulfillment operator, per-governorate coverage constraints, each of the 27 EGP amounts, effective dates, and approval reference. Keep all rows blocked until every required field is present and validated.
+2. Implement or install the selected Medusa fulfillment provider and its credentials/secrets in the server environment. Do not reuse the integration-only `manual_manual` fixture as a production decision.
+3. Create the production shipping Fulfillment Set and 27 Service Zones. Each zone must contain exactly the canonical `{ type: "province", country_code: "eg", province_code }` GeoZone for its stable governorate ID; then attach the set to the intended stock location and sales channel.
+4. Create or select the Shipping Profile for shippable catalog items and ensure those items use that profile.
+5. Create one native flat-price Shipping Option per governorate, tied to its zone, profile, and approved provider. Store only the owner-approved EGP price through Medusa's Pricing Module; do not create a zero/default option for missing approvals.
+6. Verify all 27 destination lookups against native cart context, including no match for malformed/unsupported destinations and a blocked result for missing provider, price, zone, or profile configuration.
+7. Review the trusted backend cart ownership, CSRF/origin protections, localized failure copy, taxes, and legal delivery copy. Keep public quote/checkout routes disabled until separate approval authorizes activation.
+8. After a controlled activation decision, add the native shipping method to the trusted cart and read Medusa's resulting totals. Never calculate the payable total in the storefront, and do not activate COD, payment, order completion, or inventory reservation as part of this configuration step.

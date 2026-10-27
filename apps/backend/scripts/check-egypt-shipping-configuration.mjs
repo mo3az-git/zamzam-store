@@ -41,6 +41,17 @@ check("unknown_governorate_has_only_unknown_blocker", JSON.stringify(getGovernor
 check("known_governorate_separates_coverage_rate_provider_blockers", JSON.stringify(getGovernorateShippingBlockers("cairo")) === JSON.stringify(["SHIPPING_COVERAGE_UNCONFIGURED","SHIPPING_RATE_UNCONFIGURED","SHIPPING_PROVIDER_UNDECIDED"]))
 check("approved_rate_requires_nonzero_EGP_decimal_string_and_audit_reference", validateApprovedFlatRate({status:"approved",kind:"flat",currencyCode:"egp",amount:"125.50",approvalReference:"owner-decision-123",approvedAt:"2026-10-27T00:00:00.000Z"}) && !validateApprovedFlatRate({status:"approved",kind:"flat",currencyCode:"egp",amount:"0",approvalReference:"owner-decision-123",approvedAt:"2026-10-27T00:00:00.000Z"}) && !validateApprovedFlatRate({status:"approved",kind:"flat",currencyCode:"usd",amount:"125.50",approvalReference:"owner-decision-123",approvedAt:"2026-10-27T00:00:00.000Z"}))
 check("numeric_amount_is_rejected_without_money_coercion", !validateApprovedFlatRate({status:"approved",kind:"flat",currencyCode:"egp",amount:125,approvalReference:"owner-decision-123",approvedAt:"2026-10-27T00:00:00.000Z"}))
+check("missing_malformed_zero_and_unsupported_currency_rates_fail_closed", [
+  undefined,
+  "",
+  "0",
+  "0.00",
+  "-1",
+  "12,50",
+  "NaN",
+  "Infinity",
+].every((amount) => !validateApprovedFlatRate({status:"approved",kind:"flat",currencyCode:"egp",amount,approvalReference:"owner-decision-123",approvedAt:"2026-10-27T00:00:00.000Z"})) &&
+  !validateApprovedFlatRate({status:"approved",kind:"flat",currencyCode:"usd",amount:"12.50",approvalReference:"owner-decision-123",approvedAt:"2026-10-27T00:00:00.000Z"}))
 const approvedFutureConfig = {
   governorateId: "cairo",
   coverage: "configured",
@@ -48,6 +59,12 @@ const approvedFutureConfig = {
   fulfillmentProvider: { status: "selected", providerId: "future-approved-provider", approvalReference: "owner-decision-123" },
 }
 check("future_approved_configuration_shape_is_evaluable_without_activating_it", evaluateGovernorateShippingConfiguration("cairo", approvedFutureConfig).length === 0)
+check("malformed_future_rate_and_unsupported_provider_never_clear_readiness_blockers", [
+  { ...approvedFutureConfig, rate: { ...approvedFutureConfig.rate, amount: "NaN" } },
+  { ...approvedFutureConfig, rate: { ...approvedFutureConfig.rate, currencyCode: "usd" } },
+  { ...approvedFutureConfig, fulfillmentProvider: { status: "selected", providerId: " ", approvalReference: "owner-decision-123" } },
+  { ...approvedFutureConfig, fulfillmentProvider: { status: "undecided" } },
+].every((configuration) => evaluateGovernorateShippingConfiguration("cairo", configuration).length > 0))
 check("configuration_cannot_be_replayed_for_another_governorate", evaluateGovernorateShippingConfiguration("giza", approvedFutureConfig).includes("SHIPPING_COVERAGE_UNCONFIGURED"))
 check("missing_coverage_and_missing_rate_remain_distinct", JSON.stringify(evaluateGovernorateShippingConfiguration("cairo", { ...approvedFutureConfig, coverage: "unconfigured", rate: { status: "unconfigured" } })) === JSON.stringify(["SHIPPING_COVERAGE_UNCONFIGURED","SHIPPING_RATE_UNCONFIGURED"]))
 console.log("Egypt governorate shipping foundation: " + passed + " checks passed.")

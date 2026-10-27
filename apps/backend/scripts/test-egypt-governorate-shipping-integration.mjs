@@ -14,6 +14,12 @@ const { ContainerRegistrationKeys, Modules } = rootRequire("@medusajs/framework/
 const {
   createCartWorkflow,
   createRegionsWorkflow,
+  createShippingOptionsWorkflow,
+  createShippingProfilesWorkflow,
+  deleteShippingOptionsWorkflow,
+  createStockLocationsWorkflow,
+  linkSalesChannelsToStockLocationWorkflow,
+  addShippingMethodToCartWorkflow,
   listShippingOptionsForCartWithPricingWorkflow,
   updateCartWorkflow,
 } = rootRequire("@medusajs/core-flows")
@@ -22,12 +28,14 @@ const {
   getGovernorateShippingBlockers,
   resolveEgyptianMedusaProvinceCode,
 } = rootRequire("./apps/backend/src/modules/batch-inventory/egypt-shipping-configuration.ts")
+const { evaluateGuestCheckoutPreflight } = rootRequire("./apps/backend/src/modules/batch-inventory/guest-checkout-preflight.ts")
 
 const fixtureId = randomUUID()
 const passed = []
 const cleanupErrors = []
 const protectedTables = ["order", "payment_collection", "payment", "payment_session", "cart_batch_reservation", "cart_batch_allocation"]
-let runtime, pg, redis, regionId, cartId, fulfillmentSetId, fulfillment
+let runtime, pg, redis, regionId, cartId, fulfillmentSetId, fulfillment, shippingProfileId, stockLocationId
+const shippingOptionIds = []
 
 function check(name, condition, evidence) {
   assert.ok(condition, name)
@@ -146,6 +154,19 @@ try {
   regionId = region.id
   const cartResult = await createCartWorkflow(container).run({ input: { region_id: regionId } })
   cartId = cartResult.result.id
+  const stockLocation = (await createStockLocationsWorkflow(container).run({ input: { locations: [{
+    name: "Disposable synthetic Egypt location " + fixtureId,
+  }] } })).result[0]
+  stockLocationId = stockLocation.id
+  await container.resolve(ContainerRegistrationKeys.LINK).create({
+    [Modules.STOCK_LOCATION]: { stock_location_id: stockLocationId },
+    [Modules.FULFILLMENT]: { fulfillment_set_id: fulfillmentSetId },
+  })
+  assert.ok(cartResult.result.sales_channel_id, "disposable cart must have a sales channel")
+  await linkSalesChannelsToStockLocationWorkflow(container).run({ input: {
+    id: stockLocationId,
+    add: [cartResult.result.sales_channel_id],
+  } })
   const cairo = EGYPTIAN_GOVERNORATES.find((item) => item.id === "cairo")
   await updateCartWorkflow(container).run({ input: {
     id: cartId,
@@ -157,15 +178,136 @@ try {
     },
   } })
 
+  // Test-only fixture: Medusa needs a registered provider to create a native
+  // option. manual_manual is used only inside this disposable test and does not
+  // represent an owner-selected production operator.
+  const testProvider = providers.find((provider) => provider.id === "manual_manual")
+  check("test_only_native_provider_available_without_selecting_production_operator", Boolean(testProvider), {
+    testProviderId: testProvider?.id ?? null,
+    productionProviderSelected: false,
+  })
+  const unavailableBeforeFixtures = (await listShippingOptionsForCartWithPricingWorkflow(container)
+    .run({ input: { cart_id: cartId } })).result
+  check("missing_shipping_configuration_yields_no_free_or_fallback_option", unavailableBeforeFixtures.length === 0, {
+    optionCount: unavailableBeforeFixtures.length,
+    freeFallbackCreated: false,
+  })
+  const profileRun = await createShippingProfilesWorkflow(container).run({ input: { data: [{
+    name: "Disposable synthetic Egypt profile " + fixtureId,
+    type: "standard",
+  }] } })
+  shippingProfileId = profileRun.result[0]?.id
+  assert.ok(shippingProfileId, "disposable native shipping profile must be created")
+
+  const optionsInput = storedZones.map((zone) => {
+    const governorate = EGYPTIAN_GOVERNORATES.find((item) => zone.name.endsWith(item.id))
+    assert.ok(governorate, "fixture zone must map to a canonical governorate")
+    const index = EGYPTIAN_GOVERNORATES.findIndex((item) => item.id === governorate.id)
+    return {
+      name: "Disposable synthetic " + governorate.id + " " + fixtureId,
+      service_zone_id: zone.id,
+      shipping_profile_id: shippingProfileId,
+      provider_id: testProvider.id,
+      type: { label: "Disposable synthetic", description: "Integration-only fixture", code: "synthetic" },
+      price_type: "flat",
+      prices: [{ amount: 101 + index, currency_code: "egp" }],
+    }
+  })
+  const optionsRun = await createShippingOptionsWorkflow(container).run({ input: optionsInput })
+  shippingOptionIds.push(...optionsRun.result.map((option) => option.id))
+  check("disposable_profile_and_27_governorate_specific_positive_synthetic_egp_options_created",
+    shippingOptionIds.length === 27 && optionsRun.result.every((option) => option.price_type === "flat"), {
+      shippingProfileCount: 1,
+      optionCount: shippingOptionIds.length,
+      syntheticOnly: true,
+      productionOptionsCreated: false,
+      rates: "101..127 EGP by canonical governorate order; synthetic integration values only",
+    })
+
   const nativeOptions = (await listShippingOptionsForCartWithPricingWorkflow(container)
     .run({ input: { cart_id: cartId } })).result
-  const finalOptions = await fulfillment.listShippingOptions({})
-  check("native_cart_shipping_lookup_returns_no_option_without_configured_shipping_option",
-    Array.isArray(nativeOptions) && nativeOptions.length === 0 && finalOptions.length === 0, {
-      matchingProviderConfigured: false,
-      matchingShippingOptions: nativeOptions.length,
-      totalShippingOptions: finalOptions.length,
+  const cairoOption = optionsRun.result.find((option) => option.name.includes("cairo"))
+  check("native_cart_destination_matches_only_its_governorate_option",
+    Array.isArray(nativeOptions) && nativeOptions.length === 1 && nativeOptions[0].id === cairoOption?.id, {
+      destinationProvince: cairo.medusaProvinceCode,
+      matchingOptionCount: nativeOptions.length,
+      matchedOptionId: nativeOptions[0]?.id ?? null,
+      productionProviderSelected: false,
     })
+
+  const cairoPriced = nativeOptions[0]
+  const cairoAmount = cairoPriced?.amount
+  const cairoCurrency = cairoPriced?.calculated_price?.currency_code
+  check("native_shipping_calculation_returns_positive_synthetic_egp_price",
+    Number(cairoAmount) > 0 && cairoCurrency?.toLowerCase() === "egp", {
+      amount: cairoAmount,
+      currency: cairoCurrency,
+      syntheticOnly: true,
+    })
+  await addShippingMethodToCartWorkflow(container).run({ input: {
+    cart_id: cartId,
+    options: [{ id: cairoOption.id }],
+  } })
+  const payableSnapshot = await query.graph({
+    entity: "cart",
+    fields: ["id", "currency_code", "region_id", "region.id", "region.currency_code", "region.countries.iso_2",
+      "shipping_address.address_1", "shipping_address.city", "shipping_address.country_code",
+      "shipping_methods.shipping_option_id", "shipping_methods.amount",
+      "shipping_methods.raw_amount", "shipping_total", "raw_shipping_total", "subtotal", "raw_subtotal", "total", "raw_total"],
+    filters: { id: cartId },
+  }).then((result) => result.data[0] ?? null)
+  check("native_cart_contains_positive_synthetic_shipping_and_payable_totals",
+    payableSnapshot?.shipping_methods?.length === 1 && payableSnapshot.shipping_methods[0].shipping_option_id === cairoOption.id &&
+      Number(payableSnapshot.shipping_total) > 0 && Number(payableSnapshot.total) > 0 && payableSnapshot.currency_code === "egp", {
+      shippingTotal: payableSnapshot?.shipping_total,
+      payableTotal: payableSnapshot?.total,
+      currency: payableSnapshot?.currency_code,
+      syntheticOnly: true,
+    })
+  const syntheticPreflight = evaluateGuestCheckoutPreflight({
+    cart: payableSnapshot,
+    guest: {
+      email: "shipping-fixture@example.invalid",
+      first_name: "Disposable",
+      last_name: "Visitor",
+      phone: "+20 100 123 4567",
+      address_1: "Disposable native geography fixture",
+      city: "Cairo",
+      province: cairo.medusaProvinceCode,
+      country_code: "eg",
+    },
+    ownership: null,
+  })
+  check("synthetic_positive_cart_still_cannot_pass_checkout_readiness_without_trusted_ownership",
+    syntheticPreflight.status === "blocked" && syntheticPreflight.blockers.includes("CHECKOUT_OWNERSHIP_UNAVAILABLE"), {
+      status: syntheticPreflight.status,
+      blockers: syntheticPreflight.blockers,
+    })
+
+  // Shipping readiness remains blocked even with the synthetic fixture: the
+  // production configuration has no approved rate or selected provider.
+  check("synthetic_fixture_never_changes_production_readiness_contract",
+    EGYPTIAN_GOVERNORATES.every((item) => {
+      const blockers = getGovernorateShippingBlockers(item.id)
+      return blockers.includes("SHIPPING_RATE_UNCONFIGURED") && blockers.includes("SHIPPING_PROVIDER_UNDECIDED")
+    }))
+
+  const unsupportedCart = await createCartWorkflow(container).run({ input: { region_id: regionId } })
+  const unsupportedCartId = unsupportedCart.result.id
+  try {
+    await updateCartWorkflow(container).run({ input: {
+      id: unsupportedCartId,
+      shipping_address: { address_1: "Disposable unsupported destination", city: "Cairo", province: "EG-C", country_code: "eg" },
+    } })
+    const unsupportedOptions = (await listShippingOptionsForCartWithPricingWorkflow(container)
+      .run({ input: { cart_id: unsupportedCartId } })).result
+    check("malformed_uppercase_native_province_has_no_matching_shipping_option", unsupportedOptions.length === 0, {
+      province: "EG-C",
+      optionCount: unsupportedOptions.length,
+    })
+  } finally {
+    await container.resolve(Modules.CART).deleteCarts(unsupportedCartId)
+  }
   check("all_27_rate_rows_remain_unconfigured_and_block_quotes",
     EGYPTIAN_GOVERNORATES.every((item) =>
       getGovernorateShippingBlockers(item.id).includes("SHIPPING_RATE_UNCONFIGURED") &&
@@ -208,9 +350,17 @@ try {
   if (cartId) {
     try { await containerCleanup("cart", cartId) } catch (error) { cleanupErrors.push("cart cleanup " + (error?.code ?? "failed")) }
   }
+  if (runtime && shippingOptionIds.length) {
+    try { await deleteShippingOptionsWorkflow(runtime.container).run({ input: { ids: shippingOptionIds } }) }
+    catch (error) { cleanupErrors.push("shipping option cleanup " + (error?.code ?? "failed")) }
+  }
   if (fulfillment && fulfillmentSetId) {
     try { await fulfillment.deleteFulfillmentSets(fulfillmentSetId) }
     catch (error) { cleanupErrors.push("fulfillment set cleanup " + (error?.code ?? "failed")) }
+  }
+  if (fulfillment && shippingProfileId) {
+    try { await fulfillment.deleteShippingProfiles(shippingProfileId) }
+    catch (error) { cleanupErrors.push("shipping profile cleanup " + (error?.code ?? "failed")) }
   }
   if (runtime && regionId) {
     try { await runtime.container.resolve(Modules.REGION).deleteRegions(regionId) }
