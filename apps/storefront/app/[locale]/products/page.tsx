@@ -83,7 +83,7 @@ export default async function ProductsPage({
 
   return (
     <main className="shell catalog-page" id="main-content">
-      <nav className="breadcrumbs" aria-label={dict.nav.label}>
+      <nav className="breadcrumbs" aria-label={dict.catalog.breadcrumbLabel}>
         <Link href={localePath(locale, "/")}>{dict.catalog.breadcrumbHome}</Link>
         <span aria-hidden="true">/</span>
         {activeCategory ? (
@@ -198,3 +198,4 @@ export default async function ProductsPage({
     </main>
   )
 }
+
