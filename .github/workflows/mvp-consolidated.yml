@@ -67,6 +67,10 @@ jobs:
         run: npm run db:migrate
         env:
           TS_NODE_PROJECT: ${{ github.workspace }}/apps/backend/tsconfig.json
+      - name: Real PostgreSQL FEFO availability integration (not formal TP)
+        run: node --experimental-strip-types --test apps/backend/scripts/test-batch-availability-postgres.mjs
+        env:
+          PHASE3_INVENTORY_DISPOSABLE_TEST: "true"
       - name: Build backend
         run: npm run build:backend
         env:
