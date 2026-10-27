@@ -436,7 +436,81 @@ export function displayPrice(product: StoreProduct, locale: Locale = "ar"): stri
   return formatVariantPrice(lowest.variant, locale)
 }
 
-/** Unique, renderable gallery URLs, thumbnail first. Unsafe schemes never reach `<Image>`. */
+
+/**
+ * Resolves the selected variant ID from a raw URL parameter value.
+ * Strictly validates that the variant ID exists in the product's variants.
+ * Falls back to the first available variant ID if missing or unrecognized.
+ */
+export function resolveSelectedVariantId(
+  variants: StoreVariant[],
+  rawVariantParam: string | null | undefined
+): string {
+  if (!variants || variants.length === 0) return ""
+  if (typeof rawVariantParam === "string" && rawVariantParam.trim()) {
+    const trimmed = rawVariantParam.trim()
+    const match = variants.find((v) => v.id === trimmed)
+    if (match) return match.id
+  }
+  return variants[0]?.id ?? ""
+}
+
+/**
+ * Builds Schema.org Product structured data.
+ *
+ * DEF-06:
+ * While customer purchasing is disabled, does NOT emit an unsupported `Offer`.
+ * Emits truthful metadata: name, description, image, and SKU.
+ * Never invents stock availability, prices, or checkout URLs.
+ */
+export function buildProductStructuredData(
+  product: StoreProduct,
+  options: { siteUrl?: string; isPurchasingEnabled?: boolean } = {}
+): Record<string, unknown> {
+  const images = productImageUrls(product)
+  const mainImage = images[0]
+  const singleSku =
+    (product.variants ?? []).length === 1 ? (product.variants?.[0]?.sku?.trim() ?? "") : ""
+
+  const structured: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: product.title,
+  }
+
+  if (product.description?.trim()) {
+    structured.description = product.description.trim()
+  }
+
+  if (mainImage) {
+    let fullImageUrl = mainImage
+    try {
+      fullImageUrl = new URL(mainImage, options.siteUrl || "http://localhost:8000").toString()
+    } catch {
+      fullImageUrl = mainImage
+    }
+    structured.image = [fullImageUrl]
+  }
+
+  if (singleSku) {
+    structured.sku = singleSku
+  }
+
+  // Strictly gated: only emit offers when purchasing is enabled
+  if (options.isPurchasingEnabled) {
+    const priceAmount = productPriceAmount(product)
+    if (priceAmount !== null) {
+      structured.offers = {
+        "@type": "Offer",
+        price: priceAmount.toFixed(2),
+        priceCurrency: "EGP",
+      }
+    }
+  }
+
+  return structured
+}
+
 export function productImageUrls(product: StoreProduct): string[] {
   const urls = [product.thumbnail, ...(product.images ?? []).map((image) => image.url)]
     .map(safeImageUrl)

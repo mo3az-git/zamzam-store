@@ -35,6 +35,27 @@ export function stripLocale(pathname: string): string {
   return pathname || "/"
 }
 
+export function buildLanguageSwitchHref(
+  currentLocale: Locale,
+  pathname: string,
+  search?: string | URLSearchParams | null
+): string {
+  const targetLocale = alternateLocale(currentLocale)
+  const cleanPath = stripLocale(pathname)
+  const targetPath = localePath(targetLocale, cleanPath)
+
+  let queryString = ""
+  if (typeof search === "string" && search.trim()) {
+    const trimmed = search.trim()
+    queryString = trimmed.startsWith("?") ? trimmed : `?${trimmed}`
+  } else if (search instanceof URLSearchParams) {
+    const str = search.toString()
+    queryString = str ? `?${str}` : ""
+  }
+
+  return `${targetPath}${queryString}`
+}
+
 export function localeFromPathname(pathname: string): Locale {
   return pathname === "/en" || pathname.startsWith("/en/") ? "en" : "ar"
 }

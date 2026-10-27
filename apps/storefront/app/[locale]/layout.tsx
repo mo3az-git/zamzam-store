@@ -1,3 +1,4 @@
+import { Suspense } from "react"
 import type { Metadata, Viewport } from "next"
 import { headers } from "next/headers"
 import Link from "next/link"
@@ -12,6 +13,7 @@ import {
   localePath,
   stripLocale,
 } from "../../lib/i18n"
+import { LanguageSwitch } from "../../components/language-switch"
 import { localeAlternates, siteUrl } from "../../lib/site"
 
 type LocaleParams = { locale: string }
@@ -76,18 +78,28 @@ export default async function LocaleLayout({
             <span className="lux-topbar-en" aria-hidden="true">
               {dict.topbar.tagline}
             </span>
-            <Link
-              className="lux-lang"
-              href={switchHref}
-              hrefLang={switchLocale}
-              lang={switchLocale}
-              dir={localeDirection[switchLocale]}
-              aria-label={dict.language.switchTo}
-              title={dict.language.switchTo}
+            <Suspense
+              fallback={
+                <Link
+                  className="lux-lang"
+                  href={switchHref}
+                  hrefLang={switchLocale}
+                  lang={switchLocale}
+                  dir={localeDirection[switchLocale]}
+                  aria-label={dict.language.switchTo}
+                  title={dict.language.switchTo}
+                >
+                  <span className="lux-lang-icon" aria-hidden="true">🌐</span>
+                  <span>{localeLabel[switchLocale]}</span>
+                </Link>
+              }
             >
-              <span className="lux-lang-icon" aria-hidden="true">🌐</span>
-              <span>{localeLabel[switchLocale]}</span>
-            </Link>
+              <LanguageSwitch
+                currentLocale={locale}
+                ariaLabel={dict.language.switchTo}
+                initialHref={switchHref}
+              />
+            </Suspense>
           </div>
         </div>
         <header className="lux-header">
