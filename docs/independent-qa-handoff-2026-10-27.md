@@ -7,6 +7,13 @@
 
 No merges, production changes, TP-01 runs, or canonical TP status changes were made.
 
+## Follow-up PR #40 CI handoff
+
+- [Draft PR #40](https://github.com/mo3az-git/zamzam-store/pull/40), final tested head `045d797324c2825b3fbe689689471c8d5b6b48bf`.
+- [Consolidated run 40577755199](https://github.com/mo3az-git/zamzam-store/actions/runs/40577755199): passed. Image digest parity passed; all focused storefront/cart/checkout/governorate/shipping/batch/visibility suites, lint, disposable migrations, three PostgreSQL integration groups (20 + 13 + 10 checks), backend/storefront builds, and 5 API schema tests passed. The run uploaded `mvp-integration-run-40577755199-1` (796 bytes; retained through 2026-11-10) with runner and step outcomes.
+- [Chromium run 40577755374](https://github.com/mo3az-git/zamzam-store/actions/runs/40577755374): catalog/locale/mobile 7/7 and synthetic guest checkout 2/2 passed, 0 failed and 0 skipped. Both browser artifacts uploaded and retained through 2026-11-10.
+- GitHub diagnostics report all three required checks passed on the tested head. Vercel reports a separate deployment rate limit (retry in 24 hours); no deployment was required for QA and this does not change the workflow results.
+
 ## CI evidence on PR #31
 
 - [Consolidated MVP run 40573837150](https://github.com/mo3az-git/zamzam-store/actions/runs/40573837150): **89/89 Node test cases passed**, **73/73 named integration and guard assertions passed**, **5/5 proposed API schema tests passed**. Lint, disposable migrations, backend/storefront builds and the overall workflow succeeded. The job covers guest ownership, cart guards, PostgreSQL FEFO, Medusa visibility, governorate mapping and shipping-readiness blockers.
