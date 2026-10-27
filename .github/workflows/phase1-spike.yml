@@ -60,6 +60,7 @@ jobs:
       PHASE1_REDIS_IMAGE_REF: redis:7.2.16@sha256:1009f15ccd9ed271996d1c65745a1ab1dadedea188feb3f1ab938602a32e50a3
       PHASE4_5_GUEST_OWNERSHIP_ONLY: ${{ github.ref == 'refs/heads/phase-1/same-order-native-payment-integration-spike' || github.event.pull_request.head.ref == 'phase-1/same-order-native-payment-integration-spike' }}
       PHASE4_7_NATIVE_SHIPPING_ONLY: ${{ github.ref == 'refs/heads/phase-1/same-order-native-payment-integration-spike' || github.event.pull_request.head.ref == 'phase-1/same-order-native-payment-integration-spike' }}
+      PHASE4_8_EGYPT_SHIPPING_ONLY: ${{ github.ref == 'refs/heads/phase-1/same-order-native-payment-integration-spike' || github.event.pull_request.head.ref == 'phase-1/same-order-native-payment-integration-spike' }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -131,8 +132,24 @@ jobs:
           set -o pipefail
           npm run build:backend 2>&1 | tee artifacts/medusa-build.log
 
+      - name: Verify Egyptian governorate shipping configuration contract
+        if: ${{ env.PHASE4_8_EGYPT_SHIPPING_ONLY == 'true' }}
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run spike:egypt-shipping-foundation 2>&1 | tee artifacts/egypt-shipping-foundation.log
+
+      - name: Verify native Egyptian governorate geography against disposable PostgreSQL and Redis
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY == 'true' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+        run: |
+          set -o pipefail
+          npm run spike:egypt-governorate-shipping-integration 2>&1 | tee artifacts/egypt-governorate-shipping-integration.log
+
       - name: Verify real guest cart ownership against disposable PostgreSQL and Redis
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY == 'true' && env.PHASE4_7_NATIVE_SHIPPING_ONLY != 'true' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY == 'true' && env.PHASE4_7_NATIVE_SHIPPING_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -141,7 +158,7 @@ jobs:
           npm run spike:guest-cart-ownership-integration 2>&1 | tee artifacts/guest-cart-ownership-integration.log
 
       - name: Verify native shipping and payable readiness against disposable PostgreSQL and Redis
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_7_NATIVE_SHIPPING_ONLY == 'true' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' && env.PHASE4_7_NATIVE_SHIPPING_ONLY == 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -176,7 +193,7 @@ jobs:
           npm run spike:target-validator 2>&1 | tee artifacts/disposable-target-validator.log
 
       - name: Run TP-02a distributed cart lock test
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -185,14 +202,14 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-02a 2>&1 | tee artifacts/tp-02a-distributed-lock.log
 
       - name: Run TP-02b heartbeat unit invariants
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' }}
         shell: bash
         run: |
           set -o pipefail
           npm run spike:tp02b-unit 2>&1 | tee artifacts/tp-02b-heartbeat-unit.log
 
       - name: Run TP-02b real-service heartbeat test
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -201,14 +218,14 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-02b 2>&1 | tee artifacts/tp-02b-heartbeat.log
 
       - name: Run TP-02c lock timeout CAS unit invariants
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' }}
         shell: bash
         run: |
           set -o pipefail
           npm run spike:tp02c-unit 2>&1 | tee artifacts/tp-02c-cas-unit.log
 
       - name: Run TP-02c real-service lock timeout CAS test
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -217,14 +234,14 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-02c 2>&1 | tee artifacts/tp-02c-lock-timeout-cas.log
 
       - name: Verify TP-03 negative control (non-contention error propagation)
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' }}
         shell: bash
         run: |
           set -o pipefail
           node apps/backend/scripts/check-stage2-lock-negative-control.mjs 2>&1 | tee artifacts/tp-03-negative-control.log
 
       - name: Run TP-03 concurrent cart lock rejection test
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -233,7 +250,7 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-03 2>&1 | tee artifacts/tp-03-concurrent-lock-rejection.log
 
       - name: Run TP-04a native HTTP mutation guard
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -242,7 +259,7 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-04a 2>&1 | tee artifacts/tp-04a-native-http.log
 
       - name: Run TP-04b stale heartbeat HTTP mutation guard
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -251,7 +268,7 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-04b 2>&1 | tee artifacts/tp-04b-native-http.log
 
       - name: Run native cart mutation security HTTP integration
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -260,7 +277,7 @@ jobs:
           node apps/backend/scripts/test-cart-mutation-http-integration.mjs 2>&1 | tee artifacts/cart-mutation-http-integration.log
 
       - name: Run TP-06a same-batch multi-line reservation
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -270,7 +287,7 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-06a 2>&1 | tee artifacts/tp-06a-inventory-reservation.log
 
       - name: Run TP-06b replay, divergence, rollback, and contention
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -280,7 +297,7 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-06b 2>&1 | tee artifacts/tp-06b-inventory-replay-rollback.log
 
       - name: Run TP-07a expired reservation cleanup and replay
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -290,7 +307,7 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-07a 2>&1 | tee artifacts/tp-07a-inventory-cleanup.log
 
       - name: Run TP-07b order-scoped cleanup and conversion interleavings
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -300,7 +317,7 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-07b 2>&1 | tee artifacts/tp-07b-order-cleanup-conversion.log
 
       - name: Run TP-09 deterministic checkout line conversion
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -310,7 +327,7 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-09 2>&1 | tee artifacts/tp-09-deterministic-conversion.log
 
       - name: Run TP-10 split batch allocation and rollback
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -320,7 +337,7 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-10 2>&1 | tee artifacts/tp-10-split-batch-conversion.log
 
       - name: Run TP-24c PostgreSQL movement immutability roles
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -330,7 +347,7 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-24c 2>&1 | tee artifacts/tp-24c-ledger-immutability.log
 
       - name: Run TP-05 provider-neutral payment branch prototype
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -339,7 +356,7 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-05 2>&1 | tee artifacts/tp-05-payment-branches.log
 
       - name: Run positive-value native Medusa order allocation and payment branch binding (component integration)
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -349,7 +366,7 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-05-native-order-binding 2>&1 | tee artifacts/tp-05-native-order-binding.log
 
       - name: Run TP-08 correlation foundation prototype (not formal TP-08 acceptance)
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -358,7 +375,7 @@ jobs:
           node apps/backend/scripts/test-tp08-correlation-foundation.mjs 2>&1 | tee artifacts/tp-08-correlation-foundation.log
 
       - name: Run TP-08 real native cart completion and inventory conversion (component integration)
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -368,7 +385,7 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-08-native-integration 2>&1 | tee artifacts/tp-08-native-integration.log
 
       - name: Run nonzero real Medusa completeCartWorkflow with allocation and replay
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -378,7 +395,7 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-08-payable 2>&1 | tee artifacts/tp-08-payable.log
 
       - name: Run native checkout recovery and fault boundaries (component integration)
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -388,7 +405,7 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-08-recovery 2>&1 | tee artifacts/tp-08-recovery.log
 
       - name: Run internal reconciliation and real worker termination tests
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -398,7 +415,7 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-08-operations 2>&1 | tee artifacts/tp-08-operations.log
 
       - name: Run same native order checkout and payment branch integration
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -408,7 +425,7 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-05-same-order 2>&1 | tee artifacts/tp-05-same-order.log
 
       - name: Run TP-21c refund identity and encryption test
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' && env.PHASE4_5_GUEST_OWNERSHIP_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
@@ -417,7 +434,7 @@ jobs:
           node scripts/run-tp-with-evidence.mjs TP-21c 2>&1 | tee artifacts/tp-21c-refund-identity.log
 
       - name: Verify Migration 3 rollback on isolated PostgreSQL database
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' }}
         shell: bash
         env:
           PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
@@ -426,7 +443,7 @@ jobs:
           npm run spike:migration-rollback 2>&1 | tee artifacts/migration-rollback-isolated.log
 
       - name: Summarize all 59 current-commit TP execution outcomes
-        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' && env.PHASE4_8_EGYPT_SHIPPING_ONLY != 'true' }}
         run: node scripts/summarize-phase1-evidence.mjs
 
       - name: Upload Phase 1 evidence

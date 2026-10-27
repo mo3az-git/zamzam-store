@@ -34,7 +34,9 @@
     "spike:tp04b": "node scripts/run-tp-with-evidence.mjs TP-04b",
     "spike:tp21c": "node scripts/run-tp-with-evidence.mjs TP-21c",
     "spike:tp03-negative-control": "node apps/backend/scripts/check-stage2-lock-negative-control.mjs",
-    "spike:migration-rollback": "node apps/backend/scripts/test-migration-rollback-isolated.mjs"
+    "spike:migration-rollback": "node apps/backend/scripts/test-migration-rollback-isolated.mjs",
+    "spike:egypt-shipping-foundation": "node apps/backend/scripts/check-egypt-shipping-configuration.mjs",
+    "spike:egypt-governorate-shipping-integration": "node apps/backend/scripts/test-egypt-governorate-shipping-integration.mjs"
   },
   "devDependencies": {
     "@swc/core": "^1.7.28",
