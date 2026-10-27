@@ -143,6 +143,41 @@ export async function runReconciliationOperationsScenarios(ctx) {
     corruptInspection.reason === "ORDER_LINE_QUANTITY_MISMATCH" && corruptResult.decision === "blocked" &&
     JSON.stringify(corruptBefore) === JSON.stringify(corruptAfter))
 
+  const changingLinks = await fixtureFor("links-change-during-recovery")
+  await crashAt(changingLinks, "afterNativeReturn")
+  const sessionHolder = createPgClient(isolatedUrl)
+  await sessionHolder.connect()
+  const changingWorker = await prepare("recover", changingLinks)
+  let observedBlock = false
+  try {
+    await sessionHolder.query("BEGIN")
+    const holderPid = (await sessionHolder.query("SELECT pg_backend_pid() AS pid")).rows[0].pid
+    await sessionHolder.query("SELECT cart_id FROM cart_checkout_session WHERE cart_id=$1 FOR UPDATE", [changingLinks.cart.id])
+    changingWorker.child.send({ go: true })
+    const deadline = Date.now() + 45000
+    while (Date.now() < deadline) {
+      const blocked = (await adminPg.query(`SELECT count(*)::int AS n FROM pg_stat_activity
+        WHERE datname=current_database() AND $1=ANY(pg_blocking_pids(pid))`, [holderPid])).rows[0].n
+      if (blocked > 0) { observedBlock = true; break }
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    }
+    if (!observedBlock) throw new Error("Recovery worker did not reach the session lock")
+    await makeNativeOrder(changingLinks, { bindAttempt: false })
+    await sessionHolder.query("COMMIT")
+  } finally {
+    await sessionHolder.query("ROLLBACK").catch(() => {})
+    await sessionHolder.end()
+  }
+  const changedResult = await changingWorker.next()
+  const changedExit = await changingWorker.exit
+  const changedState = await state(changingLinks)
+  check("candidate_change_during_recovery_reports_ambiguity", true,
+    { observedBlock, changedResult, changedExit, changedState },
+    observedBlock && changedExit.code === 0 && changedResult.result?.reason === "MULTIPLE_NATIVE_ORDERS" &&
+    changedResult.result?.decision === "ambiguous" && changedState.orders.length === 2 &&
+    changedState.allocations.length === 0 && changedState.reservations.every((r) => r.status === "active") &&
+    !changedState.movements.some((m) => m.movement_type === "reservation_release"))
+
   const concurrent = await fixtureFor("concurrent-operators")
   const concurrentBefore = await crashAt(concurrent, "afterCorrelationPersisted")
   await adminPg.query(`UPDATE idempotency_key SET lease_owner_id='replacement-owner'
