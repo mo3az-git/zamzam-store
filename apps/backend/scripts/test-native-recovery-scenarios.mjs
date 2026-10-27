@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto"
+import { fork } from "node:child_process"
 
 // Runs only inside the inventory harness's verified disposable database.
 export async function runNativeRecoveryScenarios(ctx) {
@@ -71,7 +72,7 @@ export async function runNativeRecoveryScenarios(ctx) {
       JSON.stringify(replayState.batch) === JSON.stringify(recoveredState.batch))
   }
 
-  // A fresh scope acts as a second worker context; all authority remains in Redis and PostgreSQL.
+  // A second Medusa runtime runs in a different process against the isolated database.
   const fixture = await makeCart([{ quantity: 2 }], "worker-authority")
   const staleAuthority = { ...fixture.authority }
   const nextAttempt = randomUUID(), nextKey = randomUUID()
@@ -93,13 +94,30 @@ export async function runNativeRecoveryScenarios(ctx) {
   })
   await entered
   const waitingState = await readState(fixture)
-  const second = await complete(scope(), fixture.authority, { beforeNativeCompletion() { calls++ } })
+  const worker = fork(new URL("./test-native-recovery-worker.mjs", import.meta.url), [], {
+    stdio: ["ignore", "ignore", "pipe", "ipc"], execArgv: [],
+  })
+  let workerStderr = ""
+  worker.stderr.on("data", (chunk) => { workerStderr += chunk.toString() })
+  const workerExit = new Promise((resolve) => worker.once("exit", resolve))
+  const workerReply = new Promise((resolve, reject) => {
+    worker.once("error", reject)
+    worker.once("message", resolve)
+    worker.once("exit", (code) => { if (code !== 0) reject(new Error("Recovery worker exited " + code + ": " + workerStderr)) })
+  })
+  worker.send({ authority: fixture.authority })
+  const workerResult = await workerReply
+  const workerExitCode = await workerExit
+  if (workerResult.error) throw new Error(workerResult.error)
+  if (workerExitCode !== 0) throw new Error("Recovery worker failed: " + workerStderr)
+  const second = workerResult.result
   await expectCode("different_owner_cannot_enter", "CART_LOCK_OWNER_MISMATCH",
     () => complete(scope(), { ...fixture.authority, ownerId: "other-worker" }))
   await expectCode("stale_epoch_cannot_enter", "STALE_OR_UNAUTHORIZED_ATTEMPT",
     () => complete(scope(), staleAuthority))
   const afterRejected = await readState(fixture)
-  check("competing_workers_leave_fenced_stock_unchanged", true, { waitingState, second, afterRejected },
+  check("competing_workers_leave_fenced_stock_unchanged", true, { waitingState, workerResult, afterRejected },
+    workerResult.workerPid !== process.pid && Number(workerResult.pid) > 0 &&
     second.conversionStatus === "pending_reconciliation" && unchangedStock(afterRejected) &&
     afterRejected.orders.length === 0 && afterRejected.allocations.length === 0 &&
     afterRejected.batch.quantity_reserved === waitingState.batch.quantity_reserved)
