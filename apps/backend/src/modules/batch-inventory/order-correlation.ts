@@ -14,10 +14,11 @@ export class CorrelationConflict extends Error {
 type AuthorityRow = {
   cart_id: string; current_attempt_id: string; epoch: number | string; status: string;
   id: string; lease_owner_id: string; attempt_status: string; order_id: string | null;
-  order_correlation_status: string
+  order_correlation_status: string; idempotency_key: string
 }
+type DbRow = Record<string, unknown>
 type Sql = {
-  raw(sql: string, values?: unknown[]): Promise<{ rows: AuthorityRow[]; rowCount: number }>
+  raw(sql: string, values?: unknown[]): Promise<{ rows: DbRow[]; rowCount: number }>
   transaction<T>(fn: (tx: Sql) => Promise<T>): Promise<T>
 }
 type Authority = { cartId: string; attemptId: string; epoch: number; ownerId: string }
@@ -28,16 +29,21 @@ const invalid = (code: string): never => { throw new CorrelationConflict(code) }
 const validate = (x: Authority) => {
   if (!x.cartId || !x.attemptId || !x.ownerId || !Number.isSafeInteger(x.epoch) || x.epoch < 1) invalid("INVALID_AUTHORITY")
 }
-async function current(tx: Sql, x: Authority) {
+async function current(tx: Sql, x: Authority): Promise<AuthorityRow> {
   const session = (await tx.raw(`SELECT cart_id,current_attempt_id,epoch,status FROM cart_checkout_session
-    WHERE cart_id=? AND deleted_at IS NULL FOR UPDATE`, [x.cartId])).rows[0]
-  const attempt = (await tx.raw(`SELECT checkout_attempt_id::text AS id,cart_id,epoch,lease_owner_id,attempt_status,
+    WHERE cart_id=? AND deleted_at IS NULL FOR UPDATE`, [x.cartId])).rows[0] as
+    { cart_id: string; current_attempt_id: string; epoch: number | string; status: string } | undefined
+  const attempt = (await tx.raw(`SELECT checkout_attempt_id::text AS id,cart_id,epoch,idempotency_key,lease_owner_id,attempt_status,
     order_id,order_correlation_status FROM cart_checkout_attempt
-    WHERE checkout_attempt_id=?::uuid FOR UPDATE`, [x.attemptId])).rows[0]
+    WHERE checkout_attempt_id=?::uuid FOR UPDATE`, [x.attemptId])).rows[0] as AuthorityRow | undefined
+  const allocatedReplay = session?.status === "completed" && attempt?.attempt_status === "allocated" &&
+    Boolean(attempt?.order_id) && attempt?.order_correlation_status === "correlated"
   if (!session || !attempt || session.current_attempt_id !== x.attemptId ||
-      Number(session.epoch) !== x.epoch || session.status !== "in_progress" ||
+      Number(session.epoch) !== x.epoch || (session.status !== "in_progress" && !allocatedReplay) ||
       attempt.cart_id !== x.cartId || Number(attempt.epoch) !== x.epoch ||
-      attempt.lease_owner_id !== x.ownerId) invalid("STALE_OR_UNAUTHORIZED_ATTEMPT")
+      attempt.lease_owner_id !== x.ownerId) {
+    throw new CorrelationConflict("STALE_OR_UNAUTHORIZED_ATTEMPT")
+  }
   return attempt
 }
 
@@ -45,12 +51,31 @@ async function current(tx: Sql, x: Authority) {
 export async function markOrderCreationStarted(db: Sql, authority: Authority) {
   validate(authority)
   return db.transaction(async (tx) => {
+    // Revision 18: a replay for an already bound order must take its order
+    // advisory root before locking checkout authority. If the binding changes
+    // between this read and the row lock, fail closed instead of taking a new
+    // root after session/attempt locks.
+    const observed = (await tx.raw(
+      "SELECT order_id FROM cart_checkout_attempt WHERE checkout_attempt_id=?::uuid",
+      [authority.attemptId]
+    )).rows[0] as { order_id: string | null } | undefined
+    if (observed?.order_id) {
+      await tx.raw("SELECT pg_advisory_xact_lock(hashtextextended(?,0))",
+        ["phase0:order:" + observed.order_id])
+    }
     const a = await current(tx, authority)
+    if (a.order_id !== (observed?.order_id ?? null)) invalid("ORDER_ROOT_CHANGED_DURING_RECONCILIATION")
+    const completedReplay = a.attempt_status === "allocated" && a.order_id !== null
+    const lease = (await tx.raw(`SELECT key,status FROM idempotency_key WHERE key=? AND lease_owner_id=?
+      AND status IN ('pending','completed') AND deleted_at IS NULL
+      AND (status='completed' OR last_heartbeat_at>NOW()-INTERVAL '120 seconds')`,
+      [a.idempotency_key, authority.ownerId])).rows[0]
+    if (!lease || (lease.status === "completed" && !completedReplay)) invalid("CHECKOUT_LEASE_NOT_OWNED")
     // An already correlated attempt must be replay-safe: never invoke the
     // native order creation workflow a second time. Reconciliation below
     // independently rechecks the existing native cart/order link.
     if (a.order_id) {
-      if (a.attempt_status !== "order_created" || a.order_correlation_status !== "correlated")
+      if (!["order_created", "allocated"].includes(a.attempt_status) || a.order_correlation_status !== "correlated")
         invalid("BOUND_ORDER_STATE_DIVERGENCE")
       return { fenced: true, replay: true }
     }
@@ -87,19 +112,23 @@ export async function reconcileOrderCreation(db: Sql, authority: Authority, look
     // Rev 18: any operation acting on an existing order takes the order root
     // before checkout session/attempt row locks. The native lookup is outside
     // the transaction; the authority is rechecked under the row locks below.
-    // Read (without row locking) the previously bound order. A bound order
-    // defines the canonical lock root; untrusted lookup candidates cannot
-    // switch it. For a yet-unbound attempt, the single native candidate
-    // provides the prospective root. Authority is revalidated after locking.
-    const observed = (await tx.raw(
-      "SELECT order_id FROM cart_checkout_attempt WHERE checkout_attempt_id=?::uuid",
-      [authority.attemptId]
-    )).rows[0]
-    const candidateId = unique.size === 1 ? [...unique.keys()][0] : null
-    const lockedOrderId: string | null = observed?.order_id ?? candidateId
-    if (lockedOrderId) {
-      await tx.raw("SELECT pg_advisory_xact_lock(hashtextextended(?,0))",
-        ["phase0:order:" + lockedOrderId])
+    let lockedOrderId: string | null = null
+    if (unique.size === 1) {
+      const [orderId] = unique.keys()
+      lockedOrderId = orderId
+      await tx.raw("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", ["phase0:order:" + orderId])
+    } else {
+      // Do not lock arbitrary candidate order IDs for ambiguous correlation:
+      // fence the attempt and require manual recovery instead.
+      const observed = (await tx.raw(
+        "SELECT order_id FROM cart_checkout_attempt WHERE checkout_attempt_id=?::uuid",
+        [authority.attemptId]
+      )).rows[0] as { order_id: string | null } | undefined
+      if (observed?.order_id) {
+        lockedOrderId = observed.order_id
+        await tx.raw("SELECT pg_advisory_xact_lock(hashtextextended(?,0))",
+          ["phase0:order:" + observed.order_id])
+      }
     }
     const a = await current(tx, authority)
     // Never lock the session/attempt and only then discover a different order
@@ -107,7 +136,7 @@ export async function reconcileOrderCreation(db: Sql, authority: Authority, look
     if (a.order_id && a.order_id !== lockedOrderId) invalid("ORDER_ROOT_CHANGED_DURING_RECONCILIATION")
     if (a.order_id && (unique.size !== 1 || !unique.has(a.order_id)) &&
         a.order_correlation_status === "correlated") invalid("BOUND_ORDER_LOOKUP_DIVERGENCE")
-    if (!["order_creation_started","order_created","needs_reconciliation"].includes(a.attempt_status))
+    if (!["order_creation_started","order_created","allocated","needs_reconciliation"].includes(a.attempt_status))
       invalid("NOT_IN_ORDER_CREATION_PHASE")
     if (a.order_id) {
       if (unique.size === 1 && unique.has(a.order_id)) return { status: "correlated", orderId: a.order_id, replay: true }
