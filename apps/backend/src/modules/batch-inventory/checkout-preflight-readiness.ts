@@ -76,7 +76,7 @@ const keyFor = (code: CheckoutPreflightBlocker) => "checkout.readiness.blockers.
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value)
 const minor = (raw: unknown): bigint | null => {
-  if (typeof raw !== "string" || !/^(?:0|[1-9]\\d*)(?:\\.\\d{1,2})?$/.test(raw)) return null
+  if (typeof raw !== "string" || !/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(raw)) return null
   const [whole, fraction = ""] = raw.split(".")
   try { return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, "0")) } catch { return null }
 }
