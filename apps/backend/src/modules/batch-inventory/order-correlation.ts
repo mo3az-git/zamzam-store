@@ -11,7 +11,15 @@
 export class CorrelationConflict extends Error {
   constructor(public readonly code: string) { super(code); this.name = "CorrelationConflict" }
 }
-type Sql = { raw(sql: string, values?: unknown[]): Promise<{ rows: Record<string, any>[]; rowCount: number }>; transaction<T>(fn: (tx: Sql) => Promise<T>): Promise<T> }
+type AuthorityRow = {
+  cart_id: string; current_attempt_id: string; epoch: number | string; status: string;
+  id: string; lease_owner_id: string; attempt_status: string; order_id: string | null;
+  order_correlation_status: string
+}
+type Sql = {
+  raw(sql: string, values?: unknown[]): Promise<{ rows: AuthorityRow[]; rowCount: number }>
+  transaction<T>(fn: (tx: Sql) => Promise<T>): Promise<T>
+}
 type Authority = { cartId: string; attemptId: string; epoch: number; ownerId: string }
 type NativeOrder = { id: string; cart_id: string }
 type Lookup = (cartId: string) => Promise<NativeOrder[]>
