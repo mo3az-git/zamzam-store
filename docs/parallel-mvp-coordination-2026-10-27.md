@@ -76,3 +76,38 @@ All listed PRs are open Drafts. Their heads are retained unchanged. GitHub compa
 - Agent B completed a read-only interface review (no changes/tests): authority must be a server-only verified object bound to guest session, persisted cart, current attempt/epoch/lease and active lock; never client JSON. B revalidates on each mutation and before completion. Native snapshot includes order/cart identity, order version, EGP totals, sorted line identity/variant/key/quantity/raw-unit-price; shipping snapshot fields are deferred until E defines persisted quote. Ambiguous correlation remains reconciliation-pending; public payable completion stays disabled.
 - Agents A, C and D are active on isolated branches. Initial reviews/tests are scoped and disposable. Branches A/C/D will not overlap by the exclusive matrix above.
 - PR #19/#29/#30/#31 have successful relevant GitHub Actions evidence on their respective heads. PR #32-#35 have no full integration workflow evidence in the current check-run set (PR #32 body also records unresolved cart-adapter failures). Re-run on candidate after reviewed ports.
+
+
+## Specialist outcomes as of 2026-10-27
+
+- A (guest ownership): read-only review only. No API routes currently bind the PR #19 guest-token helper to storefront calls; raw proof must remain HttpOnly/Secure/SameSite cookie, server side only, with only digest persisted. GET and every mutation need cart ownership enforcement. No tests/commit.
+- B (cart orchestration): read-only contract review only. Client JSON cannot mint authority; B requires A-minted verified server authority bound to guest session, persisted cart, attempt/epoch/lease and Redis lock; every mutation and completion revalidate. No tests/commit.
+- C (FEFO): isolated branch commit `919adaf3cfed5bcb78e54d30ae1881e9d3902360` rejects blank/non-string Redis lock keys and adds mock/disposable Redis tests. No workflow run or local test execution is available, so unverified. Internal availability remains read-only available/unavailable/unknown; reservation remains authoritative.
+- D (payment): no isolated baseline patch. PR #19 event ledger/provider contract are absent from baseline and broad/divergent; no transplant. Gateway and provider remain undecided; no tests run.
+- E (shipping): no patch. Baseline has 27 canonical governorates; coverage/rates/provider remain unconfigured. Integration fixture synthesizes rates/options only in disposable tests. No approved tariff/provider.
+- F (storefront): read-only review. PR #32 shipping adapter should require EGP and selected governorate; baseline currently allows ready quote without either. PR #35 presentation fixes are candidates. No patch/tests. PR #32 reports 37 focused tests/lint passing, but 4 cart-adapter mock failures; PR #35 has Vercel success only, not full CI.
+- G (integration QA): read-only review. Candidate workflow is least privilege and disposable-only; candidate has no observed GitHub Actions run yet (Vercel status alone is not combined CI). Port only #29’s completion-deny regression step; do not copy its entire workflow.
+- Agent checkout limitation: no usable isolated writable local worktree is available on this host. Specialists use their exclusive remote refs through GitHub APIs. The shared checkout remains untouched.
+
+## Reviewed integration queue (no wholesale merges)
+
+1. Preserve candidate baseline and no-live-commerce posture.
+2. B handoff review: consider only PR #29's fixed-404 cart completion guard and its negative test, plus a G-owned workflow step. The route/test add no authorization capability and assert zero service resolution. Wait for B confirmation before editing B-owned paths.
+3. C lock-key validation: review commit ancestry and diff, then wire its focused mock/disposable tests under G; do not integrate until CI execution is available.
+4. F: selectively port PR #32 shipping quote validation and PR #35 storefront-only a11y/localization improvements; run focused storefront tests and resolve reported cart-adapter failures first.
+5. A/B ownership wrapper and guest cart flow must be designed and tested together before enabling mutations.
+6. E shipping quote persistence/coverage requires owner decisions and approved tariffs; keep all rates/provider unset.
+7. D payment event ledger/provider adapter only after native completion contract is stable; gateway remains undecided.
+8. G port isolated disposable integration/browser CI after file ownership coordination; create/update candidate Draft PR only after a reviewed port has candidate CI evidence.
+
+## Current candidate evidence and blockers
+
+- Candidate head before this manifest update: `d056b7c1131cc9d97959102776801ee9e676ce1d`. No candidate GitHub Actions run was observed; Vercel success does not establish tests.
+- Combined CI, browser checks on candidate, and end-to-end integration evidence are outstanding.
+- P0: no verified guest/cart ownership enforcement through storefront/BFF/API; do not expose cart mutation/completion.
+- P0: no verified authoritative completion/payment path; keep live order placement and payment disabled.
+- P1: shipping quote missing currency/governorate binding can be treated as ready; integrate reviewed F fix after ownership signoff.
+- P1: lock key validation patch has no test evidence on candidate.
+- P1: cross-cart IDOR/BOLA, replay/stale-state, rate limiting, sensitive error redaction, and server-only bundle checks still require dedicated negative tests.
+- P1: shipping rates/provider and payment gateway are undecided; all 27 governorates remain unconfigured for launch fulfillment.
+- P2: storefront accessibility, canonical-origin, bilingual navigation and responsive checks need selective PR #35 integration plus browser validation.
