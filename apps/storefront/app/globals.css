@@ -562,3 +562,69 @@ body { background: var(--lux-ivory); color: var(--lux-ink); }
 .detail-sku { font-size: 13px; color: var(--muted); margin: 4px 0; }
 .detail-variant-warning { color: #8b5422; font-size: 13px; }
 .detail-variant-notice { margin-block: 13px 0; font-size: 12px; color: var(--muted); line-height: 1.9; }
+
+/* ================================================================
+   PHASE 2 / BILINGUAL CATALOG
+   Language switch, real collection filters and safe catalog states.
+   The Arabic Luxury surface is unchanged; English reuses the same
+   layout with a Latin display face and LTR flow.
+   ================================================================ */
+.lux-lang { display: inline-flex; align-items: center; min-height: 26px; padding: 3px 12px; border: 1px solid #6d7d6a; color: #e9e3d2; font-size: 11px; font-weight: 700; line-height: 1; white-space: nowrap; transition: background .2s,color .2s,border-color .2s; }
+.lux-lang:hover { background: #d7b68c; border-color: #d7b68c; color: #122e26; }
+.lux-lang:focus-visible { outline: 2px solid #d7b68c; outline-offset: 3px; }
+
+.lux-filter { display: flex; flex-wrap: wrap; gap: 9px; margin: 0 0 27px; }
+.lux-filter-link { display: inline-flex; align-items: center; min-height: 38px; padding: 8px 17px; border: 1px solid #d9d4c8; background: #fbf8f1; color: #3d5a4c; font-size: 13px; font-weight: 800; transition: background .18s,color .18s,border-color .18s; }
+.lux-filter-link:hover { border-color: #a98a63; color: #8a5f34; }
+.lux-filter-link.is-active { background: #183e34; border-color: #183e34; color: #f6edd9; }
+
+.lux-category-empty { border: 1px solid #e4dfd4; background: #fbf9f3; padding: 42px 46px; display: flex; flex-direction: column; align-items: start; gap: 8px; }
+.lux-category-empty h3 { font-family: var(--font-arabic-heading); font-size: clamp(26px,2.8vw,38px); font-weight: 900; line-height: 1.4; margin: 6px 0 0; }
+.lux-category-empty p { max-width: 560px; color: #69766a; line-height: 1.9; font-family: var(--font-arabic-reading); margin: 0 0 14px; font-size: 14px; }
+
+.notice.not-found { display: flex; flex-direction: column; align-items: start; gap: 9px; }
+.notice.not-found p { margin: 0 0 9px; }
+.notice.not-found .button { margin-top: 4px; }
+
+.catalog-page .pagination span[aria-current] { color: #3d5a4c; font-weight: 800; }
+.detail-sku bdi { unicode-bidi: isolate; }
+
+/* English reads as a Latin edition of the same design, never a translation skin. */
+html[lang="en"] body { font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif; }
+html[lang="en"] h1, html[lang="en"] h2, html[lang="en"] h3,
+html[lang="en"] .lux-brand-name,
+html[lang="en"] .lux-hero h1,
+html[lang="en"] .lux-section-heading h2,
+html[lang="en"] .lux-category-bottom h3,
+html[lang="en"] .lux-category-empty h3,
+html[lang="en"] .lux-catalog-state h3,
+html[lang="en"] .lux-footer-about > strong {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  letter-spacing: 0;
+}
+html[lang="en"] .lux-hero h1 { white-space: normal; font-size: clamp(42px,4.6vw,74px); line-height: 1.14; font-weight: 700; }
+html[lang="en"] .lux-hero h1 span { display: block; }
+html[lang="en"] .lux-section-heading h2 { font-size: clamp(30px,3.2vw,48px); font-weight: 700; }
+html[lang="en"] .lux-category-bottom h3 { font-size: clamp(26px,2.9vw,40px); font-weight: 700; }
+html[lang="en"] .lux-footer-about > strong { font-size: clamp(38px,4vw,58px); font-weight: 700; }
+html[lang="en"] .lux-finale h2 { font-size: clamp(38px,4.2vw,64px); font-weight: 700; }
+html[lang="en"] .lux-catalog-state h3, html[lang="en"] .lux-category-empty h3 { font-weight: 700; }
+html[lang="en"] .lux-decor-word { font-family: inherit; }
+html[lang="en"] .lux-intro,
+html[lang="en"] .lux-section-heading > p,
+html[lang="en"] .lux-category-empty p,
+html[lang="en"] .detail-description p,
+html[lang="en"] .lux-footer-about > p { font-family: inherit; }
+html[lang="en"] .catalog-intro h1, html[lang="en"] .detail-copy h1 { font-size: clamp(30px,3.6vw,44px); font-weight: 700; }
+
+@media (max-width: 640px) {
+  .lux-topbar-content { justify-content: space-between; gap: 10px; }
+  .lux-lang { font-size: 10px; padding: 3px 9px; }
+  .lux-filter { gap: 7px; margin-bottom: 21px; }
+  .lux-filter-link { min-height: 34px; padding: 7px 12px; font-size: 12px; }
+  .lux-category-empty { padding: 28px 22px; }
+  .catalog-page { padding-block: 22px 62px; }
+  .pagination { gap: 10px; flex-wrap: wrap; justify-content: space-between; }
+  .detail-thumbs img { width: 72px; height: 72px; }
+  html[lang="en"] .lux-hero h1 { font-size: clamp(38px,9vw,54px); }
+}

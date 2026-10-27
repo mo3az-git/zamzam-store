@@ -1,22 +1,37 @@
 "use client"
 
 import { useState } from "react"
+import { getDictionary, type Locale } from "../lib/i18n"
 import { formatVariantPrice, type StoreVariant } from "../lib/medusa"
 
-/** Catalog-only variant selector. Never treats displayed price as checkout authority. */
-export function VariantSelector({ variants }: { variants: StoreVariant[] }) {
+/** Catalog-only variant selector. Never treats a displayed price as checkout authority. */
+export function VariantSelector({
+  variants,
+  locale,
+}: {
+  variants: StoreVariant[]
+  locale: Locale
+}) {
+  const dict = getDictionary(locale)
   const [selectedId, setSelectedId] = useState(variants[0]?.id ?? "")
   const chosen = variants.find((variant) => variant.id === selectedId) ?? variants[0]
-  const price = chosen ? formatVariantPrice(chosen) : null
+  const price = chosen ? formatVariantPrice(chosen, locale) : null
+  const sku = chosen?.sku?.trim()
 
   if (!chosen) {
-    return <div className="detail-price" role="status">السعر غير متاح حاليًا</div>
+    return (
+      <div className="detail-price" role="status">
+        {dict.product.priceUnavailable}
+      </div>
+    )
   }
 
   return (
-    <section className="detail-variant-picker" aria-label="خيارات المنتج">
+    <section className="detail-variant-picker" aria-label={dict.product.kicker}>
       <label className="detail-variant-label" htmlFor="product-variant">
-        {variants.length > 1 ? "اختر العبوة أو الخيار" : "العبوة المتاحة في الكتالوج"}
+        {variants.length > 1
+          ? dict.product.variantLabelMultiple
+          : dict.product.variantLabelSingle}
       </label>
       {variants.length > 1 ? (
         <select
@@ -27,19 +42,25 @@ export function VariantSelector({ variants }: { variants: StoreVariant[] }) {
         >
           {variants.map((variant, index) => (
             <option key={variant.id} value={variant.id}>
-              {variant.title?.trim() || `الخيار ${index + 1}`}
+              {variant.title?.trim() || dict.product.variantFallback(index + 1)}
             </option>
           ))}
         </select>
-      ) : <p className="detail-variant-name">{chosen.title?.trim() || "الخيار الأساسي"}</p>}
+      ) : (
+        <p className="detail-variant-name">
+          {chosen.title?.trim() || dict.product.variantPrimary}
+        </p>
+      )}
       <div aria-live="polite" aria-atomic="true">
-        <div className="detail-price">{price ?? "السعر غير متاح لهذا الخيار"}</div>
-        {chosen.sku?.trim() ? (
-          <p className="detail-sku">رمز المنتج (SKU): <bdi dir="ltr">{chosen.sku.trim()}</bdi></p>
+        <div className="detail-price">{price ?? dict.product.variantPriceUnavailable}</div>
+        {sku ? (
+          <p className="detail-sku">
+            {dict.product.skuLabel} <bdi dir="ltr">{sku}</bdi>
+          </p>
         ) : null}
-        {!price ? <p className="detail-variant-warning">لا يمكن تأكيد السعر لهذا الخيار من بيانات المتجر.</p> : null}
+        {!price ? <p className="detail-variant-warning">{dict.product.variantWarning}</p> : null}
       </div>
-      <p className="detail-variant-notice">هذه معلومات للعرض فقط؛ إتاحة الشراء تعتمد على التحقق من المخزون والدفع لاحقًا.</p>
+      <p className="detail-variant-notice">{dict.product.variantNotice}</p>
     </section>
   )
 }
