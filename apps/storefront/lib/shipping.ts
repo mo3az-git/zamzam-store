@@ -123,16 +123,20 @@ export function adaptShippingQuoteToUi(
   const statusStr = typeof quote.status === "string" ? quote.status.trim().toLowerCase() : ""
 
   if (statusStr === "ready") {
-    // Valid ready quote requires a valid finite non-negative number and EGP currency
+    // A ready quote must be explicitly bound to this governorate and denominated
+    // in EGP. Missing context is not evidence of an authoritative shipping price.
     const amount = quote.amount
     const isCurrencyValid =
-      quote.currency == null ||
-      (typeof quote.currency === "string" && quote.currency.trim().toUpperCase() === "EGP")
+      typeof quote.currency === "string" && quote.currency.trim().toUpperCase() === "EGP"
+    const isGovernorateValid =
+      typeof quote.governorate === "string" &&
+      quote.governorate.trim().toLowerCase() === normalizedGov
     const isAmountValid =
       typeof amount === "number" &&
       Number.isFinite(amount) &&
       amount >= 0 &&
-      isCurrencyValid
+      isCurrencyValid &&
+      isGovernorateValid
 
     if (!isAmountValid) {
       // Malformed amount cannot be accepted as ready
