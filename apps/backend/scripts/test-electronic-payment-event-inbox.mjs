@@ -71,11 +71,11 @@ try {
   const paidAttempt = await newAttempt("duplicate")
   const paidEvent = makeEvent(paidAttempt)
   const applied = await applyVerifiedElectronicPaymentEvent(first, paidEvent)
-  check("verified_simulated_paid_event_applies", applied.status === "paid" &&
-    applied.disposition === "applied" && !applied.replayed)
+  check("simulated_paid_event_cannot_settle", applied.status === "initiated" &&
+    applied.disposition === "needs_reconciliation" && !applied.replayed)
   const replay = await applyVerifiedElectronicPaymentEvent(first, paidEvent)
-  check("duplicate_provider_event_is_idempotent", replay.replayed &&
-    replay.status === "paid" && replay.disposition === "applied")
+  check("duplicate_simulated_settlement_claim_is_idempotent", replay.replayed &&
+    replay.status === "initiated" && replay.disposition === "needs_reconciliation")
   const eventCount = await first.query(`SELECT count(*)::int AS n FROM electronic_payment_event
     WHERE checkout_attempt_id=$1`, [paidAttempt.checkoutAttemptId])
   check("duplicate_event_persists_one_inbox_row", eventCount.rows[0].n === 1)
@@ -84,7 +84,7 @@ try {
   await expectCode("reused_event_id_with_changed_content_rejected", "PAYMENT_EVENT_IDENTITY_CONFLICT",
     () => applyVerifiedElectronicPaymentEvent(first, conflictEvent))
   const afterConflict = await first.query("SELECT status FROM electronic_payment_attempt WHERE id=$1", [paidAttempt.id])
-  check("event_identity_conflict_does_not_change_attempt", afterConflict.rows[0].status === "paid")
+  check("event_identity_conflict_does_not_change_attempt", afterConflict.rows[0].status === "initiated")
 
   const wrongAmount = makeEvent(paidAttempt, {
     providerEventId: "evt_wrong_amount_" + randomUUID(),
@@ -111,8 +111,8 @@ try {
     providerRevision: "2",
   })
   const resolved = await applyVerifiedElectronicPaymentEvent(first, resolvedEvent)
-  check("higher_revision_resolves_unknown_to_paid", resolved.status === "paid" &&
-    resolved.disposition === "applied")
+  check("unknown_outcome_paid_claim_requires_gateway_authority", resolved.status === "outcome_unknown" &&
+    resolved.disposition === "needs_reconciliation")
 
   const refundAttempt = await newAttempt("refund_boundary", "paid")
   const refundEvent = makeEvent(refundAttempt, {
@@ -143,7 +143,7 @@ try {
     occurredAt: new Date(Date.now() - 60000).toISOString(),
   })
   const stale = await applyVerifiedElectronicPaymentEvent(first, staleAuthorized)
-  check("stale_provider_revision_cannot_regress_paid", stale.status === "paid" &&
+  check("stale_provider_revision_cannot_change_unsettled_attempt", stale.status === "initiated" &&
     stale.disposition === "stale")
   const staleStored = await first.query(`SELECT disposition FROM electronic_payment_event
     WHERE provider_key=$1 AND provider_event_id=$2`,
