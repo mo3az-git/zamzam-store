@@ -1,19 +1,14 @@
 "use client"
 
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
 import { getDictionary, localePath, type Locale } from "../lib/i18n"
-import { formatEgpAmount } from "../lib/medusa"
-import type { SanitizedCart } from "../lib/cart-types"
-import { SYNTHETIC_CART_PREVIEW_FIXTURE } from "../lib/cart-types"
-import { newCartRequestId, requestCartBff, type CartBffSnapshot } from "../lib/cart-bff"
+import { newCartRequestId, requestCartBff, type CartBffBlocker, type CartBffSnapshot } from "../lib/cart-bff"
 
 export interface CartViewProps {
   locale: Locale
-  initialCart?: SanitizedCart | null
   errorCode?: string | null
-  allowSyntheticPreview?: boolean
+  bffEnabled?: boolean
 }
 
 /**
@@ -26,44 +21,48 @@ export interface CartViewProps {
  * - Updates and removes lines through versioned guest-session BFF operations.
  * - Does not execute checkout or payment transactions.
  */
-export function CartView({ locale, initialCart = null, errorCode = null, allowSyntheticPreview = false }: CartViewProps) {
+export function CartView({ locale, errorCode = null, bffEnabled = false }: CartViewProps) {
   const dict = getDictionary(locale)
-  const searchParams = useSearchParams()
   const [serverCart, setServerCart] = useState<CartBffSnapshot | null>(null)
   const [cartReadComplete, setCartReadComplete] = useState(false)
-  const [mutationError, setMutationError] = useState(false)
-  const isPreviewParam = allowSyntheticPreview && searchParams?.get("preview") === "sample"
-
-  // Use synthetic fixture in nonproduction preview mode when no live cart is provided
-  const activeCart: SanitizedCart | null =
-    initialCart ?? (isPreviewParam ? SYNTHETIC_CART_PREVIEW_FIXTURE : null)
+  const [cartError, setCartError] = useState<CartBffBlocker | "transport" | null>(null)
 
   useEffect(() => {
-    if (isPreviewParam || initialCart) { setCartReadComplete(true); return }
+    if (!bffEnabled) {
+      setCartError("UPSTREAM_UNAVAILABLE")
+      setCartReadComplete(true)
+      return
+    }
     let active = true
     void requestCartBff({ operation: "read", requestId: newCartRequestId() }).then((result) => {
       if (!active) return
-      if (result.success && result.data.ok) setServerCart(result.data.cart)
-      setMutationError(!result.success)
+      if (result.success && result.data.ok) {
+        setServerCart(result.data.cart)
+        setCartError(null)
+      } else {
+        setCartError(result.success ? result.data.blockers[0] ?? "CART_UNAVAILABLE" : "transport")
+      }
       setCartReadComplete(true)
     })
     return () => { active = false }
-  }, [initialCart, isPreviewParam])
+  }, [bffEnabled])
 
   const mutateItem = async (lineItemId: string, quantity?: number) => {
     if (!serverCart) return
-    setMutationError(false)
+    setCartError(null)
     const result = await requestCartBff(quantity === undefined
       ? { operation: "remove_item", requestId: newCartRequestId(), expectedVersion: serverCart.version, lineItemId }
       : { operation: "update_item", requestId: newCartRequestId(), expectedVersion: serverCart.version, lineItemId, quantity })
-    if (result.success && result.data.ok && result.data.cart) setServerCart(result.data.cart)
-    else setMutationError(true)
+    if (result.success && result.data.cart) setServerCart(result.data.cart)
+    if (!result.success || !result.data.ok) {
+      setCartError(result.success ? result.data.blockers[0] ?? "UPSTREAM_UNAVAILABLE" : "transport")
+    }
   }
 
   const items = serverCart?.items.map((line) => ({
     id: line.lineItemId, title: line.title, variant_id: line.variantId, quantity: line.quantity,
     unit_price: line.unitPrice.amount, total: line.total.amount, availability: line.availability,
-  })) ?? activeCart?.items ?? []
+  })) ?? []
   const hasItems = items.length > 0
   const catalogUrl = localePath(locale, "/products")
   const checkoutUrl = localePath(locale, "/checkout")
@@ -75,7 +74,6 @@ export function CartView({ locale, initialCart = null, errorCode = null, allowSy
           <span className="lux-eyebrow">{dict.brand.name}</span>
           <h1 className="lux-cart-title">{dict.cart.title}</h1>
         </div>
-        {isPreviewParam ? <span className="lux-cart-badge">{dict.cart.previewBadge}</span> : null}
       </div>
 
       {errorCode ? (
@@ -92,10 +90,22 @@ export function CartView({ locale, initialCart = null, errorCode = null, allowSy
           </p>
         </div>
       ) : null}
-      {mutationError ? <div className="notice notice-error" role="alert">{dict.cart.cartServiceUnavailable}</div> : null}
+      {cartError ? <div className="notice notice-error" role="alert">{cartError === "CART_UNAVAILABLE"
+        ? dict.cart.sessionOrCartUnavailable
+        : cartError === "CART_VERSION_CONFLICT"
+          ? dict.cart.cartVersionConflict
+          : cartError === "INVENTORY_UNAVAILABLE"
+            ? dict.cart.insufficientStock
+            : dict.cart.cartServiceUnavailable}</div> : null}
 
       {!cartReadComplete && !hasItems ? (
         <div className="lux-cart-empty" role="status" aria-live="polite">{dict.cart.loadingCart}</div>
+      ) : cartError && !serverCart ? (
+        <div className="lux-cart-empty" role="status">
+          <h2>{cartError === "CART_UNAVAILABLE" ? dict.cart.sessionOrCartUnavailable : dict.cart.cartServiceUnavailable}</h2>
+          <p>{dict.cart.disabledNotice}</p>
+          <Link href={catalogUrl} className="button button-secondary">{dict.cart.continueShopping}</Link>
+        </div>
       ) : !hasItems ? (
         <div className="lux-cart-empty" role="status">
           <div className="lux-cart-empty-icon" aria-hidden="true">
@@ -175,7 +185,7 @@ export function CartView({ locale, initialCart = null, errorCode = null, allowSy
             <div className="lux-cart-summary-row">
               <span>{dict.cart.subtotalHeader}</span>
               <strong>
-                {serverCart ? formatCartAmount(serverCart.subtotal.amount, locale) : formatEgpAmount(activeCart?.subtotal, locale) ?? dict.product.priceUnavailable}
+                {serverCart ? formatCartAmount(serverCart.subtotal.amount, locale) : dict.product.priceUnavailable}
               </strong>
             </div>
 
@@ -184,12 +194,10 @@ export function CartView({ locale, initialCart = null, errorCode = null, allowSy
               <strong className="lux-cart-grand-total">
                 {serverCart?.shipping
                   ? formatCartAmount(serverCart.total.amount, locale) ?? dict.product.priceUnavailable
-                  : isPreviewParam
-                    ? formatEgpAmount(activeCart?.total, locale) ?? dict.product.priceUnavailable
-                    : dict.product.priceUnavailable}
+                  : dict.product.priceUnavailable}
               </strong>
             </div>
-            {!serverCart?.shipping && !isPreviewParam ? (
+            {!serverCart?.shipping ? (
               <p className="lux-cart-notice-authoritative" role="note">{dict.cart.cartTotalUnavailable}</p>
             ) : null}
 
@@ -207,6 +215,7 @@ export function CartView({ locale, initialCart = null, errorCode = null, allowSy
               <p className="lux-cart-notice-authoritative">
                 {dict.cart.authoritativeNotice}
               </p>
+              <p className="lux-cart-notice-authoritative" role="note">{dict.availability.disclaimer}</p>
               <div className="lux-cart-checkout-disabled" role="note">
                 <span className="lux-cart-disabled-icon" aria-hidden="true">
                   🔒
@@ -226,4 +235,3 @@ function formatCartAmount(amount: number | string | null, locale: Locale): strin
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null
   return new Intl.NumberFormat(locale === "ar" ? "ar-EG" : "en-EG", { style: "currency", currency: "EGP" }).format(value)
 }
-

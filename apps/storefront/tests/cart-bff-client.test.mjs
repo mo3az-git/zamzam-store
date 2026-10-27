@@ -14,6 +14,8 @@ test("accepts only the shared Agent 2 response contract", () => {
   assert.equal(parseCartBffResponse({ ...good, operation: "add_item" }, "read"), null)
   assert.equal(parseCartBffResponse({ ...good, cart: { ...cart, currency: "usd" } }, "read"), null)
   assert.equal(parseCartBffResponse({ ...good, blockers: ["FREE_SHIPPING"] }, "read"), null)
+  assert.equal(parseCartBffResponse({ ...good, checkout: { status: "blocked", paymentMethod: null, sessionSecret: "secret" } }, "read"), null)
+  assert.equal(parseCartBffResponse({ ...good, cart: { ...cart, delivery: { email: "x@example.test", sessionSecret: "secret" } } }, "read"), null)
 })
 
 test("sends guest intent same-origin without cart ID or caller price and never retries", async () => {
@@ -53,4 +55,3 @@ test("unmounted, malformed, and non-success responses fail closed", async () => 
     globalThis.fetch = originalFetch
   }
 })
-

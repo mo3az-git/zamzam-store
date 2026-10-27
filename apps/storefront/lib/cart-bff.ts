@@ -43,10 +43,14 @@ const isRecord = (value: unknown): value is Record<string, unknown> => value !==
 const exactKeys = (value: Record<string, unknown>, keys: readonly string[]) => Object.keys(value).every((key) => keys.includes(key))
 const isMoney = (value: unknown): value is CartBffMoney => isRecord(value) && exactKeys(value, ["currency", "amount"]) && value.currency === "egp" &&
   typeof value.amount === "string" && /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(value.amount)
+const isDelivery = (value: unknown): value is CartBffDelivery => isRecord(value) &&
+  exactKeys(value, ["email", "firstName", "lastName", "phone", "governorateId", "city", "address1", "address2", "postalCode", "notes"]) &&
+  ["email", "firstName", "lastName", "phone", "governorateId", "city", "address1"].every((key) => typeof value[key] === "string") &&
+  ["address2", "postalCode", "notes"].every((key) => value[key] === undefined || typeof value[key] === "string")
 const isCart = (value: unknown): value is CartBffSnapshot => {
   if (!isRecord(value) || !exactKeys(value, ["version", "currency", "items", "subtotal", "shipping", "total", "delivery"]) || typeof value.version !== "string" || !value.version || value.currency !== "egp" ||
       !Array.isArray(value.items) || !isMoney(value.subtotal) || !isMoney(value.total) ||
-      !(value.shipping === null || isMoney(value.shipping)) || !(value.delivery === null || isRecord(value.delivery))) return false
+      !(value.shipping === null || isMoney(value.shipping)) || !(value.delivery === null || isDelivery(value.delivery))) return false
   return value.items.every((line) => isRecord(line) && typeof line.lineItemId === "string" &&
     exactKeys(line, ["lineItemId", "variantId", "title", "quantity", "unitPrice", "total", "availability"]) &&
     typeof line.variantId === "string" && (line.title === null || typeof line.title === "string") &&
@@ -66,7 +70,7 @@ export function parseCartBffResponse(value: unknown, operation: CartBffOperation
       !value.blockers.every((item) => blockers.has(item as CartBffBlocker)) ||
       !(value.cart === null || isCart(value.cart))) return null
   const checkout = value.checkout
-  if (!(checkout === null || (isRecord(checkout) && ["blocked", "ready_for_review"].includes(String(checkout.status)) &&
+  if (!(checkout === null || (isRecord(checkout) && exactKeys(checkout, ["status", "paymentMethod"]) && ["blocked", "ready_for_review"].includes(String(checkout.status)) &&
       [null, "cod", "electronic"].includes(checkout.paymentMethod as string | null)))) return null
   return value as unknown as CartBffResponse
 }
@@ -91,4 +95,3 @@ export async function requestCartBff(operation: CartBffOperation): Promise<CartB
     return { success: false, error: "unavailable" }
   }
 }
-

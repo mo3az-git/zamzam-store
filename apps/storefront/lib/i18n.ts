@@ -209,6 +209,9 @@ export type Dictionary = {
     addingToCart: string
     addedSuccess: string
     cartServiceUnavailable: string
+    sessionOrCartUnavailable: string
+    cartVersionConflict: string
+    insufficientStock: string
     decreaseQuantity: string
     increaseQuantity: string
     removeItem: string
@@ -491,6 +494,9 @@ const ar: Dictionary = {
     addingToCart: "جاري الإضافة...",
     addedSuccess: "تمت الإضافة إلى السلة بنجاح",
     cartServiceUnavailable: "خدمة السلة غير متاحة حاليًا. لم يتم تغيير سلتك.",
+    sessionOrCartUnavailable: "انتهت جلسة السلة أو لا توجد سلة. أعد المحاولة لفتح سلة آمنة.",
+    cartVersionConflict: "تغيرت السلة في جلسة أخرى. حُمّلت أحدث نسخة؛ راجع الكميات.",
+    insufficientStock: "الكمية المطلوبة غير متاحة حاليًا. راجع حالة التوفر قبل المحاولة مجددًا.",
     decreaseQuantity: "تقليل الكمية",
     increaseQuantity: "زيادة الكمية",
     removeItem: "حذف المنتج من السلة",
@@ -781,6 +787,9 @@ const en: Dictionary = {
     addingToCart: "Adding...",
     addedSuccess: "Successfully added to cart",
     cartServiceUnavailable: "The cart service is unavailable. Your cart was not changed.",
+    sessionOrCartUnavailable: "Your cart session expired or no cart exists. Try again to open a secure cart.",
+    cartVersionConflict: "The cart changed in another session. The latest version was loaded; review quantities.",
+    insufficientStock: "The requested quantity is unavailable. Review availability before trying again.",
     decreaseQuantity: "Decrease quantity",
     increaseQuantity: "Increase quantity",
     removeItem: "Remove item from cart",
@@ -897,4 +906,3 @@ export const dictionaries: Record<Locale, Dictionary> = { ar, en }
 export function getDictionary(locale: Locale): Dictionary {
   return dictionaries[locale] ?? dictionaries[defaultLocale]
 }
-

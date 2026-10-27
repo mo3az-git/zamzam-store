@@ -35,7 +35,7 @@ export default async function CartPage({
   return (
     <main>
       <Suspense fallback={<div className="shell lux-cart-page" />}>
-        <CartView locale={locale as Locale} allowSyntheticPreview={process.env.VERCEL_ENV === "preview" && process.env.ZAMZAM_SYNTHETIC_PREVIEW === "true"} />
+        <CartView locale={locale as Locale} bffEnabled={process.env.ZAMZAM_CART_BFF_ENABLED === "true"} />
       </Suspense>
     </main>
   )
