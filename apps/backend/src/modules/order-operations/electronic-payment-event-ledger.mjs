@@ -174,10 +174,10 @@ export async function applyVerifiedElectronicPaymentEvent(db, rawEvent) {
       event.eventDigest, disposition])
 
     if (disposition === "applied" && nextStatus !== currentStatus) {
-      const updated = await db.query(`UPDATE electronic_payment_attempt SET status=$1,
+      const updated = await db.query(`UPDATE electronic_payment_attempt SET status=$1::varchar,
         provider_payment_id=COALESCE(provider_payment_id,$2),
         last_provider_event_at=$3::timestamptz,
-        paid_at=CASE WHEN $1='paid' THEN COALESCE(paid_at,$3::timestamptz) ELSE paid_at END,
+        paid_at=CASE WHEN $1::varchar='paid' THEN COALESCE(paid_at,$3::timestamptz) ELSE paid_at END,
         updated_at=NOW()
         WHERE id=$4 AND status=$5 AND deleted_at IS NULL`,
       [nextStatus, event.providerPaymentId, event.occurredAt, attempt.id, currentStatus])
