@@ -39,9 +39,26 @@ export function withCartMutationLock<Req extends CartRequest, Res>(
   return async (req: Req, res: Res) => {
     const cartId = await assertMutationAllowed(req)
     const locking = req.scope.resolve(Modules.LOCKING)
-    await locking.execute("cart:" + cartId, async () => {
-      await assertMutationAllowed(req)
-      await handler(req, res)
-    }, { timeout: 2, expire: 15 })
+    let handlerStarted = false
+    try {
+      await locking.execute("cart:" + cartId, async () => {
+        await assertMutationAllowed(req)
+        handlerStarted = true
+        await handler(req, res)
+      }, { timeout: 2, expire: 15 })
+    } catch (error) {
+      // The native locking module reports acquisition timeout as a conflict
+      // without our public error code. Normalize only pre-handler timeouts;
+      // errors raised by the native handler must retain Medusa's behavior.
+      const lockError = error && typeof error === "object"
+        ? error as { message?: unknown; type?: unknown }
+        : undefined
+      const message = lockError?.message
+      const type = lockError?.type
+      if (!handlerStarted && type === MedusaError.Types.CONFLICT && message === "Timed-out acquiring lock.") {
+        throw new MedusaError(MedusaError.Types.CONFLICT, "Cart checkout lock timeout", "LOCK_TIMEOUT")
+      }
+      throw error
+    }
   }
 }

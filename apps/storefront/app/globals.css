@@ -682,3 +682,89 @@ html[lang="en"] .catalog-intro h1, html[lang="en"] .detail-copy h1 { font-size: 
     height: 72px;
   }
 }
+
+
+/* Product Availability Presentation (Phase 3) */
+.lux-availability {
+  border: 1px solid var(--line);
+  background: #fbf9f4;
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-block: 16px 8px;
+}
+
+.lux-availability-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-block-end: 8px;
+}
+
+.lux-availability-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--lux-ink);
+}
+
+.lux-availability-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.lux-availability-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* Status variants */
+.lux-availability-badge.is-available {
+  background: #eef7f0;
+  color: #1a5632;
+  border: 1px solid #c2e2c9;
+}
+.lux-availability-badge.is-available .lux-availability-dot {
+  background: #27834a;
+}
+
+.lux-availability-badge.is-unavailable {
+  background: #fdf2f2;
+  color: #8a2525;
+  border: 1px solid #f2c7c7;
+}
+.lux-availability-badge.is-unavailable .lux-availability-dot {
+  background: #c53030;
+}
+
+.lux-availability-badge.is-unknown {
+  background: #f4ede1;
+  color: #634b35;
+  border: 1px solid #ded4c3;
+}
+.lux-availability-badge.is-unknown .lux-availability-dot {
+  background: #9d7b57;
+}
+
+.lux-availability-desc {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+
+.lux-availability-disclaimer {
+  font-size: 11px;
+  line-height: 1.5;
+  color: #8c897f;
+  margin: 0;
+  font-style: normal;
+}
