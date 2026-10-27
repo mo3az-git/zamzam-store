@@ -1,0 +1,85 @@
+name: Provider-Neutral Payment Foundation — Disposable Integration
+on:
+  push:
+    branches:
+      - "phase-1/same-order-native-payment-integration-spike"
+    paths:
+      - "apps/backend/src/modules/order-operations/**"
+      - "apps/backend/src/modules/batch-inventory/**"
+      - "apps/backend/scripts/test-inventory-ledger.mjs"
+      - "apps/backend/scripts/test-same-order-payment.mjs"
+      - "apps/backend/scripts/test-same-order-payment-worker.mjs"
+      - "scripts/run-tp-with-evidence.mjs"
+      - ".github/workflows/provider-neutral-payment-integration.yml"
+  pull_request:
+    branches:
+      - "phase-1/checkout-payment-integration-preview"
+    paths:
+      - "apps/backend/src/modules/order-operations/**"
+      - "apps/backend/src/modules/batch-inventory/**"
+      - "apps/backend/scripts/test-inventory-ledger.mjs"
+      - "apps/backend/scripts/test-same-order-payment.mjs"
+      - "apps/backend/scripts/test-same-order-payment-worker.mjs"
+      - "scripts/run-tp-with-evidence.mjs"
+      - ".github/workflows/provider-neutral-payment-integration.yml"
+permissions:
+  contents: read
+jobs:
+  synthetic-dual-payment:
+    name: COD and simulated electronic on disposable Medusa
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16.15@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+        env:
+          POSTGRES_DB: zamzam_spike
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: spike-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d zamzam_spike"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7.2.16@sha256:1009f15ccd9ed271996d1c65745a1ab1dadedea188feb3f1ab938602a32e50a3
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:spike-only-password@127.0.0.1:5432/zamzam_spike
+      REDIS_URL: redis://127.0.0.1:6379
+      LOCKING_REDIS_URL: redis://127.0.0.1:6379
+      STORE_CORS: http://localhost:8000
+      ADMIN_CORS: http://localhost:9000
+      AUTH_CORS: http://localhost:8000,http://localhost:9000
+      JWT_SECRET: ci-only-jwt-secret-not-for-any-other-environment-123456
+      COOKIE_SECRET: ci-only-cookie-secret-not-for-any-other-environment-654321
+      PHASE1_DISABLE_ADMIN: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install pinned dependencies
+        run: npm ci --strict-peer-deps --no-audit --no-fund
+      - name: Verify disposable target policy
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: ci_ephemeral_service
+        run: node apps/backend/scripts/test-disposable-target-validator.mjs
+      - name: Run isolated same-order COD and simulated electronic cases
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: ci_ephemeral_service
+          PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
+        run: node scripts/run-tp-with-evidence.mjs TP-05-same-order
+      - name: Backend lint
+        run: npm run lint --workspace @zamzam/backend
+      - name: Backend build
+        run: npm run build:backend
