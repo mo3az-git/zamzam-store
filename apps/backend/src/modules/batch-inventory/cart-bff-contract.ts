@@ -220,7 +220,7 @@ export function validateCartBffResponse(value: unknown): ContractValidation<Cart
       !(value.checkout.paymentMethod === "cod" || value.checkout.paymentMethod === "electronic" || value.checkout.paymentMethod === null) ||
       !Array.isArray(value.checkout.blockers) || value.checkout.blockers.some((item) => !isRecord(item) ||
         !allowedKeys(item, ["code", "presentationKey"]) || typeof item.code !== "string" ||
-        !value.blockers.includes(item.code) || typeof item.presentationKey !== "string" ||
+        !(value.blockers as unknown[]).includes(item.code) || typeof item.presentationKey !== "string" ||
         !/^checkout\.readiness\.blockers\.[a-z_]+$/.test(item.presentationKey)))) {
     return { valid: false, reason: "invalid_checkout_status" }
   }
