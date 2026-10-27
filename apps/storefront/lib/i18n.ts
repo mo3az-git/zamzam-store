@@ -158,6 +158,7 @@ export type Dictionary = {
     backToCatalog: string
     noImage: string
     galleryLabel: string
+    imagePosition: (current: number, total: number) => string
     priceUnavailable: string
     variantLabelSingle: string
     variantLabelMultiple: string
@@ -405,6 +406,7 @@ const ar: Dictionary = {
     backToCatalog: "العودة للكتالوج",
     noImage: "لا توجد صورة لهذا المنتج حاليًا",
     galleryLabel: "صور المنتج",
+    imagePosition: (current, total) => `الصورة ${formatNumber(current, "ar")} من ${formatNumber(total, "ar")}`,
     priceUnavailable: "السعر غير متاح حاليًا",
     variantLabelSingle: "العبوة المتاحة في الكتالوج",
     variantLabelMultiple: "اختر العبوة أو الخيار",
@@ -681,6 +683,7 @@ const en: Dictionary = {
     backToCatalog: "Back to the catalog",
     noImage: "No image is available for this product yet",
     galleryLabel: "Product images",
+    imagePosition: (current, total) => `Image ${current} of ${total}`,
     priceUnavailable: "Price is not available right now",
     variantLabelSingle: "Package available in the catalog",
     variantLabelMultiple: "Choose the package or option",
@@ -855,3 +858,4 @@ export const dictionaries: Record<Locale, Dictionary> = { ar, en }
 export function getDictionary(locale: Locale): Dictionary {
   return dictionaries[locale] ?? dictionaries[defaultLocale]
 }
+
