@@ -6,7 +6,7 @@
 export type NativeOrderCandidate = { id: string; cart_id: string }
 type PgReader = {
   raw(sql: string, parameters?: unknown[]): Promise<{
-    rows: NativeOrderCandidate[]
+    rows: Record<string, unknown>[]
   }>
 }
 
@@ -26,5 +26,5 @@ export async function findNativeOrdersByCart(db: PgReader, cartId: string):
     INNER JOIN "order" AS o ON o.id = oc.order_id
     WHERE oc.cart_id = ? AND o.deleted_at IS NULL
     ORDER BY o.id ASC`, [cartId])
-  return result.rows
+  return result.rows as NativeOrderCandidate[]
 }
