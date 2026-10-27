@@ -71,10 +71,36 @@ jobs:
         run: npm run db:migrate
         env:
           TS_NODE_PROJECT: ${{ github.workspace }}/apps/backend/tsconfig.json
-      - name: Real guest cart ownership integration — disposable PostgreSQL and Redis (not formal TP)
-        run: node apps/backend/scripts/test-guest-cart-ownership-integration.mjs
+      - name: Real guest cart ownership integration — isolated approved disposable database (not formal TP)
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+          TS_NODE_PROJECT: ${{ github.workspace }}/apps/backend/tsconfig.json
+        run: |
+          set -euo pipefail
+          # Preserve the Phase 3 disposable database and never broaden the Phase 1 validator.
+          # An explicitly approved second database is used for guest ownership tests.
+          node <<'NODE'
+          const { Client } = require("pg")
+          const url = new URL(process.env.DATABASE_URL)
+          if (process.env.GITHUB_ACTIONS !== "true" ||
+              process.env.PHASE1_DISPOSABLE_TEST_PROFILE !== "ci_ephemeral_service" ||
+              url.hostname !== "127.0.0.1" || url.port !== "5432" ||
+              url.pathname !== "/zamzam_consolidation") {
+            throw new Error("Refusing to prepare guest ownership database on an unapproved target")
+          }
+          ;(async () => {
+            const client = new Client({ connectionString: process.env.DATABASE_URL })
+            await client.connect()
+            try { await client.query("CREATE DATABASE zamzam_spike") }
+            finally { await client.end() }
+          })().catch((error) => {
+            console.error("Failed preparing guest ownership disposable database:", error.code || "unknown")
+            process.exitCode = 1
+          })
+          NODE
+          export DATABASE_URL="${DATABASE_URL%/*}/zamzam_spike"
+          npm run db:migrate
+          node apps/backend/scripts/test-guest-cart-ownership-integration.mjs
       - name: Real PostgreSQL FEFO availability integration (not formal TP)
         run: node --experimental-strip-types --test apps/backend/scripts/test-batch-availability-postgres.mjs
         env:
