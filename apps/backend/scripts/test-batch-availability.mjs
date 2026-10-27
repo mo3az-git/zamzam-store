@@ -36,7 +36,7 @@ test("positive eligible remainder is available, zero is unavailable; no sensitiv
   assert.match(source.calls[0].sql, /Africa\/Cairo/)
   assert.match(source.calls[0].sql, /expiration_date >/)
   assert.ok(!JSON.stringify(output).includes("quantity"))
-  assert.ok(!JSON.stringify(output).includes("batch"))
+  assert.ok(output.items.every((item) => !Object.keys(item).some((key) => /batch|quantity|supplier|expiry|cost/i.test(key))))
 })
 test("missing shelf-life policy always yields unknown, without a hidden 0-day assumption", async () => {
   const source = db([{variant_id:"variant_1",eligible_units:"1"}])
