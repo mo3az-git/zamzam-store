@@ -60,6 +60,8 @@ jobs:
         run: node --experimental-strip-types --test apps/storefront/tests/*.test.mjs
       - name: Read-only native payable quote unit tests (not formal TP)
         run: node --experimental-strip-types --test apps/backend/scripts/test-mvp-payment-quote.mjs
+      - name: Guest session transport contract (not formal TP)
+        run: node --experimental-strip-types --test apps/backend/scripts/test-guest-cart-session-transport.mjs
       - name: Cart mutation boundary regression (not formal TP)
         run: node apps/backend/scripts/test-cart-mutation-boundary.mjs
       - name: Cart completion remains disabled until authorized checkout is wired
