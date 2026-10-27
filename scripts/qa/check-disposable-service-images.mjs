@@ -12,8 +12,8 @@ function imageRef(source, service) {
 }
 
 const expected = {
-  postgres: /^postgres:16\\.15@sha256:[a-f0-9]{64}$/,
-  redis: /^redis:7\\.2\\.16@sha256:[a-f0-9]{64}$/,
+  postgres: /^postgres:16\.15@sha256:[a-f0-9]{64}$/,
+  redis: /^redis:7\.2\\.16@sha256:[a-f0-9]{64}$/,
 }
 
 for (const [service, pattern] of Object.entries(expected)) {
