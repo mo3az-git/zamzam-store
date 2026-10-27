@@ -39,8 +39,9 @@ export async function markOrderCreationStarted(db: Sql, authority: Authority) {
   return db.transaction(async (tx) => {
     const a = await current(tx, authority)
     if (a.order_id) invalid("ALREADY_CORRELATED")
-    if (a.attempt_status === "order_creation_started" &&
-        a.order_correlation_status === "pending_correlation") return { fenced: true, replay: true }
+    if ((a.attempt_status === "order_creation_started" && a.order_correlation_status === "pending_correlation") ||
+        (a.attempt_status === "needs_reconciliation" && a.order_correlation_status === "needs_reconciliation"))
+      return { fenced: true, replay: true }
     if (!["reserved"].includes(a.attempt_status) || a.order_correlation_status !== "none")
       invalid("INVALID_START_STATE")
     const result = await tx.raw(`UPDATE cart_checkout_attempt SET attempt_status='order_creation_started',
