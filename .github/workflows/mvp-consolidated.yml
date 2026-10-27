@@ -1,0 +1,76 @@
+name: Consolidated MVP — Targeted Compatibility Checks
+
+on:
+  push:
+    branches:
+      - "integration/mvp-consolidated-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integrated:
+    name: Frontend + backend build, migration, and interface checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: zamzam_consolidation
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: disposable-integration-only
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d zamzam_consolidation"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:disposable-integration-only@127.0.0.1:5432/zamzam_consolidation
+      REDIS_URL: redis://127.0.0.1:6379
+      LOCKING_REDIS_URL: redis://127.0.0.1:6379
+      STORE_CORS: http://localhost:8000
+      ADMIN_CORS: http://localhost:9000
+      AUTH_CORS: http://localhost:8000,http://localhost:9000
+      JWT_SECRET: local-ci-jwt-secret-only-0123456789abcdef
+      COOKIE_SECRET: local-ci-cookie-secret-only-0123456789abcdef
+      PHASE1_DISABLE_ADMIN: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install pinned dependencies
+        run: npm ci --strict-peer-deps --no-audit --no-fund
+      - name: Storefront unit tests (not formal TP)
+        run: node --experimental-strip-types --test apps/storefront/tests/*.test.mjs
+      - name: Lint both workspaces
+        run: npm run lint
+      - name: Migrate disposable Medusa database
+        run: npm run db:migrate
+        env:
+          TS_NODE_PROJECT: ${{ github.workspace }}/apps/backend/tsconfig.json
+      - name: Build backend
+        run: npm run build:backend
+        env:
+          NODE_ENV: production
+      - name: Build storefront
+        run: npm run build:storefront
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install JSON Schema validator
+        run: python -m pip install --disable-pip-version-check jsonschema==4.23.0
+      - name: Validate proposed API boundaries
+        run: python -m unittest discover -s contracts -p 'test_mvp_interface.py' -v

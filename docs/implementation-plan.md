@@ -4,13 +4,23 @@
 **Date:** 2026-10-25  
 **Target Release:** MVP  
 **Review Decision:** `Phase 0 design is accepted by owner; cross-document review/sign-off completed. Runtime evidence is deferred to the Phase 1 Technical Compatibility Spike.`
-*(Phase 0 closes on design/documentation and recorded owner decisions and default assumptions (owner may change) only; a restricted Phase 1 Technical Compatibility Spike may run before Phase 0 sign-off, but store feature development remains blocked until the spike evidence and launch gates are reviewed)*
+*(Phase 0 design is accepted. The owner-authorized MVP-first amendment of 2026-10-27 permits incremental MVP feature work without waiting for all 59 formal TP cases; the formal TP gate and production launch remain separately blocked. TP-01 is not authorized. See the decision below.)*
 
 ---
 
+## Owner Decision — MVP-First Delivery Policy (2026-10-27)
+
+**Decision:** Prioritize a functioning MVP before exhaustive formal TP execution. This amendment supersedes earlier text **only where it blocks development solely because the entire 59-case TP suite has not passed**; other architecture, compliance, and safety restrictions remain in force.
+
+- **Development gate:** Phase 2 catalog/Arabic UI and later MVP workstreams may start in isolated feature branches and draft PRs. Incremental builds, linting, targeted component/API tests, and integration checks relevant to changed code continue. Prevent regressions rather than requiring every unrelated TP case for each feature.
+- **High-risk workflows:** Before integrating or demonstrating an operable real checkout, verify critical order uniqueness, EGP total correctness, reservation/stock invariants, concurrency/idempotency, payment callback signature and authorization, compensation and failure-path handling, as applicable. Simulators are not production payment proof.
+- **Formal TP gate:** Preserve exactly 59 canonical cases and untouched acceptance markers. Schedule the complete suite for hardening/pre-release after MVP integration; do not label deferred tests as passed. **TP-01 stays unauthorized** and may not be run or disguised as a differently named test. The formal all-59 gate remains unresolved until a later, separate owner decision about TP-01; this policy does not silently waive it.
+- **Release gate:** No public launch, real customer transactions, production payment enablement, or claimed operational readiness until formal acceptance, security/concurrency/recovery checks, required regulatory/content/operational launch gates, and explicit owner release approval are recorded. Deployment of isolated nonproduction previews is distinct from release.
+- **Branch discipline:** Existing PRs remain draft; do not merge, rebase other owners' branches, alter historical test evidence, or tick acceptance checkboxes without explicit authorization. Track deferred work in a separate backlog and label incomplete evidence honestly.
+
 ## 1. Overview and Phased Delivery Roadmap
 
-The project adheres to an incremental delivery model. Progression to any subsequent phase is strictly blocked until the preceding phase satisfies its formal **Acceptance Gate**.
+The project uses an **MVP-first incremental delivery model**. Feature work may progress without every previous phase's formal TP acceptance; strict production release gates and scoped risk-based checks remain in force. TP-01 remains unauthorized.
 
 ```mermaid
 flowchart LR
@@ -81,8 +91,8 @@ Phase 0 acceptance is a **design/documentation decision**, not a statement that 
 ### Objective
 Establish the repository structure, initialize Next.js 15.5.28 and the Medusa v2.22.1 spike candidate cohort, connect to PostgreSQL 16.15, configure environment variables, and execute a **Technical Compatibility Spike** covering dependency compatibility, cart/order correlation, inventory reservations, electronic-payment/COD branches, webhook handling, refund idempotency, and recovery before broader feature development.
 
-> **Phase Transition & Scaffolding Policy:**  
-> Authorization is granted **EXCLUSIVELY** for initial monorepo scaffolding and executing the 59 listed Technical Prototype test rows (TP-01 through TP-25d, including lettered subcases). Store feature development remains **STRICTLY BLOCKED** until Phase 0 design sign-off and all 59 enumerated prototype test rows (including explicitly listed lettered subcases) pass with logged terminal evidence. Gates 1, 2, 3, and 5 block production launch only, not feature development. The provider-specific electronic-payment integration and final refund-formula activation remain blocked until the open Gate 6/Gate 4 parameters are supplied. The Spike may use a provider simulator; it must not select a gateway on the owner’s behalf.
+> **Phase Transition & Scaffolding Policy — Owner Amendment 2026-10-27:**  
+> Phase 0 design has been accepted. The owner permits Phase 2–5 feature development under MVP-first **without first passing the entire canonical 59 TP suite**. Formal TP acceptance is deferred to pre-release, not waived; TP-01 is explicitly unauthorized and its conflict with the all-59 formal release gate requires a separate owner decision. Keep scoped build, lint, targeted safety tests and honest evidence for changed workflows. No live customer checkout, real payment acceptance or production launch is authorized. Gates 1, 2, 3 and 5 remain release gates; provider/refund owner decisions remain required.
 
 ### Concrete Tasks
 1. Initialize monorepo directory layout:

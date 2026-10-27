@@ -1,0 +1,158 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:zamzam:mvp-interface:v1",
+  "title": "Zamzam Store MVP proposed browser/server interface (NOT DEPLOYED)",
+  "description": "Design-stage strict boundary for Agent 2 storefront and checkout integration. Defines payloads only; authorizes no public route.",
+  "definitions": {
+    "availabilityItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "variantId",
+        "status"
+      ],
+      "properties": {
+        "variantId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "status": {
+          "enum": [
+            "available",
+            "unavailable",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "availabilityResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "authority"
+      ],
+      "properties": {
+        "authority": {
+          "const": "batch_inventory"
+        },
+        "items": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/definitions/availabilityItem"
+          }
+        }
+      }
+    },
+    "checkoutCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cartId",
+        "idempotencyKey",
+        "paymentMethod"
+      ],
+      "properties": {
+        "cartId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+        },
+        "paymentMethod": {
+          "enum": [
+            "cod",
+            "electronic"
+          ]
+        }
+      }
+    },
+    "checkoutResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "orderId",
+            "currency",
+            "totalMinor",
+            "orderVersion"
+          ],
+          "properties": {
+            "status": {
+              "const": "completed"
+            },
+            "orderId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "currency": {
+              "const": "EGP"
+            },
+            "totalMinor": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$",
+              "maxLength": 12
+            },
+            "orderVersion": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "reference"
+          ],
+          "properties": {
+            "status": {
+              "const": "pending_reconciliation"
+            },
+            "reference": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "retryAfterSeconds": {
+              "type": "integer",
+              "minimum": 3,
+              "maximum": 60
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "reasonCode"
+          ],
+          "properties": {
+            "status": {
+              "const": "blocked"
+            },
+            "reasonCode": {
+              "enum": [
+                "UNAUTHORIZED",
+                "CART_NOT_READY",
+                "OUT_OF_STOCK",
+                "METHOD_UNAVAILABLE",
+                "INTEGRATION_DISABLED"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
