@@ -6,7 +6,7 @@ Updated: 2026-10-27 (Africa/Cairo)
 
 - Repository: `mo3az-git/zamzam-store`
 - Fixed baseline: `d5a6bdefb3d0d0a15d6e4f52f86b8369e1e962ea` (verified current HEAD of Draft PR #26 before assignments)
-- Candidate branch: `integration/mvp-coordinated-20261027`, created from the fixed baseline. Do not use it as an agent work branch.
+- Candidate branch: `integration/mvp-consolidated-coordinated-20261027`, created from the fixed baseline. Do not use it as an agent work branch.
 - Every specialist branch below was created from the same baseline. Rebase/port work by reviewed file/commit selection; do not merge whole divergent PRs.
 - No force pushes, branch deletion, main merge, TP-01, canonical 59-TP status changes, live commerce mutation, order/payment/COD/shipping activation, or tariff approval.
 - Source branches and changes are preserved. Any owner handoff must be recorded here before a second specialist edits a file.
