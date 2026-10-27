@@ -106,7 +106,7 @@ export default async function ProductPage({ params }: { params: Promise<ProductP
 
   return (
     <main className="shell detail-page" id="main-content">
-      <nav className="breadcrumbs" aria-label={dict.nav.label}>
+      <nav className="breadcrumbs" aria-label={dict.catalog.breadcrumbLabel}>
         <Link href={localePath(locale, "/")}>{dict.catalog.breadcrumbHome}</Link>
         <span aria-hidden="true">/</span>
         <Link href={catalog}>{dict.catalog.breadcrumb}</Link>
@@ -118,6 +118,7 @@ export default async function ProductPage({ params }: { params: Promise<ProductP
           images={images}
           title={product.title}
           galleryLabel={dict.product.galleryLabel}
+          imagePosition={dict.product.imagePosition}
           noImageText={dict.product.noImage}
         />
         <div className="detail-copy">
@@ -130,8 +131,9 @@ export default async function ProductPage({ params }: { params: Promise<ProductP
           <Suspense fallback={null}>
             <AddToCartPreview
               variantId={product.variants?.[0]?.id ?? ""}
+              variantIds={product.variants?.map((variant) => variant.id) ?? []}
               locale={locale as Locale}
-              allowSyntheticPreview={process.env.VERCEL_ENV === "preview" && process.env.ZAMZAM_SYNTHETIC_PREVIEW === "true"}
+              bffEnabled={process.env.ZAMZAM_CART_BFF_ENABLED === "true"}
             />
           </Suspense>
           {product.description ? (

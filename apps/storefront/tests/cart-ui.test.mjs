@@ -145,9 +145,16 @@ test("5. Absence of accidental checkout or payment action across cart components
     "CartView must include disabled checkout notice"
   )
 
-  // AddToCartPreview must be hidden by default unless preview=cart is present
-  assert.ok(
-    addToCartSrc.includes('searchParams?.get("preview") === "cart"'),
-    "AddToCartPreview must require explicit preview=cart parameter"
-  )
+  // A disabled-by-default feature flag gates all mutations until the protected
+  // same-origin BFF is mounted. No URL can enable a synthetic success state.
+  assert.match(addToCartSrc, /bffEnabled = false/)
+  assert.match(addToCartSrc, /disabled=\{isSubmitting \|\| !selectedVariantId \|\| !bffEnabled\}/)
+  assert.doesNotMatch(addToCartSrc, /preview=cart|setTimeout\(/)
+  assert.match(addToCartSrc, /requestCartBff\(/)
+  assert.match(addToCartSrc, /expectedVersion:\s*cart\.version/)
+  assert.match(cartViewSrc, /operation:\s*"update_item"/)
+  assert.match(cartViewSrc, /operation:\s*"remove_item"/)
+  assert.match(cartPageSrc, /ZAMZAM_CART_BFF_ENABLED === "true"/)
+  assert.match(cartViewSrc, /availability\.disclaimer/)
+  assert.match(addToCartSrc, /resolveSelectedVariantId\(/)
 })

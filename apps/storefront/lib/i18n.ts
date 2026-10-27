@@ -128,6 +128,7 @@ export type Dictionary = {
   catalog: {
     breadcrumbHome: string
     breadcrumb: string
+    breadcrumbLabel: string
     kicker: string
     title: string
     intro: string
@@ -158,6 +159,7 @@ export type Dictionary = {
     backToCatalog: string
     noImage: string
     galleryLabel: string
+    imagePosition: (current: number, total: number) => string
     priceUnavailable: string
     variantLabelSingle: string
     variantLabelMultiple: string
@@ -206,6 +208,17 @@ export type Dictionary = {
     addToCartButton: string
     addingToCart: string
     addedSuccess: string
+    cartServiceUnavailable: string
+    sessionOrCartUnavailable: string
+    cartVersionConflict: string
+    insufficientStock: string
+    decreaseQuantity: string
+    increaseQuantity: string
+    removeItem: string
+    updateCart: string
+    cartItemUpdated: string
+    loadingCart: string
+    cartTotalUnavailable: string
     disabledNotice: string
     checkoutDisabledNotice: string
     goToCheckout: string
@@ -255,6 +268,10 @@ export type Dictionary = {
     previewBadge: string
     qaSimulateButton: string
     disabledSubmitButton: string
+    paymentMethodHeading: string
+    codOption: string
+    electronicOption: string
+    paymentUnavailable: string
     qaSuccessTitle: string
     qaSuccessNotice: string
     emailLabel: string
@@ -374,6 +391,7 @@ const ar: Dictionary = {
   catalog: {
     breadcrumbHome: "الرئيسية",
     breadcrumb: "المنتجات",
+    breadcrumbLabel: "مسار التنقل",
     kicker: "الكتالوج",
     title: "اكتشف المنتجات",
     intro: "البيانات المعروضة تأتي مباشرةً من قائمة المنتجات المنشورة في Medusa.",
@@ -405,6 +423,7 @@ const ar: Dictionary = {
     backToCatalog: "العودة للكتالوج",
     noImage: "لا توجد صورة لهذا المنتج حاليًا",
     galleryLabel: "صور المنتج",
+    imagePosition: (current, total) => `الصورة ${formatNumber(current, "ar")} من ${formatNumber(total, "ar")}`,
     priceUnavailable: "السعر غير متاح حاليًا",
     variantLabelSingle: "العبوة المتاحة في الكتالوج",
     variantLabelMultiple: "اختر العبوة أو الخيار",
@@ -474,6 +493,17 @@ const ar: Dictionary = {
     addToCartButton: "إضافة إلى السلة (معاينة)",
     addingToCart: "جاري الإضافة...",
     addedSuccess: "تمت الإضافة إلى السلة بنجاح",
+    cartServiceUnavailable: "خدمة السلة غير متاحة حاليًا. لم يتم تغيير سلتك.",
+    sessionOrCartUnavailable: "انتهت جلسة السلة أو لا توجد سلة. أعد المحاولة لفتح سلة آمنة.",
+    cartVersionConflict: "تغيرت السلة في جلسة أخرى. حُمّلت أحدث نسخة؛ راجع الكميات.",
+    insufficientStock: "الكمية المطلوبة غير متاحة حاليًا. راجع حالة التوفر قبل المحاولة مجددًا.",
+    decreaseQuantity: "تقليل الكمية",
+    increaseQuantity: "زيادة الكمية",
+    removeItem: "حذف المنتج من السلة",
+    updateCart: "تحديث السلة",
+    cartItemUpdated: "تم تحديث السلة من الخادم.",
+    loadingCart: "جارٍ تحميل سلتك من الخادم…",
+    cartTotalUnavailable: "الإجمالي المستحق غير متاح حتى يؤكد الخادم رسوم التوصيل.",
     disabledNotice: "خاصية الشراء غير مفعّلة في الإصدار الحالي.",
     checkoutDisabledNotice: "إتمام الطلب والدفع غير مفعلين في هذه المرحلة.",
     goToCheckout: "متابعة بيانات التوصيل (معاينة)",
@@ -528,6 +558,10 @@ const ar: Dictionary = {
     previewBadge: "معاينة تجريبية",
     qaSimulateButton: "التحقق من بيانات التوصيل (محاكاة QA)",
     disabledSubmitButton: "إتمام الطلب معطّل حاليًا",
+    paymentMethodHeading: "طريقة الدفع (غير متاحة حاليًا)",
+    codOption: "الدفع عند الاستلام",
+    electronicOption: "الدفع الإلكتروني",
+    paymentUnavailable: "سيتم تفعيل خيارات الدفع بعد اعتمادها. لا يتم إنشاء طلب أو تحصيل أي مبلغ هنا.",
     qaSuccessTitle: "تم التحقق من بيانات التوصيل بنجاح (محاكاة QA)",
     qaSuccessNotice:
       "هذه محاكاة تدقيق فني فقط. إتمام الطلبات الفعلي، وتحديد رسوم الشحن، ومعالجة الدفع معطّلة بالكامل حتى اعتماد مسار الدفع المركزي.",
@@ -650,6 +684,7 @@ const en: Dictionary = {
   catalog: {
     breadcrumbHome: "Home",
     breadcrumb: "Products",
+    breadcrumbLabel: "Breadcrumb",
     kicker: "Catalog",
     title: "Discover products",
     intro: "Everything shown here comes directly from the published product list in Medusa.",
@@ -681,6 +716,7 @@ const en: Dictionary = {
     backToCatalog: "Back to the catalog",
     noImage: "No image is available for this product yet",
     galleryLabel: "Product images",
+    imagePosition: (current, total) => `Image ${current} of ${total}`,
     priceUnavailable: "Price is not available right now",
     variantLabelSingle: "Package available in the catalog",
     variantLabelMultiple: "Choose the package or option",
@@ -750,6 +786,17 @@ const en: Dictionary = {
     addToCartButton: "Add to Cart (Preview)",
     addingToCart: "Adding...",
     addedSuccess: "Successfully added to cart",
+    cartServiceUnavailable: "The cart service is unavailable. Your cart was not changed.",
+    sessionOrCartUnavailable: "Your cart session expired or no cart exists. Try again to open a secure cart.",
+    cartVersionConflict: "The cart changed in another session. The latest version was loaded; review quantities.",
+    insufficientStock: "The requested quantity is unavailable. Review availability before trying again.",
+    decreaseQuantity: "Decrease quantity",
+    increaseQuantity: "Increase quantity",
+    removeItem: "Remove item from cart",
+    updateCart: "Update cart",
+    cartItemUpdated: "The cart was updated by the server.",
+    loadingCart: "Loading your cart from the server…",
+    cartTotalUnavailable: "Payable total is unavailable until the server confirms shipping.",
     disabledNotice: "Purchasing actions are disabled in this release.",
     checkoutDisabledNotice: "Checkout and payment are not active in this stage.",
     goToCheckout: "Proceed to Delivery Details (Preview)",
@@ -804,6 +851,10 @@ const en: Dictionary = {
     previewBadge: "Nonproduction Preview",
     qaSimulateButton: "Validate Delivery Details (QA Simulation)",
     disabledSubmitButton: "Checkout Disabled",
+    paymentMethodHeading: "Payment method (not available)",
+    codOption: "Cash on delivery",
+    electronicOption: "Electronic payment",
+    paymentUnavailable: "Payment choices will be enabled after approval. This page does not create orders or collect payment.",
     qaSuccessTitle: "Delivery Details Validated (QA Simulation)",
     qaSuccessNotice:
       "This is a technical validation preview only. Real order creation, live shipping quotes, and payment gateways remain locked until central store authorization.",

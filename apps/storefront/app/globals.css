@@ -935,6 +935,36 @@ html[lang="en"] .catalog-intro h1, html[lang="en"] .detail-copy h1 { font-size: 
   font-weight: 800;
 }
 
+.lux-cart-item-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lux-cart-item-actions button:focus-visible,
+.lux-qty-btn:focus-visible {
+  outline: 3px solid #135b50;
+  outline-offset: 2px;
+}
+
+@media (max-width: 600px) {
+  .lux-cart-item {
+    flex-wrap: wrap;
+    padding: 14px;
+  }
+
+  .lux-cart-item-details,
+  .lux-cart-item-actions {
+    width: 100%;
+  }
+
+  .lux-cart-item-actions {
+    justify-content: flex-start;
+  }
+}
+
 .lux-cart-navigation {
   display: flex;
   align-items: center;
@@ -1488,3 +1518,4 @@ html[lang="en"] .catalog-intro h1, html[lang="en"] .detail-copy h1 { font-size: 
   color: #8c897f;
   margin: 0;
 }
+

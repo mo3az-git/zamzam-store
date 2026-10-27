@@ -174,6 +174,18 @@ test("3. Priority 3: Read-only checkout readiness presentation and blocker local
     assert.equal(SYNTHETIC_QA_READINESS_FIXTURE.readiness.shippingMethod, false)
     assert.equal(SYNTHETIC_QA_READINESS_FIXTURE.readiness.shippingPrice, false)
   }
+
+  // Cart subtotal alone cannot make the payable total ready without a trusted
+  // shipping quote and backend preflight response.
+  const checkoutViewSrc = fs.readFileSync(
+    path.resolve(__dirname, "../components/checkout-view.tsx"),
+    "utf-8"
+  )
+  assert.match(checkoutViewSrc, /payableTotal:\s*false/)
+  assert.doesNotMatch(checkoutViewSrc, /payableTotal:\s*Boolean\(activeCart\?\.subtotal\)/)
+  assert.match(checkoutViewSrc, /value="cod" disabled/)
+  assert.match(checkoutViewSrc, /value="electronic" disabled/)
+  assert.match(checkoutViewSrc, /paymentUnavailable/)
 })
 
 test("4. Arabic/English routing, RTL/LTR metadata and RAM-only in-memory caching", () => {
@@ -376,6 +388,18 @@ test("7. Phase 4.8 Task B, C & D: Delivery pricing UI boundary, presentation sta
     assert.equal(validQuote.isBlocked, false)
     assert.equal(validQuote.statusLabel, dict.checkout.shippingStates.shipping_ready)
 
+    // A ready status without explicit quote currency or governorate binding is
+    // not authoritative and must never surface an amount.
+    for (const incompleteQuote of [
+      { status: "ready", amount: 65, governorate: "giza" },
+      { status: "ready", amount: 65, currency: "EGP" },
+    ]) {
+      const rejected = adaptShippingQuoteToUi(incompleteQuote, "giza", dict, locale)
+      assert.equal(rejected.status, "shipping_quote_unavailable")
+      assert.equal(rejected.formattedAmount, null)
+      assert.equal(rejected.isReady, false)
+    }
+
     // 7.8 Representation without client-side recalculation:
     // Total line does NOT add shipping client-side; order placement remains disabled
     const checkoutViewSrc = fs.readFileSync(
@@ -398,3 +422,4 @@ test("7. Phase 4.8 Task B, C & D: Delivery pricing UI boundary, presentation sta
     assert.ok(SYNTHETIC_QA_READINESS_FIXTURE.blockers.includes("SHIPPING_PRICE_UNAVAILABLE"))
   }
 })
+
