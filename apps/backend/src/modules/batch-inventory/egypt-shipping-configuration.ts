@@ -124,7 +124,8 @@ export function evaluateGovernorateShippingConfiguration(
   if (configuration.rate.status !== "approved") blockers.push("SHIPPING_RATE_UNCONFIGURED")
   else if (!isApprovedRate(configuration.rate)) blockers.push("SHIPPING_RATE_INVALID")
   const provider = configuration.fulfillmentProvider
-  if (provider.status !== "selected" || typeof provider.providerId !== "string" || !provider.providerId.trim() ||\n      typeof provider.approvalReference !== "string" || !provider.approvalReference.trim()) {
+  if (provider.status !== "selected" || typeof provider.providerId !== "string" || !provider.providerId.trim() ||
+      typeof provider.approvalReference !== "string" || !provider.approvalReference.trim()) {
     blockers.push("SHIPPING_PROVIDER_UNDECIDED")
   }
   return blockers
