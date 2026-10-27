@@ -11,6 +11,7 @@ on:
       - "apps/backend/src/modules/batch-inventory/shipping-quote-readiness.ts"
       - "apps/backend/src/modules/order-operations/payment-provider-contract.ts"
       - "apps/backend/scripts/test-checkout-preflight-readiness.mjs"
+      - "docs/checkout-preflight-readiness-contract.md"
   push:
     branches:
       - "codex/checkout-preflight-readiness-*"
@@ -21,6 +22,7 @@ on:
       - "apps/backend/src/modules/batch-inventory/shipping-quote-readiness.ts"
       - "apps/backend/src/modules/order-operations/payment-provider-contract.ts"
       - "apps/backend/scripts/test-checkout-preflight-readiness.mjs"
+      - "docs/checkout-preflight-readiness-contract.md"
 
 permissions:
   contents: read
