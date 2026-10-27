@@ -62,3 +62,12 @@ No canonical TP rows/status were edited in the consolidated application tree.
 **Do not delete now:** active PR branch/head/base refs (`main`, `phase-1/same-order-native-payment-integration-spike`, `phase-1/checkout-payment-integration-preview`, `phase-2/catalog-storefront-mvp`, `phase-2/mvp-variant-selection-slice`, `integration/mvp-consolidated-20261027`, `phase-1/payable-native-checkout-spike`, `integration/mvp-payment-foundation-20261027`, `phase-1/focused-ci-optimization-spike`, `phase-2/arabic-storefront-mvp`), or unique undigested source refs (`phase-1/idempotency-spike`, `phase-1/sprint3-combined-ci`, `phase-1/payment-order-binding-spike`, `phase-1/order-correlation-spike`, `phase-1/oasis-editorial-preview`).
 
 The commit that first archived PR #18/PR #20 and this register passed consolidated run 40507932998; new documentation-only edits should be verified on their own latest CI run.
+
+## Backend unique-source reconciliation (verified)
+
+- **PR #23** closed as superseded after port of three unique internal quote helper/test files and documentation into the consolidated branch. Its models, migration, service and index **exactly match** PR #26 blob SHAs; the Medusa config uses the newer PR #19 implementation. The quote tests were exercised by [CI 40511851976](https://github.com/mo3az-git/zamzam-store/actions/runs/40511851976) and passed. **No real payment authorization**.
+- **PR #17** closed as superseded after archiving five changed source blobs byte-for-byte at `docs/archive/phase1-pr17/`. Its old TP-subset selector was intentionally not activated.
+- **`phase-1/idempotency-spike`** has three original source blobs archived byte-for-byte at `docs/archive/phase1-idempotency/`. Its historic SQL lease is NOT integrated into active checkout due to different semantics.
+- **`phase-1/sprint3-combined-ci`** has all 18 changed files from commit `851d68da27f3b4a5a97d3e50c2dcad0a8b31f80f` archived byte-for-byte at `docs/archive/phase1-sprint3-combined-ci/`, with no activation.
+
+These original branch refs are no longer required to keep the **preserved file contents** available in the consolidated review, but removing refs can lose unique commit graph topology if PR #26 is later deleted. Preserve the approved integrated commit on `main` (or create an explicitly approved long-term archival ref) first if strict DAG retention is desired; do not mistake archival copies for functional equivalence. Check remote SHAs and local worktrees before every deletion.

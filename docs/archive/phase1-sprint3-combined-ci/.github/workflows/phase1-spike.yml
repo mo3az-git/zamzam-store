@@ -1,0 +1,351 @@
+name: Phase 1 Technical Compatibility Spike
+
+on:
+  push:
+    branches:
+      - main
+      - "phase-1/**"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: phase1-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    name: Package, build, and baseline migration evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16.15@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+        env:
+          POSTGRES_DB: zamzam_spike
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: spike-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d zamzam_spike"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7.2.16@sha256:1009f15ccd9ed271996d1c65745a1ab1dadedea188feb3f1ab938602a32e50a3
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:spike-only-password@127.0.0.1:5432/zamzam_spike
+      REDIS_URL: redis://127.0.0.1:6379
+      LOCKING_REDIS_URL: redis://127.0.0.1:6379
+      STORE_CORS: http://localhost:8000
+      ADMIN_CORS: http://localhost:9000
+      AUTH_CORS: http://localhost:8000,http://localhost:9000
+      JWT_SECRET: ci-only-jwt-secret-not-for-any-other-environment-123456
+      COOKIE_SECRET: ci-only-cookie-secret-not-for-any-other-environment-654321
+      NEXT_PUBLIC_MEDUSA_BACKEND_URL: http://localhost:9000
+      NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: ""
+      PHASE1_POSTGRES_IMAGE_REF: postgres:16.15@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+      PHASE1_REDIS_IMAGE_REF: redis:7.2.16@sha256:1009f15ccd9ed271996d1c65745a1ab1dadedea188feb3f1ab938602a32e50a3
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Create evidence directory
+        run: mkdir -p artifacts
+
+      - name: Verify exact package metadata and peer requirements
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run spike:package-metadata 2>&1 | tee artifacts/package-metadata.log
+
+      - name: Verify TP registry integrity only
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run spike:registry 2>&1 | tee artifacts/tp-registry-integrity.log
+
+      - name: Clean install dependencies with npm ci
+        shell: bash
+        run: |
+          set -o pipefail
+          npm ci --strict-peer-deps --no-audit --no-fund 2>&1 | tee artifacts/npm-install.log
+
+      - name: Capture resolved dependency tree
+        shell: bash
+        run: |
+          set -o pipefail
+          npm ls --all 2>&1 | tee artifacts/npm-ls-all.log
+
+      - name: Run workspace lint
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run lint 2>&1 | tee artifacts/lint.log
+
+      - name: Verify Medusa CLI TypeScript loader compatibility
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run spike:medusa-loader 2>&1 | tee artifacts/medusa-loader-diagnostic.log
+
+      - name: Check JavaScript evidence harnesses for undefined variables
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run spike:lint-harness 2>&1 | tee artifacts/harness-static-check.log
+
+      - name: Apply baseline Medusa migrations to disposable PostgreSQL
+        id: migrations
+        shell: bash
+        env:
+          TS_NODE_PROJECT: ${{ github.workspace }}/apps/backend/tsconfig.json
+        run: |
+          set -o pipefail
+          npm run db:migrate 2>&1 | tee artifacts/medusa-db-migrate.log
+
+      - name: Build Medusa backend
+        shell: bash
+        env:
+          NODE_ENV: production
+        run: |
+          set -o pipefail
+          npm run build:backend 2>&1 | tee artifacts/medusa-build.log
+
+      - name: Build Next.js storefront shell
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run build:storefront 2>&1 | tee artifacts/next-build.log
+
+      - name: Exercise Redis locking semantics against disposable Redis
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run spike:locking-redis --workspace @zamzam/backend 2>&1 | tee artifacts/locking-redis-regression.log
+
+      - name: Assess Phase 1 TP prerequisites and write per-case evidence
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run spike:tp-readiness 2>&1 | tee artifacts/tp-readiness-assessment.log
+
+      - name: Verify disposable target service validator
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+        run: |
+          set -o pipefail
+          npm run spike:target-validator 2>&1 | tee artifacts/disposable-target-validator.log
+
+      - name: Run TP-02a distributed cart lock test
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-02a 2>&1 | tee artifacts/tp-02a-distributed-lock.log
+
+      - name: Run TP-02b heartbeat unit invariants
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run spike:tp02b-unit 2>&1 | tee artifacts/tp-02b-heartbeat-unit.log
+
+      - name: Run TP-02b real-service heartbeat test
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-02b 2>&1 | tee artifacts/tp-02b-heartbeat.log
+
+      - name: Run TP-02c lock timeout CAS unit invariants
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run spike:tp02c-unit 2>&1 | tee artifacts/tp-02c-cas-unit.log
+
+      - name: Run TP-02c real-service lock timeout CAS test
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-02c 2>&1 | tee artifacts/tp-02c-lock-timeout-cas.log
+
+      - name: Verify TP-03 negative control (non-contention error propagation)
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -o pipefail
+          node apps/backend/scripts/check-stage2-lock-negative-control.mjs 2>&1 | tee artifacts/tp-03-negative-control.log
+
+      - name: Run TP-03 concurrent cart lock rejection test
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-03 2>&1 | tee artifacts/tp-03-concurrent-lock-rejection.log
+
+      - name: Run TP-04a native HTTP mutation guard
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-04a 2>&1 | tee artifacts/tp-04a-native-http.log
+
+      - name: Run TP-04b stale heartbeat HTTP mutation guard
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-04b 2>&1 | tee artifacts/tp-04b-native-http.log
+
+      - name: Run TP-06a same-batch multi-line reservation
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+          PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-06a 2>&1 | tee artifacts/tp-06a-inventory-reservation.log
+
+      - name: Run TP-06b replay, divergence, rollback, and contention
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+          PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-06b 2>&1 | tee artifacts/tp-06b-inventory-replay-rollback.log
+
+      - name: Run TP-07a expired reservation cleanup and replay
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+          PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-07a 2>&1 | tee artifacts/tp-07a-inventory-cleanup.log
+
+      - name: Run TP-07b order-scoped cleanup and conversion interleavings
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+          PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-07b 2>&1 | tee artifacts/tp-07b-order-cleanup-conversion.log
+
+      - name: Run TP-09 deterministic checkout line conversion
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+          PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-09 2>&1 | tee artifacts/tp-09-deterministic-conversion.log
+
+      - name: Run TP-10 split batch allocation and rollback
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+          PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-10 2>&1 | tee artifacts/tp-10-split-batch-conversion.log
+
+      - name: Run TP-24c PostgreSQL movement immutability roles
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+          PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-24c 2>&1 | tee artifacts/tp-24c-ledger-immutability.log
+
+      - name: Run TP-05 provider-neutral payment branch prototype
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-05 2>&1 | tee artifacts/tp-05-payment-branches.log
+
+      - name: Run TP-08 correlation foundation (not formal TP-08 acceptance)
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+        run: |
+          set -o pipefail
+          node apps/backend/scripts/test-tp08-correlation-foundation.mjs 2>&1 | tee artifacts/tp-08-correlation-foundation.log
+
+      - name: Run TP-21c refund identity and encryption test
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-21c 2>&1 | tee artifacts/tp-21c-refund-identity.log
+
+      - name: Verify Migration 3 rollback on isolated PostgreSQL database
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
+        run: |
+          set -o pipefail
+          npm run spike:migration-rollback 2>&1 | tee artifacts/migration-rollback-isolated.log
+
+      - name: Summarize all 59 current-commit TP execution outcomes
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        run: node scripts/summarize-phase1-evidence.mjs
+
+      - name: Upload Phase 1 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-spike-evidence-${{ github.sha }}
+          if-no-files-found: warn
+          path: |
+            package-lock.json
+            artifacts/
