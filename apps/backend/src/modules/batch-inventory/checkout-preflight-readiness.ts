@@ -199,3 +199,103 @@ export function evaluateCheckoutPreflight(
     replayed: input?.replay === "exact",
   }
 }
+
+
+export type CheckoutPreflightReadSources = Readonly<{
+  isVerifiedGuestCartOwnership(proof: unknown, cartId: string): boolean
+  readNativeFacts(snapshot: CartOrchestrationSnapshot, proof: unknown): Promise<NativeCheckoutReadinessFacts>
+  readAttempt(cartId: string): Promise<CheckoutAttemptReadiness>
+  readInventory(lines: CartOrchestrationSnapshot["lines"]): Promise<AvailabilityResponse>
+  readShipping(snapshot: CartOrchestrationSnapshot, native: NativeCheckoutReadinessFacts): Promise<CheckoutShippingQuoteReadiness>
+  readPayments(snapshot: CartOrchestrationSnapshot): Promise<PaymentReadinessSnapshot>
+  /** Read-only owner-scoped journal lookup. Exact replay recomputes readiness from current state. */
+  inspectReplay(input: Readonly<{
+    ownerKey: string
+    requestId: string
+    fingerprint: string
+  }>): Promise<"new" | "exact" | "conflict" | "unavailable">
+}>
+
+function blockedResult(
+  method: "cod" | "electronic",
+  version: string | null,
+  code: CheckoutPreflightBlocker,
+  replayed = false
+): CheckoutPreflightResult {
+  const blockedBranch = (branch: "cod" | "electronic"): CheckoutPaymentBranchReadiness => ({
+    status: "blocked",
+    blockers: branch === method && code === "PAYMENT_OUTCOME_UNCERTAIN"
+      ? ["PAYMENT_OUTCOME_UNCERTAIN"] : ["PREFLIGHT_STATE_UNAVAILABLE"],
+    publicMethodEnabled: false,
+    transactionAllowed: false,
+  })
+  return {
+    status: "blocked", selectedMethod: method,
+    blockers: [{ code, presentationKey: keyFor(code) }],
+    payment: { cod: blockedBranch("cod"), electronic: blockedBranch("electronic") },
+    cartVersion: version, currencyCode: "egp", payableTotal: null,
+    inventoryReservationRequired: true, orderCompletionAllowed: false,
+    paymentExecutionAllowed: false, replayed,
+  }
+}
+
+/**
+ * Adapter for CartBffDependencies.checkoutReadiness. All source functions are
+ * internal server reads; no source accepts client-supplied money or readiness.
+ */
+export function createCheckoutPreflightReadiness(sources: CheckoutPreflightReadSources) {
+  return async (request: Readonly<{
+    snapshot: CartOrchestrationSnapshot
+    ownershipProof: unknown
+    ownerKey: string
+    requestId: string
+    expectedVersion: string
+    paymentMethod: "cod" | "electronic"
+  }>): Promise<CheckoutPreflightResult> => {
+    const method = request.paymentMethod
+    const version = request.snapshot?.version ?? null
+    if (!sources || typeof sources.isVerifiedGuestCartOwnership !== "function" ||
+        !request.ownershipProof || !request.ownerKey || !request.requestId ||
+        !sources.isVerifiedGuestCartOwnership(request.ownershipProof, request.ownershipProof &&
+          typeof request.ownershipProof === "object" && "cartId" in request.ownershipProof
+            ? String((request.ownershipProof as { cartId: unknown }).cartId) : "")) {
+      return blockedResult(method, version, "GUEST_CART_NOT_OWNED")
+    }
+    const cartId = typeof request.snapshot.native === "object" && request.snapshot.native &&
+      "id" in request.snapshot.native ? String((request.snapshot.native as { id: unknown }).id) : ""
+    if (!cartId) return blockedResult(method, version, "PREFLIGHT_STATE_UNAVAILABLE")
+
+    try {
+      const replay = await sources.inspectReplay({
+        ownerKey: request.ownerKey,
+        requestId: request.requestId,
+        fingerprint: JSON.stringify(["checkout_preflight", request.expectedVersion, method]),
+      })
+      if (replay === "conflict") return blockedResult(method, version, "PREFLIGHT_REPLAY_CONFLICT")
+      if (replay === "unavailable") return blockedResult(method, version, "PREFLIGHT_STATE_UNAVAILABLE")
+      const [native, attempt, inventory, shipping, payments] = await Promise.all([
+        sources.readNativeFacts(request.snapshot, request.ownershipProof),
+        sources.readAttempt(cartId),
+        sources.readInventory(request.snapshot.lines),
+        Promise.resolve(null as CheckoutShippingQuoteReadiness | null),
+        sources.readPayments(request.snapshot),
+      ])
+      const quote = await sources.readShipping(request.snapshot, native)
+      return evaluateCheckoutPreflight({
+        ownership: { status: "owned", cartId, proof: request.ownershipProof },
+        expectedVersion: request.expectedVersion,
+        selectedMethod: method,
+        replay,
+        cart: request.snapshot,
+        native,
+        attempt,
+        inventory,
+        shipping: quote ?? shipping!,
+        payments,
+      }, { isVerifiedGuestCartOwnership: (proof, id) =>
+        sources.isVerifiedGuestCartOwnership(proof, id) })
+    } catch {
+      return blockedResult(method, version, "PREFLIGHT_STATE_UNAVAILABLE")
+    }
+  }
+}
