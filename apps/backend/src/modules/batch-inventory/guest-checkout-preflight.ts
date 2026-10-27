@@ -1,11 +1,13 @@
+import { isVerifiedGuestCartOwnership, type GuestCartOwnershipResult } from "./guest-cart-ownership"
+
 /**
  * Internal, read-only guest checkout readiness contract (Gemini 3.8 Flash adapter).
- * Request: pass a CartDTO already resolved by a trusted server-side Medusa query,
- * the persisted checkout-session status, and untrusted guest delivery fields.
+ * Request: pass a CartDTO already resolved by trusted server-side Medusa code,
+ * the exact ownership proof returned by resolveGuestCartOwnership, and guest fields.
  * Never pass a client cart id, ownership claim, price, payment data, or provider.
  * Result: only readiness booleans and stable blocker codes; native Medusa totals
  * are observed, never recalculated. A clear result is not checkout authorization.
- * This module is intentionally unmounted until trusted session ownership exists.
+ * This module stays unmounted until a secure cookie/session adapter is integrated.
  */
 
 type UnknownRecord = Record<string, unknown>
@@ -21,7 +23,6 @@ export type GuestDeliveryInput = {
   postal_code?: unknown
   country_code?: unknown
 }
-
 type NativeMoney = number | string | { value?: unknown } | null | undefined
 export type NativeShippingMethodSnapshot = {
   shipping_option_id?: unknown
@@ -90,7 +91,7 @@ export function validateGuestDeliveryInput(input: GuestDeliveryInput | null | un
 export function evaluateGuestCheckoutPreflight(input: {
   cart: NativeCartSnapshot | null
   guest: GuestDeliveryInput | null | undefined
-  sessionStatus: CheckoutSessionStatus
+  ownership: GuestCartOwnershipResult | null | undefined
 }): {
   status: "blocked" | "ready_for_review"
   blockers: PreflightBlocker[]
@@ -101,8 +102,13 @@ export function evaluateGuestCheckoutPreflight(input: {
   const cart = input.cart
   const guest = validateGuestDeliveryInput(input.guest)
   if (!cart) blockers.add("CART_UNAVAILABLE")
-  // No trusted ownership resolver is part of this slice. Always block authorization.
-  blockers.add("CHECKOUT_OWNERSHIP_UNAVAILABLE")
+  const ownershipVerified = isVerifiedGuestCartOwnership(input.ownership, cart?.id)
+  if (!ownershipVerified) {
+    blockers.add("CHECKOUT_OWNERSHIP_UNAVAILABLE")
+    if (input.ownership?.status === "not_owned" && input.ownership.blocker === "CHECKOUT_ALREADY_COMPLETED") {
+      blockers.add("CHECKOUT_ALREADY_COMPLETED")
+    }
+  }
   if (!guest.valid) blockers.add("GUEST_DELIVERY_INVALID")
   const cartCurrency = typeof cart?.currency_code === "string" ? cart.currency_code.toLowerCase() : ""
   if (cart && (!cart.region_id || !cart.region || !cart.region.id)) blockers.add("CART_REGION_UNAVAILABLE")
@@ -124,11 +130,14 @@ export function evaluateGuestCheckoutPreflight(input: {
   const payableTotal = moneyValue(cart?.raw_total ?? cart?.total) !== null &&
     Number(moneyValue(cart?.raw_total ?? cart?.total)) > 0
   if (!payableTotal) blockers.add("PAYABLE_TOTAL_UNAVAILABLE")
-  if (input.sessionStatus === "in_progress") blockers.add("CHECKOUT_IN_PROGRESS")
-  else if (input.sessionStatus === "completed") blockers.add("CHECKOUT_ALREADY_COMPLETED")
-  else if (input.sessionStatus === "missing" || input.sessionStatus === "unavailable" || !input.sessionStatus) blockers.add("CHECKOUT_SESSION_UNAVAILABLE")
+  const sessionStatus: CheckoutSessionStatus = ownershipVerified
+    ? (input.ownership as Extract<GuestCartOwnershipResult, { status: "owned" }>).sessionStatus
+    : "unavailable"
+  if (sessionStatus === "in_progress") blockers.add("CHECKOUT_IN_PROGRESS")
+  else if (sessionStatus === "completed") blockers.add("CHECKOUT_ALREADY_COMPLETED")
+  else if (sessionStatus === "unavailable") blockers.add("CHECKOUT_SESSION_UNAVAILABLE")
   // Aborted/failed sessions also require a trusted recovery flow; this module cannot clear them.
-  else if (input.sessionStatus === "aborted" || input.sessionStatus === "failed") blockers.add("CHECKOUT_SESSION_UNAVAILABLE")
+  else if (sessionStatus === "aborted" || sessionStatus === "failed") blockers.add("CHECKOUT_SESSION_UNAVAILABLE")
   return { status: blockers.size ? "blocked" : "ready_for_review", blockers: [...blockers],
     readiness: { deliveryAddress, shippingMethod, shippingPrice, payableTotal },
     currency: cartCurrency === "egp" && regionCurrency === "egp" ? "egp" : null }
