@@ -101,6 +101,9 @@ jobs:
           export DATABASE_URL="${DATABASE_URL%/*}/zamzam_spike"
           npm run db:migrate
           node apps/backend/scripts/test-guest-cart-ownership-integration.mjs
+          # Native cart address/shipping/payable checks reuse the approved disposable Medusa instance.
+          # No service zones, shipping prices, orders, or payment configuration are created.
+          node apps/backend/scripts/test-native-shipping-readiness.mjs
       - name: Real PostgreSQL FEFO availability integration (not formal TP)
         run: node --experimental-strip-types --test apps/backend/scripts/test-batch-availability-postgres.mjs
         env:
