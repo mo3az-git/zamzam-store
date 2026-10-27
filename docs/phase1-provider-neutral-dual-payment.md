@@ -42,7 +42,7 @@ paid -> void_pending (refund/void pending; resolve from provider evidence)
 - paid requires an authenticated provider result bound to the exact attempt, order, provider payment ID, EGP amount and currency. Native order creation and a Medusa local system-provider session are not proof of settlement.
 - A timeout after a provider request is outcome_unknown; do not create a new charge attempt until a provider status lookup or reconciliation resolves the old one.
 - Duplicate/replayed event identity must be idempotent. Reusing a provider event ID with different normalized content is an integrity alert. Older events cannot regress a later terminal state; contradictory money-moving events require reconciliation.
-- The internal event ledger now enforces transitions for normalized events returned by a trusted adapter. It records a durable inbox keyed by provider and event ID, serializes updates on the electronic attempt, checks exact EGP amount and attempt/provider identity, makes exact replay idempotent, rejects event-ID/content conflicts, and retains stale or ambiguous events for reconciliation. It does not authenticate provider callbacks, call a provider, or update native Medusa payment records.
+- The internal event ledger records normalized event identity in a durable inbox, serializes updates on the electronic attempt, checks exact EGP amount and attempt/provider identity, makes exact replay idempotent, rejects event-ID/content conflicts, and retains stale or ambiguous events for reconciliation. Settlement claims (`paid`) are always retained as `needs_reconciliation` while no gateway and authenticated adapter are configured. The ledger does not authenticate callbacks, call a provider, or update native Medusa payment records.
 
 ## Provider-neutral electronic adapter contract
 
@@ -75,7 +75,7 @@ The focused workflow applies migrations only after disposable-target validation,
 - Exact replay creates no duplicate branch/allocation/movement.
 - Wrong method/owner/cart/order/attempt/epoch/total/version, expired pending lease, and cart/payment mismatch fail closed.
 - Checkout interruption and committed-allocation-before-response recovery resolve to the same order without duplicate allocation or payment record.
-- Simulator event cases cover exact replay, event-ID content conflict, amount rejection, unknown-outcome resolution, stale revision retention, concurrent duplicate delivery, and provider mismatch.
+- Event cases cover exact replay, simulator settlement claims blocked from changing state, event-ID content conflict, amount rejection, unknown-outcome recovery held for reconciliation, stale revision retention, concurrent duplicate delivery, and provider mismatch.
 
 **Not covered by the current suite:** authentic provider callback/signature verification, real provider status lookup, synchronization with native Medusa payment records, COD courier settlement/remittance, or real charge/refund. No provider or COD operational workflow is activated.
 
@@ -89,3 +89,19 @@ The focused workflow applies migrations only after disposable-target validation,
 6. Obtain independent risk/security review, approved disposable staging evidence, legal/operational launch approval and a separate release decision.
 
 These blockers keep both methods non-operational until separately authorized. No payment mode is activated by this foundation.
+
+
+## Checkout readiness and settlement gate
+
+The internal `PaymentReadinessSnapshot` and `PaymentBranchReadiness` types in `payment-provider-contract.ts` are descriptive contracts for Checkout orchestration. They expose internal branch readiness and explicit blockers while fixing `publicMethodEnabled` and `settlementEnabled` to the literal value `false`. They are not public configuration and do not activate a payment method.
+
+Until a gateway is selected and an authenticated provider adapter is wired, every normalized `paid` claim is retained in the inbox with `needs_reconciliation`; it cannot change the attempt to `paid`. This applies to simulator events as well. The current ledger accepts only internal normalized-event input, and there is no HTTP callback route. A future signed-event path must prove raw-body signature, freshness, account/environment, provider and payment-attempt binding before it can call an explicitly enabled settlement authority. Unsigned or browser-supplied status must never reach that authority.
+
+## Reconciliation and native Medusa synchronization requirements
+
+- Keep the provider inbox as the durable source for event delivery identity and disposition; reconcile by attempt, order, provider payment ID, amount/currency, event revision/time, and native Medusa payment collection/session.
+- Reconciliation must compare authoritative provider status with the immutable checkout amount and native Medusa payment identity. Unknown, stale, conflicting, and missing records remain blocked for operational review; retries use provider-side idempotency and cannot create a second charge.
+- A future settlement transaction must atomically persist the verified inbox disposition and internal attempt transition, then synchronize the corresponding native Medusa payment collection/session using Medusa-supported payment records/workflows with stable idempotency. Any cross-store failure must be retryable from a durable outbox or equivalent reconciliation queue; never infer settlement from order completion or a local system-provider session.
+- Define explicit mapping for authorization, capture/paid, failure, void, refund amount/identity, and partial refund. Refund transitions remain blocked until amount-specific refund records exist.
+- COD remains unpaid until a separately authorized collection operation records collector/courier identity, amount, currency, timestamp, evidence/reference and idempotency key. Reconcile carrier collection, remittance and any shortfall/refund independently; checkout completion alone is not collection evidence.
+- These are launch blockers, not implemented transaction paths. No provider, event endpoint, public payment method, or operational COD collection capability is enabled.
