@@ -115,11 +115,32 @@ try {
   result=await runOrderCreationWithFence(db,d,async()=>{noResultCalls++;return null},async()=>[])
   const replay=await runOrderCreationWithFence(db,d,async()=>{noResultCalls++;throw new Error("must not be called")},async()=>[])
   check("started_request_not_reinvoked",noResultCalls===1&&result.status==="needs_reconciliation"&&replay.status==="needs_reconciliation",{noResultCalls,replay})
+  const concurrent=await register()
+  const concurrentOrder=candidate(concurrent)
+  let concurrentNativeCalls=0
+  const concurrentRuns=await Promise.all([
+    runOrderCreationWithFence(db,concurrent,async()=>{
+      concurrentNativeCalls++
+      await new Promise(resolve=>setTimeout(resolve,30))
+      return {orderId:concurrentOrder.id}
+    },async()=>[concurrentOrder]),
+    runOrderCreationWithFence(db,concurrent,async()=>{
+      concurrentNativeCalls++
+      return {orderId:concurrentOrder.id}
+    },async()=>[concurrentOrder])
+  ])
+  check("concurrent_attempt_calls_native_workflow_exactly_once",
+    concurrentNativeCalls===1,concurrentNativeCalls)
+  const concurrentState=await state(concurrent.attemptId)
+  check("concurrent_reconciliation_binds_single_authoritative_order",
+    concurrentRuns.every(x=>x.status==="correlated" && x.orderId===concurrentOrder.id) &&
+    concurrentState.order_id===concurrentOrder.id,
+    {concurrentRuns,concurrentState})
   const e=await register()
   await assertConflict("invalid_native_order_cart_rejected",()=>reconcileOrderCreation(db,e,async()=>[{id:"order_fake",cart_id:"wrong"}]),"INVALID_NATIVE_ORDER_CANDIDATE")
   s=await state(e.attemptId)
   check("bad_candidate_does_not_change_state",s.attempt_status==="reserved"&&s.order_id===null,s)
-  dbAfter={a:await state(a.attemptId),b:await state(b.attemptId),c:await state(c.attemptId),d:await state(d.attemptId),e:await state(e.attemptId)}
+  dbAfter={a:await state(a.attemptId),b:await state(b.attemptId),c:await state(c.attemptId),d:await state(d.attemptId),concurrent:await state(concurrent.attemptId),e:await state(e.attemptId)}
   status="passed"
 }catch(error){blocker=error.stack||String(error);errLines.push(blocker);console.error(blocker);assertions.push({name:"execution_completed",expected:true,actual:error.message,passed:false})}finally{
   if(pg){
