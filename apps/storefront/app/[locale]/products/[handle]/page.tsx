@@ -118,6 +118,7 @@ export default async function ProductPage({ params }: { params: Promise<ProductP
           images={images}
           title={product.title}
           galleryLabel={dict.product.galleryLabel}
+          imagePosition={dict.product.imagePosition}
           noImageText={dict.product.noImage}
         />
         <div className="detail-copy">
@@ -160,3 +161,4 @@ export default async function ProductPage({ params }: { params: Promise<ProductP
     </main>
   )
 }
+
