@@ -87,8 +87,10 @@ export async function reconcileOrderCreation(db: Sql, authority: Authority, look
     // Rev 18: any operation acting on an existing order takes the order root
     // before checkout session/attempt row locks. The native lookup is outside
     // the transaction; the authority is rechecked under the row locks below.
+    let lockedOrderId: string | null = null
     if (unique.size === 1) {
       const [orderId] = unique.keys()
+      lockedOrderId = orderId
       await tx.raw("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", ["phase0:order:" + orderId])
     } else {
       // Do not lock arbitrary candidate order IDs for ambiguous correlation:
@@ -98,6 +100,7 @@ export async function reconcileOrderCreation(db: Sql, authority: Authority, look
         [authority.attemptId]
       )).rows[0]
       if (observed?.order_id) {
+        lockedOrderId = observed.order_id
         await tx.raw("SELECT pg_advisory_xact_lock(hashtextextended(?,0))",
           ["phase0:order:" + observed.order_id])
       }
@@ -105,6 +108,7 @@ export async function reconcileOrderCreation(db: Sql, authority: Authority, look
     const a = await current(tx, authority)
     // Never lock the session/attempt and only then discover a different order
     // root. If correlation changed concurrently, abort instead of proceeding.
+    if (a.order_id && a.order_id !== lockedOrderId) invalid("ORDER_ROOT_CHANGED_DURING_RECONCILIATION")
     if (a.order_id && (unique.size !== 1 || !unique.has(a.order_id)) &&
         a.order_correlation_status === "correlated") invalid("BOUND_ORDER_LOOKUP_DIVERGENCE")
     if (!["order_creation_started","order_created","needs_reconciliation"].includes(a.attempt_status))
