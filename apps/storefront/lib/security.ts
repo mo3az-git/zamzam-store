@@ -225,9 +225,9 @@ export function validateCsrfToken(cookieToken: unknown, headerToken: unknown): b
 }
 
 /**
- * Session-Bound CSRF Token Architecture:
+ * Session-Bound CSRF Token Architecture (Phase 4.7 Hardening):
  *
- * In addition to double-submit cookie validation, CSRF tokens can be cryptographically
+ * In addition to double-submit cookie validation, CSRF tokens MUST be cryptographically
  * bound to the opaque guest session secret using HMAC-SHA256:
  *
  *   CSRF_Token = HMAC-SHA256(sessionSecret, serverSecret)
@@ -238,21 +238,64 @@ export function validateCsrfToken(cookieToken: unknown, headerToken: unknown): b
  * By binding the expected CSRF token to the HttpOnly session secret, the server verifies
  * that the submitted CSRF token belongs to that exact session, neutralizing cookie-tossing
  * and cross-session token reuse attacks.
+ *
+ * Hardening Rules:
+ * - Requires an explicitly provisioned server-only STOREFRONT_CSRF_SECRET (or validated test secret).
+ * - Minimum 32 characters (256 bits of entropy) required.
+ * - Zero fallback to hardcoded development strings; fails closed if secret is missing or weak.
+ * - Never leaks or logs secrets in exceptions, URLs, or browser-accessible properties.
+ */
+
+export const MIN_CSRF_SECRET_LENGTH = 32
+
+/**
+ * Validates whether a candidate server CSRF secret meets security requirements.
+ * Rejects missing, blank, or insufficiently strong secrets.
+ */
+export function isValidCsrfSecret(secret: unknown): secret is string {
+  if (typeof secret !== "string") return false
+  const trimmed = secret.trim()
+  return trimmed.length >= MIN_CSRF_SECRET_LENGTH
+}
+
+/**
+ * Resolves the server-only CSRF HMAC secret from environment or an explicit override (in isolated tests).
+ * Never falls back to a default hardcoded development string.
+ * Fails closed (returns null) if missing, blank, or shorter than 32 characters.
+ */
+export function getServerCsrfSecret(explicitSecret?: string): string | null {
+  const candidate = explicitSecret !== undefined ? explicitSecret : process.env.STOREFRONT_CSRF_SECRET
+  if (isValidCsrfSecret(candidate)) {
+    return candidate.trim()
+  }
+  return null
+}
+
+/**
+ * Derives a session-bound CSRF token for the specified guest session secret.
+ * Throws if the session secret is malformed or server HMAC secret is missing or weak.
  */
 export function deriveSessionBoundCsrfToken(
   sessionSecret: string,
-  serverHmacSecret: string = process.env.STOREFRONT_CSRF_SECRET || "zamzam_default_session_csrf_hmac_secret"
+  serverHmacSecret?: string
 ): string {
   if (!isValidSessionSecret(sessionSecret)) {
     throw new Error("Cannot derive CSRF token: invalid guest session secret format")
   }
-  return createHmac("sha256", serverHmacSecret)
+  const secret = getServerCsrfSecret(serverHmacSecret)
+  if (!secret) {
+    throw new Error(
+      "Cannot derive CSRF token: missing or insufficiently strong server CSRF secret (requires at least 32 characters)"
+    )
+  }
+  return createHmac("sha256", secret)
     .update(sessionSecret, "utf8")
     .digest("base64url")
 }
 
 /**
  * Validates whether a submitted header token matches the session-bound token in constant time.
+ * Fails closed if the server secret is missing, blank, or insufficiently strong.
  */
 export function validateSessionBoundCsrfToken(
   sessionSecret: unknown,
@@ -262,7 +305,16 @@ export function validateSessionBoundCsrfToken(
   if (!isValidSessionSecret(sessionSecret) || !isValidCsrfTokenFormat(headerToken)) {
     return false
   }
-  const expected = deriveSessionBoundCsrfToken(sessionSecret, serverHmacSecret)
+  const secret = getServerCsrfSecret(serverHmacSecret)
+  if (!secret) {
+    return false
+  }
+  let expected: string
+  try {
+    expected = deriveSessionBoundCsrfToken(sessionSecret, secret)
+  } catch {
+    return false
+  }
   const bufExpected = Buffer.from(expected, "utf8")
   const bufActual = Buffer.from(headerToken, "utf8")
   if (bufExpected.length !== bufActual.length) return false
@@ -377,17 +429,29 @@ export function extractCsrfCookieToken(
 
 export type CsrfValidationResult =
   | { valid: true }
-  | { valid: false; reason: "CSRF_COOKIE_MISSING" | "CSRF_HEADER_MISSING" | "CSRF_TOKEN_MISMATCH" | "CSRF_COOKIE_INVALID" }
+  | {
+      valid: false
+      reason:
+        | "CSRF_COOKIE_MISSING"
+        | "CSRF_HEADER_MISSING"
+        | "CSRF_TOKEN_MISMATCH"
+        | "CSRF_COOKIE_INVALID"
+        | "CSRF_SECRET_INVALID"
+        | "CSRF_SESSION_BINDING_MISMATCH"
+    }
 
 /**
  * Validates CSRF headers and cookies on a request.
  * Safe read-only methods pass automatically; state-changing methods require matching tokens.
+ * When sessionSecret is provided, also enforces session-bound HMAC verification.
  */
 export function validateRequestCsrf(
   method: string,
   headers: Headers | Record<string, string | undefined>,
   cookieHeader?: string | null,
-  isSecure: boolean = isSecureEnvironment()
+  isSecure: boolean = isSecureEnvironment(),
+  sessionSecret?: unknown,
+  serverHmacSecret?: string
 ): CsrfValidationResult {
   const upperMethod = method.toUpperCase()
   if (!STATE_CHANGING_METHODS.has(upperMethod)) {
@@ -419,6 +483,17 @@ export function validateRequestCsrf(
 
   if (!validateCsrfToken(cookieExtraction.token, headerToken)) {
     return { valid: false, reason: "CSRF_TOKEN_MISMATCH" }
+  }
+
+  // Cryptographic session-bound HMAC validation
+  if (sessionSecret !== undefined) {
+    const secret = getServerCsrfSecret(serverHmacSecret)
+    if (!secret) {
+      return { valid: false, reason: "CSRF_SECRET_INVALID" }
+    }
+    if (!validateSessionBoundCsrfToken(sessionSecret, headerToken, secret)) {
+      return { valid: false, reason: "CSRF_SESSION_BINDING_MISMATCH" }
+    }
   }
 
   return { valid: true }
