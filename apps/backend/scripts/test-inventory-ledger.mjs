@@ -8,7 +8,7 @@ import {
 } from "./shared/tp-harness.mjs"
 
 const tpId = process.argv[2]
-if (!["TP-06a", "TP-06b", "TP-07a", "TP-07b", "TP-09", "TP-10", "TP-24c", "TP-08-native-integration", "TP-08-recovery"].includes(tpId)) throw new Error("Unsupported inventory TP: " + tpId)
+if (!["TP-06a", "TP-06b", "TP-07a", "TP-07b", "TP-09", "TP-10", "TP-24c", "TP-08-native-integration", "TP-08-recovery", "TP-08-operations"].includes(tpId)) throw new Error("Unsupported inventory TP: " + tpId)
 if (process.env.PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP !== "true") throw new Error("Disposable database create/drop opt-in is required")
 const rootRequire = registerTsNode()
 const { Modules, ContainerRegistrationKeys } = await import("@medusajs/framework/utils")
@@ -146,7 +146,7 @@ try {
   }
   const makeCart = async (items, label = "inventory", nativeUnitPrice = 0) => {
     const cart = await cartService.createCarts({ currency_code: "egp", metadata: { disposable_fixture: tpId, label } })
-    const nativeCheckout = ["TP-08-native-integration", "TP-08-recovery"].includes(tpId)
+    const nativeCheckout = ["TP-08-native-integration", "TP-08-recovery", "TP-08-operations"].includes(tpId)
     const lineItems = items.map(({ quantity, key = randomUUID() }) => ({ title: "Native checkout batch line", product_title: "Disposable product",
       variant_title: "Batch tracked test variant", variant_id: variantId, quantity, unit_price: nativeCheckout ? nativeUnitPrice : 1000,
       requires_shipping: !nativeCheckout, metadata: { checkout_line_key: key } }))
@@ -183,6 +183,17 @@ try {
   const conversionInput = (fixture, order, reservationIds) => ({ ...fixture.authority, orderId: order.id, validatedReservationIds: reservationIds })
   const convert = (fixture, order, ids, hooks) => new InventoryLedger(runtime.container, hooks).convertCartReservationsToAllocations(conversionInput(fixture, order, ids))
   const saveSnapshot = async (batchIds) => snapshotTables(adminPg, batchIds)
+
+  if (tpId === "TP-08-operations") {
+    const { runReconciliationOperationsScenarios } = await import("./test-reconciliation-operations.mjs")
+    const batch = await makeBatch(150, 90, "reconciliation-operations")
+    dbBefore = await saveSnapshot([batch.id])
+    await runReconciliationOperationsScenarios({ runtime, knex, adminPg, batch, makeCart, makeNativeOrder,
+      reservationsFor, saveSnapshot, check, expectCode, events, InventoryLedger,
+      completeReservedCartWithInventory, findNativeOrdersByCart, isolatedUrl, createPgClient, rootRequire })
+    dbAfter = await saveSnapshot([batch.id])
+    status = "passed"
+  }
 
   if (tpId === "TP-08-recovery") {
     const { runNativeRecoveryScenarios } = await import("./test-native-recovery-scenarios.mjs")
@@ -808,6 +819,6 @@ await writeTpEvidence({ evidenceDir, tpId, title: tpId === "TP-08-native-integra
   ...metadata, blocker, exitCode: status==="passed"?0:1, assertions, dbBefore, dbAfter,
   containerDetails: { medusaRuntime: true, isolatedDatabase: dbName, runtimeUser: tpId==="TP-24c"?"medusa_app":"migration owner", disposableServices: targetDetails },
   testCommand: `node apps/backend/scripts/test-inventory-ledger.mjs ${tpId}`,
-  assessmentType: tpId==="TP-24c"?"real PostgreSQL privilege and immutability-trigger enforcement; no production role changes": ["TP-08-native-integration","TP-08-recovery"].includes(tpId)?"real Medusa CartService cart, completeCartWorkflow native order and order_cart link, PostgreSQL correlation and allocation; no Store API cart creation or TP-01 execution; component evidence, not formal TP acceptance": ["TP-07b","TP-09","TP-10"].includes(tpId)?"authoritatively-correlated native Medusa order, real PostgreSQL conversion and concurrency behavior": "real Medusa modules and PostgreSQL transaction behavior; pre-order inventory scope only",
+  assessmentType: tpId==="TP-24c"?"real PostgreSQL privilege and immutability-trigger enforcement; no production role changes": ["TP-08-native-integration","TP-08-recovery","TP-08-operations"].includes(tpId)?"real Medusa CartService cart, completeCartWorkflow native order and order_cart link, PostgreSQL correlation and allocation; no Store API cart creation or TP-01 execution; component evidence, not formal TP acceptance": ["TP-07b","TP-09","TP-10"].includes(tpId)?"authoritatively-correlated native Medusa order, real PostgreSQL conversion and concurrency behavior": "real Medusa modules and PostgreSQL transaction behavior; pre-order inventory scope only",
 })
 process.exit(status==="passed"?0:1)
