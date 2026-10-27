@@ -348,6 +348,16 @@ jobs:
           set -o pipefail
           node scripts/run-tp-with-evidence.mjs TP-08-recovery 2>&1 | tee artifacts/tp-08-recovery.log
 
+      - name: Run internal reconciliation and real worker termination tests
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+          PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-08-operations 2>&1 | tee artifacts/tp-08-operations.log
+
       - name: Run TP-21c refund identity and encryption test
         if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
         shell: bash
