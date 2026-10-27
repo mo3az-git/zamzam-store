@@ -344,7 +344,8 @@ try {
   console.log("Egypt governorate native shipping foundation integration: " + passed.length + " checks passed.")
 } catch (error) {
   console.error("Egypt governorate shipping integration failed: " +
-    JSON.stringify({ name: error?.name ?? "Error", code: error?.code ?? null }))
+    JSON.stringify({ name: error?.name ?? "Error", code: error?.code ?? null,
+      message: typeof error?.message === "string" ? error.message.slice(0, 300) : null }))
   process.exitCode = 1
 } finally {
   if (cartId) {
