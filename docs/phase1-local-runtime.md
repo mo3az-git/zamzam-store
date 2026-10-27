@@ -48,14 +48,16 @@ it is recorded in the run manifest. `-Targeted -Cases TP-04a,TP-04b` runs migrat
 and those behavioral cases on fresh services without repeating the baseline
 build/unit/rollback suite. A targeted pass is not a full-suite pass.
 
-The inventory ledger cases can be run without TP-01:
+The inventory ledger and order-conversion cases can be run without TP-01:
 
 ```powershell
-./scripts/run-local-spike.ps1 -SkipInstall -Targeted -Cases TP-06a,TP-06b,TP-07a,TP-24c
+./scripts/run-local-spike.ps1 -SkipInstall -Targeted -Cases TP-06a,TP-06b,TP-07a,TP-07b,TP-09,TP-10,TP-24c
 ```
 
-The default full run includes these four inventory cases and the migration 6
-UP/DOWN/UP rollback assertions. The ledger harness creates uniquely named,
+The default full run includes these seven inventory cases and the migration 6
+and 7 UP/DOWN/UP rollback assertions. TP-07b/TP-09/TP-10 consume already
+correlated native test orders; they do not invoke the order-creation workflow.
+The ledger harness creates uniquely named,
 guarded disposable databases and temporary roles only inside its isolated
 PostgreSQL cluster, then drops resources it created. TP-24c verifies both an
 application role's table privileges and the database trigger's immutable-row
@@ -102,6 +104,12 @@ modified sources are not treated as clean-commit evidence.
   replay, conflicting intent, ledger divergence, rollback, concurrency and
   pre-order expiry release. They do not create or convert an order, and expiry
   cleanup is allowed only while the checkout attempt remains pre-order.
+- TP-07b/TP-09/TP-10 execute the real order-correlated conversion method against
+  native Medusa orders, PostgreSQL and disposable Redis. They prove cleanup and
+  conversion lock ordering, exact deterministic line mapping and reservation
+  set validation, split-batch allocations, exact replay and rollback. The test
+  fixture creates native order records directly and links them to carts; it
+  does not call `completeCartWorkflow` or test order creation/correlation.
 - TP-24c uses a temporary unprivileged app role and a separate inventory-writer
   role in the disposable cluster to show that revoked table access and the
   movement immutability trigger hold independently. It does not provision

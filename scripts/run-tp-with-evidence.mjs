@@ -14,6 +14,9 @@ const runners = {
   "TP-06a": "test-inventory-ledger.mjs",
   "TP-06b": "test-inventory-ledger.mjs",
   "TP-07a": "test-inventory-ledger.mjs",
+  "TP-07b": "test-inventory-ledger.mjs",
+  "TP-09": "test-inventory-ledger.mjs",
+  "TP-10": "test-inventory-ledger.mjs",
   "TP-24c": "test-inventory-ledger.mjs",
   "TP-21c": "test-tp21c-refund-identity.mjs",
 };
@@ -28,7 +31,7 @@ try { await rename(directory, history); }
 catch (error) { if (error.code !== "ENOENT") throw error; }
 await mkdir(directory, { recursive: true });
 const script = "apps/backend/scripts/" + runners[id];
-const args = ["TP-02c", "TP-03", "TP-04a", "TP-04b", "TP-06a", "TP-06b", "TP-07a", "TP-24c"].includes(id) ? [id] : [];
+const args = ["TP-02c", "TP-03", "TP-04a", "TP-04b", "TP-06a", "TP-06b", "TP-07a", "TP-07b", "TP-09", "TP-10", "TP-24c"].includes(id) ? [id] : [];
 const child = spawnSync(process.execPath, [script, ...args], {
   cwd: root, env: process.env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
 });

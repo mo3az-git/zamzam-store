@@ -33,6 +33,9 @@ const { Migration20261026000004_CreateCartBatchReservation } = rootRequire(
 const { Migration20261026000006_CreateInventoryLedger } = rootRequire(
   path.join(backendRoot, "src", "modules", "batch-inventory", "migrations", "Migration20261026000006_CreateInventoryLedger.ts")
 );
+const { Migration20261027000007_CreateOrderBatchAllocation } = rootRequire(
+  path.join(backendRoot, "src", "modules", "batch-inventory", "migrations", "Migration20261027000007_CreateOrderBatchAllocation.ts")
+);
 
 const logLines = [];
 const errLines = [];
@@ -198,6 +201,26 @@ async function run() {
     assert("inventory_ddl_up_links_reservations_to_batches", 1, cbrForeignKeyUp.rowCount, cbrForeignKeyUp.rowCount===1,
       "Reservation batch foreign key exists after UP")
 
+    const allocationMigration = new Migration20261027000007_CreateOrderBatchAllocation(mockDriver, mockEm);
+    const allocationUp = await executeMigrationQueries(testClient, allocationMigration, "up");
+    const allocationColumns = await testClient.query(`SELECT column_name FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='order_batch_allocation'`);
+    const allocationIndexes = await testClient.query(`SELECT indexname FROM pg_indexes
+      WHERE schemaname='public' AND tablename='order_batch_allocation'`);
+    const allocationBatchForeignKey = await testClient.query(`SELECT conname FROM pg_constraint
+      WHERE conrelid='order_batch_allocation'::regclass AND confrelid='inventory_batch'::regclass`);
+    assert("allocation_ddl_up_creates_snapshot_columns", 10, allocationColumns.rowCount, allocationColumns.rowCount===10,
+      "Migration 7 creates order/version/line/key/batch/quantity/price/status/time allocation fields")
+    assert("allocation_ddl_up_creates_lookup_indexes", 5, allocationIndexes.rowCount, allocationIndexes.rowCount===5,
+      "Migration 7 creates primary key and three order/batch lookup indexes")
+    assert("allocation_ddl_up_links_batch", 1, allocationBatchForeignKey.rowCount, allocationBatchForeignKey.rowCount===1,
+      "Allocation rows reference inventory batches")
+    const allocationDown = await executeMigrationQueries(testClient, allocationMigration, "down");
+    const allocationTableDown = await testClient.query(`SELECT 1 FROM information_schema.tables
+      WHERE table_schema='public' AND table_name='order_batch_allocation'`);
+    assert("allocation_ddl_down_drops_owned_table", 0, allocationTableDown.rowCount, allocationTableDown.rowCount===0,
+      "Migration 7 DOWN removes the allocation table and dependent indexes")
+
     const inventoryDown = await executeMigrationQueries(testClient, inventoryMigration, "down");
     const objectsDown = await testClient.query(`SELECT table_name FROM information_schema.tables
       WHERE table_schema='public' AND table_name=ANY($1::text[]) ORDER BY table_name`, [[
@@ -220,6 +243,13 @@ async function run() {
     ]]);
     assert("inventory_ddl_reup_recreates_required_tables", 5, objectsReUp.rowCount, objectsReUp.rowCount===5,
       "Migration 6 can be re-applied after DOWN")
+    const allocationReUp = await executeMigrationQueries(testClient, allocationMigration, "up");
+    const allocationTableReUp = await testClient.query(`SELECT 1 FROM information_schema.tables
+      WHERE table_schema='public' AND table_name='order_batch_allocation'`);
+    assert("allocation_ddl_reup_recreates_table", 1, allocationTableReUp.rowCount, allocationTableReUp.rowCount===1,
+      "Migration 7 can be re-applied after DOWN and inventory schema recreation")
+    const allocationFinalDown = await executeMigrationQueries(testClient, allocationMigration, "down");
+    const inventoryFinalDown = await executeMigrationQueries(testClient, inventoryMigration, "down");
     log(`Migration 6 inventory UP/DOWN/UP lifecycle executed (${inventoryUp.length}/${inventoryDown.length}/${inventoryReUp.length} statements).`)
 
     // ------------------------------------------------------------------------

@@ -3,8 +3,8 @@ param(
   [string]$RedisBin,
   [switch]$SkipInstall,
   [switch]$Targeted,
-  [ValidateSet('TP-02a','TP-02b','TP-02c','TP-03','TP-04a','TP-04b','TP-06a','TP-06b','TP-07a','TP-21c','TP-24c')]
-  [string[]]$Cases = @('TP-02a','TP-02b','TP-02c','TP-03','TP-04a','TP-04b','TP-06a','TP-06b','TP-07a','TP-21c','TP-24c')
+  [ValidateSet('TP-02a','TP-02b','TP-02c','TP-03','TP-04a','TP-04b','TP-06a','TP-06b','TP-07a','TP-07b','TP-09','TP-10','TP-21c','TP-24c')]
+  [string[]]$Cases = @('TP-02a','TP-02b','TP-02c','TP-03','TP-04a','TP-04b','TP-06a','TP-06b','TP-07a','TP-07b','TP-09','TP-10','TP-21c','TP-24c')
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path

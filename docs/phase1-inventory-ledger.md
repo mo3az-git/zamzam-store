@@ -1,6 +1,6 @@
 # Phase 1 inventory ledger implementation
 
-This branch adds a PostgreSQL-backed inventory ledger and pre-order batch reservation primitive for TP-06a and TP-06b, plus the directly dependent expired-reservation release boundary for TP-07a and the ledger protection check for TP-24c. The canonical 59-case registry and all status markers remain unchanged. These runner results are component evidence awaiting independent review; none of the cases is formally accepted.
+This branch adds a PostgreSQL-backed inventory ledger and pre-order batch reservation primitive for TP-06a and TP-06b, the expired-reservation release boundary for TP-07a, the ledger protection check for TP-24c, and the order-correlated conversion boundary for TP-07b, TP-09 and TP-10. The canonical 59-case registry and all status markers remain unchanged. Runner results are component evidence awaiting independent review; none of the cases is formally accepted.
 
 ## Data and transaction rules
 
@@ -10,7 +10,7 @@ Migration `Migration20261026000006_CreateInventoryLedger` creates supplier, inve
 
 Movement deduplication hashes the version, type, batch, reference type and reference ID; for reservations the reference ID is the persisted reservation ID. Exact retries verify the existing reservation and movement and perform no writes. Reusing an identity with changed quantity returns a conflict. Missing or contradictory balance/ledger state is reported as divergence. A test hook pauses or fails after the real PostgreSQL balance update, inside the transaction, so the test observes rollback of that update and the reservation insert.
 
-`cleanupExpired` shares the pre-order authority and batch-first child-row locking rule. It writes one release movement and expires the reservation atomically. Exact expiry replay is read-only. Converted reservations are skipped. The method refuses attempts outside the pre-order state; it does not make decisions about an order with unresolved correlation.
+`cleanupExpired` shares the pre-order authority and batch-first child-row locking rule. It writes one release movement and expires the reservation atomically. Exact expiry replay is read-only. Order-correlated cleanup takes the order advisory root before checkout and inventory rows; pending conversion is fenced and already-converted rows are skipped. See [the conversion integration contract](phase1-inventory-conversion.md).
 
 ## Test boundary
 
@@ -26,10 +26,10 @@ Run one case from the repository root with:
 ./scripts/run-local-spike.ps1 -PostgresBin ./artifacts/tools/postgresql-runtime/pgsql/bin -SkipInstall -Targeted -Cases TP-06a
 ```
 
-Use `TP-06b`, `TP-07a`, or `TP-24c` for the other isolated cases. The default local run includes all existing runners and these four inventory cases. `-SkipInstall` is recorded and means strict `npm ci` was not repeated in that run.
+Use `TP-06b`, `TP-07a`, `TP-07b`, `TP-09`, `TP-10`, or `TP-24c` for the other isolated cases. The default local run includes all existing runners and these seven inventory cases. `-SkipInstall` is recorded and means strict `npm ci` was not repeated in that run.
 
 ## Integration contract and limits
 
-The inventory primitive accepts `{ cartId, attemptId, epoch, ownerId }`. Checkout remains responsible for acquiring/renewing the idempotency lease and Redis cart lock, creating the authoritative session/attempt, and passing the current owner token. The inventory layer checks those authorities but does not create or take over checkout leases, renew a lock, create an order, select a payment provider, convert reservations to allocations, reconcile uncertain orders, or trigger cleanup on a schedule. Order-scoped conversion must use its own order-rooted lock protocol and the validated reservation ID set before changing a reservation to `converted`.
+The reservation primitive accepts `{ cartId, attemptId, epoch, ownerId }`. The conversion primitive accepts those authority fields plus an already-bound `orderId` and complete `validatedReservationIds`. Checkout remains responsible for acquiring/renewing the idempotency lease and Redis cart lock, creating the authoritative session/attempt, binding the order, and passing the current owner token. The inventory layer does not create or take over checkout leases, renew a lock, create/discover an order, select a payment provider, or reconcile uncertain orders. See [the conversion integration contract](phase1-inventory-conversion.md).
 
 The existing `phase-1/idempotency-spike` lease helper remains a separate checkout concern. Its caller may pass the acquired `lease_owner_id` through this inventory contract after verifying cart/attempt authority; it must not treat lease acquisition alone as permission to create an order. TP-01 remains unauthorized and unexecuted. All four inventory cases still require independent review before formal acceptance, and the Phase 1 gate remains NOT READY.

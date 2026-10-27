@@ -8,7 +8,7 @@ import {
 } from "./shared/tp-harness.mjs"
 
 const tpId = process.argv[2]
-if (!["TP-06a", "TP-06b", "TP-07a", "TP-24c"].includes(tpId)) throw new Error("Unsupported inventory TP: " + tpId)
+if (!["TP-06a", "TP-06b", "TP-07a", "TP-07b", "TP-09", "TP-10", "TP-24c"].includes(tpId)) throw new Error("Unsupported inventory TP: " + tpId)
 if (process.env.PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP !== "true") throw new Error("Disposable database create/drop opt-in is required")
 const rootRequire = registerTsNode()
 const { Modules, ContainerRegistrationKeys } = await import("@medusajs/framework/utils")
@@ -38,11 +38,12 @@ const pgUrlAsRole = (base, user, password) => { const url = new URL(base); url.u
 const snapshotTables = async (pg, batchIds = []) => {
   const batches = await pg.query("SELECT * FROM inventory_batch WHERE id=ANY($1::text[]) ORDER BY id", [batchIds])
   const reservations = await pg.query("SELECT * FROM cart_batch_reservation ORDER BY id")
+  const allocations = await pg.query("SELECT * FROM order_batch_allocation ORDER BY id")
   const movements = await pg.query("SELECT * FROM inventory_movement ORDER BY id")
   const attempts = await pg.query("SELECT * FROM cart_checkout_attempt ORDER BY checkout_attempt_id")
   const sessions = await pg.query("SELECT * FROM cart_checkout_session ORDER BY cart_id")
   const leases = await pg.query("SELECT key,status,lease_owner_id,last_heartbeat_at FROM idempotency_key ORDER BY key")
-  return { batches: batches.rows, reservations: reservations.rows, movements: movements.rows, attempts: attempts.rows, sessions: sessions.rows, leases: leases.rows }
+  return { batches: batches.rows, reservations: reservations.rows, allocations: allocations.rows, movements: movements.rows, attempts: attempts.rows, sessions: sessions.rows, leases: leases.rows }
 }
 const expectCode = async (name, expectedCode, run, predicate = () => true) => {
   try { const value = await run(); check(name, expectedCode, { returned: value }, false) }
@@ -158,6 +159,26 @@ try {
     if (redisOwner !== ownerId) throw new Error("Fixture Redis cart lock was not acquired")
     return { cart, lines, authority: { cartId: cart.id, attemptId, epoch: 1, ownerId }, ownerId }
   }
+  const makeNativeOrder = async (fixture, { lineKeys, lineQuantities, omitKey = [], duplicateKey, bindAttempt = true } = {}) => {
+    const orderService = runtime.container.resolve(Modules.ORDER)
+    const linkService = runtime.container.resolve(ContainerRegistrationKeys.LINK)
+    const items = fixture.lines.map((line, index) => {
+      const key = duplicateKey ?? lineKeys?.[index] ?? line.metadata?.checkout_line_key
+      const metadata = { ...(line.metadata || {}) }
+      if (omitKey.includes(index)) delete metadata.checkout_line_key
+      else if (key) metadata.checkout_line_key = key
+      return { title: line.title, variant_id: line.variant_id, quantity: lineQuantities?.[index] ?? Number(line.quantity),
+        unit_price: 1000, metadata }
+    })
+    const order = await orderService.createOrders({ currency_code: "egp", items })
+    await linkService.create({ [Modules.ORDER]: { order_id: order.id }, [Modules.CART]: { cart_id: fixture.cart.id } })
+    if (bindAttempt) await adminPg.query(`UPDATE cart_checkout_attempt SET attempt_status='order_created',order_id=$1,order_correlation_status='correlated',updated_at=NOW()
+      WHERE checkout_attempt_id=$2::uuid AND cart_id=$3`, [order.id, fixture.authority.attemptId, fixture.cart.id])
+    return order
+  }
+  const reservationsFor = async (attemptId) => (await adminPg.query("SELECT * FROM cart_batch_reservation WHERE checkout_attempt_id=$1 ORDER BY id", [attemptId])).rows
+  const conversionInput = (fixture, order, reservationIds) => ({ ...fixture.authority, orderId: order.id, validatedReservationIds: reservationIds })
+  const convert = (fixture, order, ids, hooks) => new InventoryLedger(runtime.container, hooks).convertCartReservationsToAllocations(conversionInput(fixture, order, ids))
   const saveSnapshot = async (batchIds) => snapshotTables(adminPg, batchIds)
 
   if (tpId === "TP-24c") {
@@ -362,6 +383,227 @@ try {
     await expectCode("conflicting_movement_semantics_are_409","INVENTORY_MOVEMENT_INTENT_CONFLICT",()=>new InventoryLedger(runtime.container).cleanupExpired(conflictFixture.authority))
     status="passed"
   }
+
+  if (tpId === "TP-09") {
+    const batch = await makeBatch(30, 90, "conversion-lines")
+    const fixture = await makeCart([{quantity:2},{quantity:3}], "same-variant-distinct-line-keys")
+    await new InventoryLedger(runtime.container).reserveCart(fixture.authority)
+    const reservations = await reservationsFor(fixture.authority.attemptId)
+    const order = await makeNativeOrder(fixture)
+    dbBefore = await saveSnapshot([batch.id])
+    const result = await convert(fixture, order, reservations.map((row)=>row.id))
+    dbAfter = await saveSnapshot([batch.id])
+    const allocations = dbAfter.allocations.filter((row)=>row.order_id===order.id)
+    const orderLines = (await runtime.container.resolve(Modules.ORDER).retrieveOrder(order.id,{relations:["items","items.detail"]})).items
+    check("native_order_fixture_uses_two_distinct_checkout_line_keys",2,{keys:orderLines.map((line)=>line.metadata?.checkout_line_key),quantities:orderLines.map((line)=>line.detail?.quantity)},
+      orderLines.length===2&&new Set(orderLines.map((line)=>line.metadata?.checkout_line_key)).size===2&&new Set(orderLines.map((line)=>Number(line.detail?.quantity))).size===2)
+    check("allocations_deterministically_map_native_order_lines",true,allocations.map((row)=>({key:row.checkout_line_key,line:row.line_item_id,quantity:row.quantity_allocated})),
+      allocations.length===2&&allocations.every((row)=>reservations.some((reservation)=>reservation.checkout_line_key===row.checkout_line_key&&Number(reservation.quantity)===Number(row.quantity_allocated)&&reservation.variant_id===variantId)&&orderLines.some((line)=>line.id===row.line_item_id&&line.metadata.checkout_line_key===row.checkout_line_key)))
+    check("conversion_returns_authoritative_order_version_and_ids",true,{version:result.orderVersion,allocations:result.allocations.map((row)=>row.id),movements:result.movements.map((row)=>row.id),replay:result.replay},
+      result.orderVersion===order.version&&result.allocations.length===2&&result.movements.length===2&&!result.replay)
+    const writeCountsBeforeReplay={allocations:dbAfter.allocations.length,movements:dbAfter.movements.length}
+    const replay=await convert(fixture,order,reservations.map((row)=>row.id))
+    const replaySnapshot=await saveSnapshot([batch.id])
+    check("conversion_replay_is_read_only",writeCountsBeforeReplay,{allocations:replaySnapshot.allocations.length,movements:replaySnapshot.movements.length,replay:replay.replay},
+      replay.replay&&replaySnapshot.allocations.length===writeCountsBeforeReplay.allocations&&replaySnapshot.movements.length===writeCountsBeforeReplay.movements)
+
+    const omitted=await makeCart([{quantity:1}],"missing-order-line-key")
+    await new InventoryLedger(runtime.container).reserveCart(omitted.authority)
+    const omittedReservation=await reservationsFor(omitted.authority.attemptId)
+    const omittedOrder=await makeNativeOrder(omitted,{omitKey:[0]})
+    const beforeMissing=await saveSnapshot([batch.id])
+    await expectCode("missing-order-line-key-is-rejected", "UNMAPPED_OR_AMBIGUOUS_LINE_ITEM",()=>convert(omitted,omittedOrder,omittedReservation.map((row)=>row.id)))
+    const afterMissing=await saveSnapshot([batch.id])
+    check("missing-key-failure-has-no-conversion-writes",true,{allocations:afterMissing.allocations.length-beforeMissing.allocations.length,
+      movements:afterMissing.movements.length-beforeMissing.movements.length},afterMissing.allocations.length===beforeMissing.allocations.length&&afterMissing.movements.length===beforeMissing.movements.length)
+
+    const duplicate=await makeCart([{quantity:1},{quantity:1}],"duplicate-order-line-key")
+    await new InventoryLedger(runtime.container).reserveCart(duplicate.authority)
+    const duplicateReservations=await reservationsFor(duplicate.authority.attemptId)
+    const duplicateOrder=await makeNativeOrder(duplicate,{duplicateKey:duplicate.lines[0].metadata.checkout_line_key})
+    await expectCode("duplicate-order-line-key-is-ambiguous", "AMBIGUOUS_LINE_MAPPING",()=>convert(duplicate,duplicateOrder,duplicateReservations.map((row)=>row.id)))
+
+    const partial=await makeCart([{quantity:1},{quantity:1}],"partial-validated-set")
+    await new InventoryLedger(runtime.container).reserveCart(partial.authority)
+    const partialRows=await reservationsFor(partial.authority.attemptId), partialOrder=await makeNativeOrder(partial)
+    await expectCode("partial-reservation-id-set-is-rejected", "INCOMPLETE_VALIDATED_RESERVATION_SET",()=>convert(partial,partialOrder,[partialRows[0].id]))
+    await expectCode("unknown-reservation-id-is-rejected", "INCOMPLETE_VALIDATED_RESERVATION_SET",()=>convert(partial,partialOrder,[...partialRows.map((row)=>row.id),"cbr_00000000-0000-4000-8000-000000000000"]))
+
+    const released=await makeCart([{quantity:1}],"released-reservation")
+    await new InventoryLedger(runtime.container).reserveCart(released.authority)
+    const releasedRows=await reservationsFor(released.authority.attemptId), releasedOrder=await makeNativeOrder(released)
+    await adminPg.query("UPDATE cart_batch_reservation SET status='released' WHERE id=$1",[releasedRows[0].id])
+    const beforeReleased=await saveSnapshot([batch.id])
+    await expectCode("released-reservation-is-rejected", "RESERVATION_NOT_ACTIVE",()=>convert(released,releasedOrder,releasedRows.map((row)=>row.id)))
+    const afterReleased=await saveSnapshot([batch.id])
+    check("released-reservation-negative-set-does-not-write",true,{allocations:afterReleased.allocations.length-beforeReleased.allocations.length,
+      conversionMovements:afterReleased.movements.filter((row)=>row.reference_id===releasedOrder.id&&row.movement_type==="allocation_conversion").length},
+      afterReleased.allocations.length===beforeReleased.allocations.length&&!afterReleased.movements.some((row)=>row.reference_id===releasedOrder.id&&row.movement_type==="allocation_conversion"))
+    status="passed"
+  }
+
+  if (tpId === "TP-10") {
+    const firstBatch=await makeBatch(3,31,"split-a"), secondBatch=await makeBatch(5,50,"split-b")
+    const fixture=await makeCart([{quantity:5}],"single-line-split-across-two-lots")
+    await new InventoryLedger(runtime.container).reserveCart(fixture.authority)
+    const reservations=await reservationsFor(fixture.authority.attemptId), order=await makeNativeOrder(fixture)
+    dbBefore=await saveSnapshot([firstBatch.id,secondBatch.id])
+    const result=await convert(fixture,order,reservations.map((row)=>row.id))
+    dbAfter=await saveSnapshot([firstBatch.id,secondBatch.id])
+    const allocations=dbAfter.allocations.filter((row)=>row.order_id===order.id)
+    const movements=dbAfter.movements.filter((row)=>row.reference_id===order.id&&row.movement_type==="allocation_conversion")
+    check("one_native_order_line_is_split_three_plus_two",true,allocations.map((row)=>({line:row.line_item_id,batch:row.batch_id,quantity:row.quantity_allocated})),
+      allocations.length===2&&new Set(allocations.map((row)=>row.line_item_id)).size===1&&JSON.stringify(allocations.map((row)=>Number(row.quantity_allocated)).sort())==="[2,3]"&&
+      allocations.every((row)=>row.line_item_id===result.allocations[0].line_item_id)&&new Set(allocations.map((row)=>row.batch_id)).size===2)
+    check("split_allocations_sum_to_native_order_quantity",5,allocations.reduce((sum,row)=>sum+Number(row.quantity_allocated),0),allocations.reduce((sum,row)=>sum+Number(row.quantity_allocated),0)===5)
+    check("two_canonical_zero_delta_conversion_movements",2,movements.map((row)=>({key:row.deduplication_key,batch:row.batch_id,reserved:[row.quantity_reserved_before,row.quantity_reserved_after]})),
+      movements.length===2&&movements.every((row)=>row.quantity_on_hand_delta===0&&row.quantity_reserved_delta===0&&row.quantity_quarantined_delta===0&&
+        row.quantity_on_hand_before===row.quantity_on_hand_after&&row.quantity_reserved_before===row.quantity_reserved_after&&row.quantity_quarantined_before===row.quantity_quarantined_after&&
+        row.deduplication_key===movementDedupKey("allocation_conversion",row.batch_id,"order_allocation",order.id,reservations.find((r)=>r.batch_id===row.batch_id).checkout_line_key)))
+    const beforeReplay={allocationCount:dbAfter.allocations.length,movementCount:dbAfter.movements.length}
+    const replay=await convert(fixture,order,reservations.map((row)=>row.id)), afterReplay=await saveSnapshot([firstBatch.id,secondBatch.id])
+    check("split_conversion_exact_replay_has_no_new_rows",beforeReplay,{allocations:afterReplay.allocations.length,movements:afterReplay.movements.length,replay:replay.replay},
+      replay.replay&&afterReplay.allocations.length===beforeReplay.allocationCount&&afterReplay.movements.length===beforeReplay.movementCount)
+
+    const rollbackA=await makeBatch(1,32,"rollback-a"),rollbackB=await makeBatch(3,51,"rollback-b")
+    const rollbackFixture=await makeCart([{quantity:4}],"rollback-second-allocation")
+    await new InventoryLedger(runtime.container).reserveCart(rollbackFixture.authority)
+    const rollbackReservations=await reservationsFor(rollbackFixture.authority.attemptId),rollbackOrder=await makeNativeOrder(rollbackFixture)
+    const beforeFault=await saveSnapshot([rollbackA.id,rollbackB.id])
+    let faultHit=false
+    const failing=new InventoryLedger(runtime.container,{afterConversionAllocation(_row,index){if(index===2){faultHit=true;throw Object.assign(new Error("injected second allocation failure"),{code:"TP10_SECOND_ALLOCATION_FAILURE"})}}})
+    await expectCode("second-allocation-failure-is-injected","TP10_SECOND_ALLOCATION_FAILURE",()=>failing.convertCartReservationsToAllocations(conversionInput(rollbackFixture,rollbackOrder,rollbackReservations.map((row)=>row.id))))
+    const afterFault=await saveSnapshot([rollbackA.id,rollbackB.id])
+    check("second-allocation-failure-rolls-back-whole-conversion",true,{faultHit,unchanged:JSON.stringify(beforeFault)===JSON.stringify(afterFault),
+      reservations:afterFault.reservations.filter((row)=>row.checkout_attempt_id===rollbackFixture.authority.attemptId).map((row)=>row.status)},
+      faultHit&&JSON.stringify(beforeFault)===JSON.stringify(afterFault)&&rollbackReservations.every((row)=>afterFault.reservations.find((r)=>r.id===row.id).status==="active"))
+    status="passed"
+  }
+
+  if (tpId === "TP-07b") {
+    const batch=await makeBatch(40,90,"cleanup-conversion-overlap")
+    const beforeConversion=await makeCart([{quantity:3}],"cleanup-starts-first")
+    await new InventoryLedger(runtime.container).reserveCart(beforeConversion.authority)
+    const beforeRows=await reservationsFor(beforeConversion.authority.attemptId), beforeOrder=await makeNativeOrder(beforeConversion)
+    const blockerClient=createPgClient(isolatedUrl); await blockerClient.connect()
+    const holderPid=(await blockerClient.query("SELECT pg_backend_pid() AS pid")).rows[0].pid
+    await blockerClient.query("BEGIN")
+    await blockerClient.query("SELECT cart_id FROM cart_checkout_session WHERE cart_id=$1 FOR UPDATE",[beforeConversion.cart.id])
+    const cleanupEvents=[],conversionEvents=[]
+    const cleanupPromise=new InventoryLedger(runtime.container,{event:(name,data)=>cleanupEvents.push({name,...data})}).cleanupExpired(beforeConversion.authority).then(()=>null,(error)=>error)
+    await waitUntil(()=>cleanupEvents.some((event)=>event.name==="transaction_started"),"cleanup-first transaction")
+    const cleanupPid=cleanupEvents.find((event)=>event.name==="transaction_started").pid
+    let cleanupBlockers=[]
+    await waitUntil(async()=>{cleanupBlockers=(await adminPg.query("SELECT pg_blocking_pids($1::int) AS blockers",[cleanupPid])).rows[0].blockers;return cleanupBlockers.includes(holderPid)},"cleanup blocked on checkout session")
+    const beforeConversionPromise=new InventoryLedger(runtime.container,{event:(name,data)=>conversionEvents.push({name,...data})})
+      .convertCartReservationsToAllocations(conversionInput(beforeConversion,beforeOrder,beforeRows.map((row)=>row.id)))
+    await waitUntil(()=>conversionEvents.some((event)=>event.name==="transaction_started"),"conversion-first transaction")
+    const conversionPid=conversionEvents.find((event)=>event.name==="transaction_started").pid
+    let conversionBlockers=[]
+    await waitUntil(async()=>{conversionBlockers=(await adminPg.query("SELECT pg_blocking_pids($1::int) AS blockers",[conversionPid])).rows[0].blockers;return conversionBlockers.includes(cleanupPid)},"conversion blocked on cleanup order root")
+    events.push({event:"cleanup_started_before_order_conversion",holderPid,cleanupPid,conversionPid,cleanupBlockers,conversionBlockers,at:new Date().toISOString()})
+    await blockerClient.query("COMMIT"); await blockerClient.end()
+    const cleanFirstError=await cleanupPromise
+    const firstConversion=await beforeConversionPromise
+    check("cleanup-first-on-correlated-attempt-stops-without-release","ORDER_CONVERSION_PENDING",cleanFirstError?.message,Boolean(cleanFirstError?.message?.includes("ORDER_CONVERSION_PENDING")))
+    check("cleanup-first-race-converts-only-after-root-lock",true,{converted:firstConversion.allocations.length,cleanupBlockers,conversionBlockers},
+      firstConversion.allocations.length===1&&cleanupBlockers.includes(holderPid)&&conversionBlockers.includes(cleanupPid))
+    const afterBefore=await saveSnapshot([batch.id])
+    check("cleanup-first-race-never-releases-converted-stock",0,afterBefore.movements.filter((row)=>row.reference_id===beforeRows[0].id&&row.movement_type==="reservation_release").length&&
+      afterBefore.reservations.find((row)=>row.id===beforeRows[0].id).status==="converted"?0:1,
+      !afterBefore.movements.some((row)=>row.reference_id===beforeRows[0].id&&row.movement_type==="reservation_release")&&afterBefore.reservations.find((row)=>row.id===beforeRows[0].id).status==="converted")
+
+    const conversionFirst=await makeCart([{quantity:2}],"conversion-starts-first")
+    await new InventoryLedger(runtime.container).reserveCart(conversionFirst.authority)
+    const conversionFirstRows=await reservationsFor(conversionFirst.authority.attemptId),conversionFirstOrder=await makeNativeOrder(conversionFirst)
+    let continueConversion,conversionAtReservations
+    const conversionGate=new Promise((resolve)=>{continueConversion=resolve}), conversionEntered=new Promise((resolve)=>{conversionAtReservations=resolve})
+    const firstEvents=[],cleanupAfterEvents=[]
+    const firstConversionPromise=new InventoryLedger(runtime.container,{event:async(name,data)=>{firstEvents.push({name,...data});if(name==="conversion_reservations_locked"){conversionAtReservations();await conversionGate}}})
+      .convertCartReservationsToAllocations(conversionInput(conversionFirst,conversionFirstOrder,conversionFirstRows.map((row)=>row.id)))
+    await conversionEntered
+    const cleanupAfterPromise=new InventoryLedger(runtime.container,{event:(name,data)=>cleanupAfterEvents.push({name,...data})}).cleanupExpired(conversionFirst.authority)
+    await waitUntil(()=>cleanupAfterEvents.some((event)=>event.name==="transaction_started"),"cleanup waiting behind conversion")
+    const cleanupAfterPid=cleanupAfterEvents.find((event)=>event.name==="transaction_started").pid
+    const firstConversionPid=firstEvents.find((event)=>event.name==="transaction_started").pid
+    let cleanupAfterBlockers=[]
+    await waitUntil(async()=>{cleanupAfterBlockers=(await adminPg.query("SELECT pg_blocking_pids($1::int) AS blockers",[cleanupAfterPid])).rows[0].blockers;return cleanupAfterBlockers.includes(firstConversionPid)},"cleanup blocked on order advisory root")
+    events.push({event:"conversion_started_before_cleanup",conversionPid:firstConversionPid,cleanupPid:cleanupAfterPid,blockingPids:cleanupAfterBlockers,at:new Date().toISOString()})
+    continueConversion()
+    const conversionFirstResult=await firstConversionPromise
+    const cleanupAfterError=await cleanupAfterPromise.then(()=>null,(error)=>error)
+    check("conversion-first-cleanup-takes-order-root-before-session",true,firstEvents.map((event)=>event.name),
+      firstEvents.indexOf(firstEvents.find((event)=>event.name==="order_advisory_lock_acquired"))<firstEvents.indexOf(firstEvents.find((event)=>event.name==="conversion_session_locked"))&&cleanupAfterBlockers.includes(firstConversionPid))
+    check("converted-reservation-cleanup-is-safe-no-op","[]",cleanupAfterError?.message??[],!cleanupAfterError&&cleanupAfterEvents.some((event)=>event.name==="cleanup_skipped_converted_reservations"))
+    const afterConvertedCleanup=await saveSnapshot([batch.id])
+    check("cleanup-after-conversion-preserves-all-converted-stock",true,{status:afterConvertedCleanup.reservations.find((row)=>row.id===conversionFirstRows[0].id).status,
+      releaseMoves:afterConvertedCleanup.movements.filter((row)=>row.reference_id===conversionFirstRows[0].id&&row.movement_type==="reservation_release").length},
+      conversionFirstResult.allocations.length===1&&afterConvertedCleanup.reservations.find((row)=>row.id===conversionFirstRows[0].id).status==="converted"&&
+      !afterConvertedCleanup.movements.some((row)=>row.reference_id===conversionFirstRows[0].id&&row.movement_type==="reservation_release"))
+
+    const stale=await makeCart([{quantity:1}],"stale-conversion-epoch")
+    await new InventoryLedger(runtime.container).reserveCart(stale.authority)
+    const staleRows=await reservationsFor(stale.authority.attemptId),staleOrder=await makeNativeOrder(stale)
+    const beforeStale=await saveSnapshot([batch.id])
+    await expectCode("stale-epoch-is-rejected-before-conversion-writes","STALE_CHECKOUT_EPOCH",()=>new InventoryLedger(runtime.container).convertCartReservationsToAllocations({...conversionInput(stale,staleOrder,staleRows.map((row)=>row.id)),epoch:2}))
+    const afterStale=await saveSnapshot([batch.id])
+    check("stale-epoch-case-leaves-conversion-state-unchanged",true,{allocations:afterStale.allocations.length-beforeStale.allocations.length,
+      reservations:afterStale.reservations.filter((row)=>row.checkout_attempt_id===stale.authority.attemptId).map((row)=>row.status)},
+      afterStale.allocations.length===beforeStale.allocations.length&&staleRows.every((row)=>afterStale.reservations.find((r)=>r.id===row.id).status==="active"))
+
+    const expired=await makeCart([{quantity:1}],"expired-conversion-candidate")
+    await new InventoryLedger(runtime.container).reserveCart(expired.authority)
+    const expiredRows=await reservationsFor(expired.authority.attemptId),expiredOrder=await makeNativeOrder(expired)
+    await adminPg.query("UPDATE cart_batch_reservation SET expires_at=NOW()-INTERVAL '1 second' WHERE id=ANY($1::text[])",[expiredRows.map((row)=>row.id)])
+    const beforeExpired=await saveSnapshot([batch.id])
+    await expectCode("expired-reservation-cannot-be-converted","RESERVATION_EXPIRED",()=>convert(expired,expiredOrder,expiredRows.map((row)=>row.id)))
+    const afterExpired=await saveSnapshot([batch.id])
+    check("expired-conversion-candidate-rolls-back-with-no-release-or-allocation",true,{allocations:afterExpired.allocations.length-beforeExpired.allocations.length,
+      reservationStatus:afterExpired.reservations.find((row)=>row.id===expiredRows[0].id).status},
+      afterExpired.allocations.length===beforeExpired.allocations.length&&afterExpired.reservations.find((row)=>row.id===expiredRows[0].id).status==="active"&&
+      !afterExpired.movements.some((row)=>row.reference_id===expiredRows[0].id&&row.movement_type==="reservation_release"))
+
+    const unresolved=await makeCart([{quantity:1}],"unknown-native-order-outcome")
+    await new InventoryLedger(runtime.container).reserveCart(unresolved.authority)
+    const unresolvedRows=await reservationsFor(unresolved.authority.attemptId),unresolvedOrder=await makeNativeOrder(unresolved,{bindAttempt:false})
+    await adminPg.query(`UPDATE cart_checkout_attempt SET attempt_status='order_creation_started',order_correlation_status='pending_correlation'
+      WHERE checkout_attempt_id=$1::uuid`,[unresolved.authority.attemptId])
+    const beforeUnresolved=await saveSnapshot([batch.id])
+    await expectCode("uncertain-order-correlation-fences-conversion","ORDER_NOT_AUTHORITATIVELY_BOUND",()=>convert(unresolved,unresolvedOrder,unresolvedRows.map((row)=>row.id)))
+    await expectCode("uncertain-order-correlation-fences-expiry-cleanup","ORDER_CORRELATION_UNRESOLVED",()=>new InventoryLedger(runtime.container).cleanupExpired(unresolved.authority))
+    const afterUnresolved=await saveSnapshot([batch.id])
+    check("uncertain-order-outcome-retains-reservation-fence",true,{orderLinkExists:true,status:afterUnresolved.reservations.find((row)=>row.id===unresolvedRows[0].id).status,
+      allocationDelta:afterUnresolved.allocations.length-beforeUnresolved.allocations.length,
+      releaseMovement:afterUnresolved.movements.some((row)=>row.reference_id===unresolvedRows[0].id&&row.movement_type==="reservation_release")},
+      afterUnresolved.reservations.find((row)=>row.id===unresolvedRows[0].id).status==="active"&&afterUnresolved.allocations.length===beforeUnresolved.allocations.length&&
+      !afterUnresolved.movements.some((row)=>row.reference_id===unresolvedRows[0].id&&row.movement_type==="reservation_release"))
+
+    const race=await makeCart([{quantity:2}],"same-order-two-converters")
+    await new InventoryLedger(runtime.container).reserveCart(race.authority)
+    const raceRows=await reservationsFor(race.authority.attemptId),raceOrder=await makeNativeOrder(race)
+    let releaseFirst,firstAtLocks
+    const firstGate=new Promise((resolve)=>{releaseFirst=resolve}),firstEntered=new Promise((resolve)=>{firstAtLocks=resolve})
+    const leftEvents=[],rightEvents=[]
+    const left=new InventoryLedger(runtime.container,{event:async(name,data)=>{leftEvents.push({name,...data});if(name==="conversion_reservations_locked"){firstAtLocks();await firstGate}}})
+      .convertCartReservationsToAllocations(conversionInput(race,raceOrder,raceRows.map((row)=>row.id)))
+    await firstEntered
+    const right=new InventoryLedger(runtime.container,{event:(name,data)=>rightEvents.push({name,...data})})
+      .convertCartReservationsToAllocations(conversionInput(race,raceOrder,raceRows.map((row)=>row.id)))
+    await waitUntil(()=>rightEvents.some((event)=>event.name==="transaction_started"),"second conversion transaction")
+    const leftPid=leftEvents.find((event)=>event.name==="transaction_started").pid,rightPid=rightEvents.find((event)=>event.name==="transaction_started").pid
+    let raceBlockers=[]
+    await waitUntil(async()=>{raceBlockers=(await adminPg.query("SELECT pg_blocking_pids($1::int) AS blockers",[rightPid])).rows[0].blockers;return raceBlockers.includes(leftPid)},"order-root conversion serialization")
+    events.push({event:"two_conversions_same_order",leftPid,rightPid,blockingPids:raceBlockers,at:new Date().toISOString()})
+    releaseFirst()
+    const [leftResult,rightResult]=await Promise.all([left,right])
+    const raceSnapshot=await saveSnapshot([batch.id])
+    check("same-order-converters-serialize-on-real-order-root",true,{leftReplay:leftResult.replay,rightReplay:rightResult.replay,blockerPids:raceBlockers},
+      leftPid!==rightPid&&raceBlockers.includes(leftPid)&&leftResult.replay!==rightResult.replay)
+    check("same-batch-conversion-contention-produces-one-committed-set",true,{allocationRows:raceSnapshot.allocations.filter((row)=>row.order_id===raceOrder.id).length,
+      movementRows:raceSnapshot.movements.filter((row)=>row.reference_id===raceOrder.id&&row.movement_type==="allocation_conversion").length},
+      raceSnapshot.allocations.filter((row)=>row.order_id===raceOrder.id).length===1&&raceSnapshot.movements.filter((row)=>row.reference_id===raceOrder.id&&row.movement_type==="allocation_conversion").length===1)
+    status="passed"
+  }
 } catch (error) {
   blocker = error.stack || String(error)
   console.error(blocker)
@@ -400,10 +642,10 @@ await import("node:fs/promises").then(({ mkdir, writeFile }) => mkdir(evidenceDi
   writeFile(path.join(evidenceDir,"inventory-cleanup.json"),JSON.stringify({resources,cleanupResult,cleanupErrors},null,2)+"\n"),
 ])))
 console.log(`${tpId} Assertion Summary: ${assertions.filter((x)=>x.passed).length}/${assertions.length} passed.`)
-await writeTpEvidence({ evidenceDir, tpId, title: "Batch inventory ledger and reservation invariants", batch: "C", status, startedAt,
+await writeTpEvidence({ evidenceDir, tpId, title: ["TP-07b","TP-09","TP-10"].includes(tpId)?"Order-correlated batch inventory conversion":"Batch inventory ledger and reservation invariants", batch: "C", status, startedAt,
   ...metadata, blocker, exitCode: status==="passed"?0:1, assertions, dbBefore, dbAfter,
   containerDetails: { medusaRuntime: true, isolatedDatabase: dbName, runtimeUser: tpId==="TP-24c"?"medusa_app":"migration owner", disposableServices: targetDetails },
   testCommand: `node apps/backend/scripts/test-inventory-ledger.mjs ${tpId}`,
-  assessmentType: tpId==="TP-24c"?"real PostgreSQL privilege and immutability-trigger enforcement; no production role changes": "real Medusa modules and PostgreSQL transaction behavior; pre-order inventory scope only",
+  assessmentType: tpId==="TP-24c"?"real PostgreSQL privilege and immutability-trigger enforcement; no production role changes": ["TP-07b","TP-09","TP-10"].includes(tpId)?"authoritatively-correlated native Medusa order, real PostgreSQL conversion and concurrency behavior": "real Medusa modules and PostgreSQL transaction behavior; pre-order inventory scope only",
 })
 process.exit(status==="passed"?0:1)

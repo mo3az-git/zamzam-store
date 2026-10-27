@@ -20,6 +20,9 @@ const runnableBoundaries = {
   "TP-06a": "Real Medusa cart and product modules reserve multi-line quantities against PostgreSQL batch rows using Cairo-date FEFO and append-only movement snapshots; TP-01 remains unexecuted.",
   "TP-06b": "Real PostgreSQL runner covers replay, intent conflict, divergence, injected transaction rollback, and backend-observed batch contention; it does not implement order conversion.",
   "TP-07a": "Real PostgreSQL runner covers expired reservation release, immutable movement consistency, retry, and concurrent cleanup; order-aware recovery remains outside this boundary.",
+  "TP-07b": "Real PostgreSQL two-transaction schedules prove order-root lock ordering across cleanup and conversion; converted reservations are preserved and cleanup only skips them after conversion commits.",
+  "TP-09": "Native order/cart association and order-line metadata map checkout_line_key deterministically; exact reservation-set validation rejects missing, duplicate, released, or ambiguous mappings.",
+  "TP-10": "One checkout line may allocate across multiple FEFO batches; allocations and zero-delta conversion movements are atomic, replay-safe, and rollback together on injected failure.",
   "TP-24c": "Real Medusa app-role privilege denial and separate non-owner trigger rejection run against an isolated PostgreSQL database; no production roles are changed.",
   "TP-21c": "Real Medusa system_security refund fingerprint/hash/encryption component and real-service harness exist; refund persistence and payout behavior remain absent.",
 };

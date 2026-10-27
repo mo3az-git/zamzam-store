@@ -260,6 +260,36 @@ jobs:
           set -o pipefail
           node scripts/run-tp-with-evidence.mjs TP-07a 2>&1 | tee artifacts/tp-07a-inventory-cleanup.log
 
+      - name: Run TP-07b order-scoped cleanup and conversion interleavings
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+          PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-07b 2>&1 | tee artifacts/tp-07b-order-cleanup-conversion.log
+
+      - name: Run TP-09 deterministic checkout line conversion
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+          PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-09 2>&1 | tee artifacts/tp-09-deterministic-conversion.log
+
+      - name: Run TP-10 split batch allocation and rollback
+        if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
+        shell: bash
+        env:
+          PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
+          PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP: "true"
+        run: |
+          set -o pipefail
+          node scripts/run-tp-with-evidence.mjs TP-10 2>&1 | tee artifacts/tp-10-split-batch-conversion.log
+
       - name: Run TP-24c PostgreSQL movement immutability roles
         if: ${{ !cancelled() && steps.migrations.outcome == 'success' }}
         shell: bash
