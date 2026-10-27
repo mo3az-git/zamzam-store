@@ -120,3 +120,12 @@ All listed PRs are open Drafts. Their heads are retained unchanged. GitHub compa
 - Vercel preview status also succeeded. This is preview status only; GitHub Actions is the combined CI evidence.
 - No candidate workflow run or test mutates production orders, captures COD, charges a gateway, configures actual shipping rates, or runs TP-01.
 - Current code remains intentionally blocked at guest cart ownership wiring, authoritative checkout readiness/completion, payment-provider selection, and approved shipping tariffs. PR #37 remains Draft.
+
+## Latest integration result (supersedes earlier C and CI status)
+
+- Selectively integrated C's three-file patch from commit `919adaf3cfed5bcb78e54d30ae1881e9d3902360`: lock provider rejects empty, blank, non-string lock keys before Redis; a unit test asserts Redis is not called; the disposable Redis edge suite asserts no empty/global or undefined fallback key is created. Source branch remains preserved.
+- G added two CI steps for those focused tests. The first candidate run `40577738520` failed because I placed the new edge assertion inside the shared test helper, causing recursive invocation. The placement was corrected; unit test had passed. This was a test-harness defect, not a lock-provider failure.
+- Corrected candidate SHA `de35303a8b25697435e2dbe3c906a5d758ddee8b` passed combined Actions run `40578111428` / job `122449885592` (31 workflow steps successful), including both lock tests, all prior focused/disposable checks, lint, migration, and backend/storefront builds.
+- Latest Vercel result is rate-limited (retry in 24 hours), not a build failure. GitHub Actions is the authoritative candidate CI evidence.
+- PR #37 remains Draft and stacks on the pinned PR #26 branch. The baseline PR #26 is still Draft at the pinned SHA. No source PR was merged or deleted.
+- This is a coordination candidate, not an MVP-ready release. A/B guest ownership and mutation authorization, stable B checkout contract, F quote readiness fix and browser/accessibility validation, D provider/event integration, and owner-approved E tariffs remain queued. No real shipping rate is configured.
