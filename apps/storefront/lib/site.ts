@@ -15,6 +15,17 @@ export function siteUrl(): URL {
       // fall through to the development default
     }
   }
+  // Vercel provides the production domain in every environment, including
+  // previews. Prefer it so preview metadata never points crawlers at localhost.
+  const vercelDomain =
+    process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() || process.env.VERCEL_URL?.trim()
+  if (vercelDomain) {
+    try {
+      return new URL(vercelDomain.includes("://") ? vercelDomain : `https://${vercelDomain}`)
+    } catch {
+      // fall through to the development default
+    }
+  }
   return new URL("http://localhost:8000")
 }
 
@@ -32,3 +43,4 @@ export function localeAlternates(path: string, locale: Locale): Metadata["altern
     },
   }
 }
+
