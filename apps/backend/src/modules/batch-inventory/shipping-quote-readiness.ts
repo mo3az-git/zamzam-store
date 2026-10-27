@@ -67,7 +67,8 @@ export function resolveCheckoutShippingQuoteReadiness(input: Readonly<{
   if (typeof quote.cartCurrencyCode !== "string" || quote.cartCurrencyCode.toLowerCase() !== "egp") {
     return blocked(governorateId, ["CART_CURRENCY_NOT_EGP"])
   }
-  if (!isPositiveDecimal(quote.amount) || !isNonNegativeDecimal(quote.payableTotal)) {
+  if (!isPositiveDecimal(quote.amount) || !isNonNegativeDecimal(quote.payableTotal) ||
+      compareDecimals(quote.payableTotal, quote.amount) < 0) {
     return blocked(governorateId, ["SHIPPING_RATE_UNAVAILABLE"])
   }
 
@@ -92,5 +93,14 @@ function isNonNegativeDecimal(value: unknown): value is string {
 
 function isPositiveDecimal(value: unknown): value is string {
   return isNonNegativeDecimal(value) && /[1-9]/.test(value)
+}
+
+function compareDecimals(left: string, right: string): number {
+  const [leftWhole, leftFraction = ""] = left.split(".")
+  const [rightWhole, rightFraction = ""] = right.split(".")
+  const scale = Math.max(leftFraction.length, rightFraction.length)
+  const leftMinor = BigInt(leftWhole) * (10n ** BigInt(scale)) + BigInt(leftFraction.padEnd(scale, "0") || "0")
+  const rightMinor = BigInt(rightWhole) * (10n ** BigInt(scale)) + BigInt(rightFraction.padEnd(scale, "0") || "0")
+  return leftMinor < rightMinor ? -1 : leftMinor > rightMinor ? 1 : 0
 }
 
