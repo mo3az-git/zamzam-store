@@ -1,0 +1,34 @@
+# Disposable local integration services. This file deliberately uses tmpfs and
+# a project-scoped network; `scripts/run-disposable-integration.ps1` creates and
+# removes only its uniquely named Compose project.
+services:
+  postgres:
+    image: postgres:16.15@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+    restart: "no"
+    environment:
+      POSTGRES_DB: zamzam_spike
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: qa-only-disposable-password
+    ports:
+      - "127.0.0.1:5432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data:rw,size=1g
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d zamzam_spike"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7.2.16@sha256:1009f15ccd9ed271996d1c65745a1ab1dadedea188feb3f1ab938602a32e50a3
+    restart: "no"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    tmpfs:
+      - /data:rw,size=128m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 30
