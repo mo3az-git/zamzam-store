@@ -215,13 +215,13 @@ export function validateCartBffResponse(value: unknown): ContractValidation<Cart
       }
     }
   }
-  if (value.checkout !== null && (!isRecord(value.checkout) || !allowedKeys(value.checkout, ["status", "paymentMethod"]) ||
+  if (value.checkout !== null && (!isRecord(value.checkout) || !allowedKeys(value.checkout, ["status", "paymentMethod", "blockers"]) ||
       !["blocked", "ready_for_review"].includes(String(value.checkout.status)) ||
       !(value.checkout.paymentMethod === "cod" || value.checkout.paymentMethod === "electronic" || value.checkout.paymentMethod === null) ||
       !Array.isArray(value.checkout.blockers) || value.checkout.blockers.some((item) => !isRecord(item) ||
         !allowedKeys(item, ["code", "presentationKey"]) || typeof item.code !== "string" ||
         !value.blockers.includes(item.code) || typeof item.presentationKey !== "string" ||
-        !/^checkout\\.readiness\\.blockers\\.[a-z_]+$/.test(item.presentationKey)))) {
+        !/^checkout\.readiness\.blockers\.[a-z_]+$/.test(item.presentationKey)))) {
     return { valid: false, reason: "invalid_checkout_status" }
   }
   return { valid: true, value: value as unknown as CartBffResponse }
