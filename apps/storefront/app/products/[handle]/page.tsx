@@ -2,7 +2,8 @@ import type { Metadata } from "next"
 import Image from "next/image"
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import { displayPrice, listStoreProducts, storeErrorMessage } from "../../../lib/medusa"
+import { listStoreProducts, storeErrorMessage } from "../../../lib/medusa"
+import { VariantSelector } from "../../../components/variant-selector"
 
 export const dynamic = "force-dynamic"
 
@@ -35,7 +36,6 @@ export default async function ProductPage({ params }: { params: Promise<ProductP
     ...(product.thumbnail ? [product.thumbnail] : []),
     ...(product.images ?? []).map((item) => item.url)
   ].filter((value, index, all) => Boolean(value) && all.indexOf(value) === index)
-  const price = displayPrice(product)
 
   return (
     <main className="shell detail-page" id="main-content">
@@ -51,11 +51,8 @@ export default async function ProductPage({ params }: { params: Promise<ProductP
           <span className="kicker">تفاصيل المنتج</span>
           <h1>{product.title}</h1>
           {product.subtitle ? <p className="detail-subtitle">{product.subtitle}</p> : null}
-          <div className="detail-price">{price ?? "السعر غير متاح حاليًا"}</div>
+          <VariantSelector variants={product.variants ?? []} />
           {product.description ? <div className="detail-description"><h2>الوصف</h2><p>{product.description}</p></div> : null}
-          {(product.variants?.length ?? 0) > 0 ? (
-            <div className="detail-variants"><h2>الخيارات المدرجة</h2><ul>{product.variants!.map((variant) => <li key={variant.id}>{variant.title || "خيار المنتج"}</li>)}</ul></div>
-          ) : null}
           <div className="availability-note">
             <strong>معلومات الطلب</strong>
             <p>تُعرض هنا معلومات الكتالوج فقط. ستتاح إمكانية إضافة المنتج إلى السلة عند اكتمال الربط بالتحقق من المخزون والدفع.</p>
