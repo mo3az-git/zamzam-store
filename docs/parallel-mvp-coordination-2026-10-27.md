@@ -67,3 +67,12 @@ All listed PRs are open Drafts. Their heads are retained unchanged. GitHub compa
 |---|---|---|---|
 | `d5a6bdefb3d0d0a15d6e4f52f86b8369e1e962ea` | Fixed starting point copied from PR #26 | Inherited PR #26 CI evidence to be revalidated after integrated ports | Draft candidate branch created; no PR yet |
 
+
+## Coordination execution log
+
+- Verified PR #26 current HEAD equals fixed baseline `d5a6bdefb3d0d0a15d6e4f52f86b8369e1e962ea`; PR #26 remains open Draft.
+- Created isolated agent refs A-G and candidate branch from the fixed baseline. Candidate working head before this log update: `cfd200591f3a4bdaef69434634aebccff1842fa9`.
+- The desktop host could not create usable specialist worktrees: the attached checkout has invalid/nonwritable Git metadata and remote refs cannot be fetched into it. Agents therefore use exclusive remote branches through GitHub API; no two agents edit a shared branch or path concurrently.
+- Agent B completed a read-only interface review (no changes/tests): authority must be a server-only verified object bound to guest session, persisted cart, current attempt/epoch/lease and active lock; never client JSON. B revalidates on each mutation and before completion. Native snapshot includes order/cart identity, order version, EGP totals, sorted line identity/variant/key/quantity/raw-unit-price; shipping snapshot fields are deferred until E defines persisted quote. Ambiguous correlation remains reconciliation-pending; public payable completion stays disabled.
+- Agents A, C and D are active on isolated branches. Initial reviews/tests are scoped and disposable. Branches A/C/D will not overlap by the exclusive matrix above.
+- PR #19/#29/#30/#31 have successful relevant GitHub Actions evidence on their respective heads. PR #32-#35 have no full integration workflow evidence in the current check-run set (PR #32 body also records unresolved cart-adapter failures). Re-run on candidate after reviewed ports.
