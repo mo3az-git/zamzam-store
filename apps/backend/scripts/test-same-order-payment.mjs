@@ -149,6 +149,8 @@ export async function runSameOrderPaymentScenarios(ctx) {
       () => finalizeCompletedCheckoutPayment(adminPg, container, { ...authority, expectedVersion: 2 }, deps))
     await expectCode("completed_checkout_identity_cannot_be_rewritten_" + method, "COMPLETED_CHECKOUT_IDENTITY_IMMUTABLE",
       () => adminPg.query("UPDATE idempotency_key SET response_body='{}'::jsonb WHERE key=$1", [authority.idempotencyKey]))
+    await expectCode("completed_checkout_identity_cannot_be_deleted_" + method, "COMPLETED_CHECKOUT_IDENTITY_IMMUTABLE",
+      () => adminPg.query("DELETE FROM idempotency_key WHERE key=$1", [authority.idempotencyKey]))
     const finalBranch = await branchState(orderId)
     check("negative_checks_leave_branch_unchanged_" + method, true, finalBranch,
       JSON.stringify(finalBranch) === JSON.stringify(branch))
