@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 45
     services:
       postgres:
-        image: postgres:16
+        image: postgres:16.15@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
         env:
           POSTGRES_DB: zamzam_consolidation
           POSTGRES_USER: postgres
@@ -28,7 +28,7 @@ jobs:
           --health-timeout 5s
           --health-retries 20
       redis:
-        image: redis:7.2
+        image: redis:7.2.16@sha256:1009f15ccd9ed271996d1c65745a1ab1dadedea188feb3f1ab938602a32e50a3
         ports: ["6379:6379"]
         options: >-
           --health-cmd "redis-cli ping"
@@ -53,29 +53,43 @@ jobs:
           cache: npm
       - name: Install pinned dependencies
         run: npm ci --strict-peer-deps --no-audit --no-fund
+      - name: Check disposable service image pins
+        id: service_image_contract
+        run: node scripts/qa/check-disposable-service-images.mjs
       - name: Storefront unit tests (not formal TP)
+        id: storefront_unit
         run: node --experimental-strip-types --test apps/storefront/tests/*.test.mjs
       - name: Read-only native payable quote unit tests (not formal TP)
+        id: payment_quote
         run: node --experimental-strip-types --test apps/backend/scripts/test-mvp-payment-quote.mjs
       - name: Cart mutation boundary regression (not formal TP)
+        id: cart_boundary
         run: node apps/backend/scripts/test-cart-mutation-boundary.mjs
       - name: Guest checkout read-only preflight (not formal TP)
+        id: guest_preflight
         run: node --experimental-strip-types apps/backend/scripts/test-guest-checkout-preflight.mjs
       - name: Cross-layer governorate/Medusa province code contract (not formal TP)
+        id: governorates_unit
         run: node --experimental-strip-types --test apps/storefront/tests/governorate-contract.test.mjs
       - name: Canonical 27-governorate shipping policy checks (not formal TP)
+        id: shipping_policy
         run: node apps/backend/scripts/check-egypt-shipping-configuration.mjs
       - name: Internal batch availability projection tests (not formal TP)
+        id: availability_unit
         run: node --experimental-strip-types --test apps/backend/scripts/test-batch-availability.mjs
       - name: Scoped product visibility authorization tests (not formal TP)
+        id: visibility_unit
         run: node --experimental-strip-types --test apps/backend/scripts/test-store-visibility.mjs
       - name: Lint both workspaces
+        id: lint
         run: npm run lint
       - name: Migrate disposable Medusa database
+        id: migration
         run: npm run db:migrate
         env:
           TS_NODE_PROJECT: ${{ github.workspace }}/apps/backend/tsconfig.json
       - name: Real guest cart ownership integration — isolated approved disposable database (not formal TP)
+        id: guest_ownership_shipping
         env:
           PHASE1_DISPOSABLE_TEST_PROFILE: "ci_ephemeral_service"
           TS_NODE_PROJECT: ${{ github.workspace }}/apps/backend/tsconfig.json
@@ -111,18 +125,22 @@ jobs:
           # Disposable 27-province fulfillment zones, without shipping options or rates.
           node apps/backend/scripts/test-egypt-governorate-shipping-integration.mjs
       - name: Real PostgreSQL FEFO availability integration (not formal TP)
+        id: inventory_postgres
         run: node --experimental-strip-types --test apps/backend/scripts/test-batch-availability-postgres.mjs
         env:
           PHASE3_INVENTORY_DISPOSABLE_TEST: "true"
       - name: Live Medusa Query sales-channel visibility integration (not formal TP)
+        id: visibility_medusa
         run: node apps/backend/scripts/test-store-visibility-medusa.mjs
         env:
           PHASE3_MEDUSA_VISIBILITY_CI: "true"
       - name: Build backend
+        id: backend_build
         run: npm run build:backend
         env:
           NODE_ENV: production
       - name: Build storefront
+        id: storefront_build
         run: npm run build:storefront
       - uses: actions/setup-python@v5
         with:
@@ -130,4 +148,44 @@ jobs:
       - name: Install JSON Schema validator
         run: python -m pip install --disable-pip-version-check jsonschema==4.23.0
       - name: Validate proposed API boundaries
+        id: api_contract
         run: python -m unittest discover -s contracts -p 'test_mvp_interface.py' -v
+      - name: Write integration QA run manifest
+        if: always()
+        env:
+          QA_RUN_ID: ${{ github.run_id }}
+          QA_RUN_ATTEMPT: ${{ github.run_attempt }}
+          QA_WORKFLOW: ${{ github.workflow }}
+          QA_EVENT: ${{ github.event_name }}
+          QA_REF: ${{ github.ref }}
+          QA_SHA: ${{ github.sha }}
+          QA_JOB: integrated
+          QA_RUNNER_OS: ${{ runner.os }}
+          QA_POSTGRES_IMAGE: postgres:16.15@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+          QA_REDIS_IMAGE: redis:7.2.16@sha256:1009f15ccd9ed271996d1c65745a1ab1dadedea188feb3f1ab938602a32e50a3
+          QA_STEP_SERVICE_IMAGES: ${{ steps.service_image_contract.outcome || 'not-run' }}
+          QA_STEP_STOREFRONT_UNIT: ${{ steps.storefront_unit.outcome || 'not-run' }}
+          QA_STEP_PAYMENT_QUOTE: ${{ steps.payment_quote.outcome || 'not-run' }}
+          QA_STEP_CART_BOUNDARY: ${{ steps.cart_boundary.outcome || 'not-run' }}
+          QA_STEP_GUEST_PREFLIGHT: ${{ steps.guest_preflight.outcome || 'not-run' }}
+          QA_STEP_GOVERNORATES_UNIT: ${{ steps.governorates_unit.outcome || 'not-run' }}
+          QA_STEP_SHIPPING_POLICY: ${{ steps.shipping_policy.outcome || 'not-run' }}
+          QA_STEP_AVAILABILITY_UNIT: ${{ steps.availability_unit.outcome || 'not-run' }}
+          QA_STEP_VISIBILITY_UNIT: ${{ steps.visibility_unit.outcome || 'not-run' }}
+          QA_STEP_LINT: ${{ steps.lint.outcome || 'not-run' }}
+          QA_STEP_MIGRATION: ${{ steps.migration.outcome || 'not-run' }}
+          QA_STEP_GUEST_OWNERSHIP_SHIPPING: ${{ steps.guest_ownership_shipping.outcome || 'not-run' }}
+          QA_STEP_INVENTORY_POSTGRES: ${{ steps.inventory_postgres.outcome || 'not-run' }}
+          QA_STEP_VISIBILITY_MEDUSA: ${{ steps.visibility_medusa.outcome || 'not-run' }}
+          QA_STEP_BACKEND_BUILD: ${{ steps.backend_build.outcome || 'not-run' }}
+          QA_STEP_STOREFRONT_BUILD: ${{ steps.storefront_build.outcome || 'not-run' }}
+          QA_STEP_API_CONTRACT: ${{ steps.api_contract.outcome || 'not-run' }}
+        run: node scripts/qa/write-mvp-ci-manifest.mjs
+      - name: Upload integration QA run manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mvp-integration-run-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/qa/mvp-integration-run-*.json
+          retention-days: 14
+          if-no-files-found: warn
