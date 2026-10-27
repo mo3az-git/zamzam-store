@@ -87,23 +87,19 @@ export async function reconcileOrderCreation(db: Sql, authority: Authority, look
     // Rev 18: any operation acting on an existing order takes the order root
     // before checkout session/attempt row locks. The native lookup is outside
     // the transaction; the authority is rechecked under the row locks below.
-    let lockedOrderId: string | null = null
-    if (unique.size === 1) {
-      const [orderId] = unique.keys()
-      lockedOrderId = orderId
-      await tx.raw("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", ["phase0:order:" + orderId])
-    } else {
-      // Do not lock arbitrary candidate order IDs for ambiguous correlation:
-      // fence the attempt and require manual recovery instead.
-      const observed = (await tx.raw(
-        "SELECT order_id FROM cart_checkout_attempt WHERE checkout_attempt_id=?::uuid",
-        [authority.attemptId]
-      )).rows[0]
-      if (observed?.order_id) {
-        lockedOrderId = observed.order_id
-        await tx.raw("SELECT pg_advisory_xact_lock(hashtextextended(?,0))",
-          ["phase0:order:" + observed.order_id])
-      }
+    // Read (without row locking) the previously bound order. A bound order
+    // defines the canonical lock root; untrusted lookup candidates cannot
+    // switch it. For a yet-unbound attempt, the single native candidate
+    // provides the prospective root. Authority is revalidated after locking.
+    const observed = (await tx.raw(
+      "SELECT order_id FROM cart_checkout_attempt WHERE checkout_attempt_id=?::uuid",
+      [authority.attemptId]
+    )).rows[0]
+    const candidateId = unique.size === 1 ? [...unique.keys()][0] : null
+    const lockedOrderId: string | null = observed?.order_id ?? candidateId
+    if (lockedOrderId) {
+      await tx.raw("SELECT pg_advisory_xact_lock(hashtextextended(?,0))",
+        ["phase0:order:" + lockedOrderId])
     }
     const a = await current(tx, authority)
     // Never lock the session/attempt and only then discover a different order
