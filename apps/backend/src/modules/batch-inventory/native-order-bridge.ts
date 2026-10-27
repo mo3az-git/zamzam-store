@@ -16,19 +16,28 @@ import { runOrderCreationWithFence } from "./order-correlation"
 type BackendContainer = Parameters<typeof completeNativeCartForTp08Workflow>[0]
 type CheckoutDb = Parameters<typeof runOrderCreationWithFence>[0]
 type Authority = Parameters<typeof runOrderCreationWithFence>[1]
+export type NativeCompletionHooks = {
+  /** Deterministic disposable-service hook immediately before native invocation. */
+  beforeNativeCompletion?: () => void | Promise<void>
+  /** Deterministic disposable-service fault boundary after the native saga returns. */
+  afterNativeCompletion?: () => void | Promise<void>
+}
 
 export async function completeNativeCartWithFence(
   container: BackendContainer,
   db: CheckoutDb,
-  authority: Authority
+  authority: Authority,
+  hooks: NativeCompletionHooks = {}
 ) {
   return runOrderCreationWithFence(
     db,
     authority,
     async (cartId) => {
+      await hooks.beforeNativeCompletion?.()
       const nativeResult = await completeNativeCartForTp08Workflow(container).run({
         input: { cartId },
       })
+      await hooks.afterNativeCompletion?.()
       // Never trust the returned ID without verifying the native cart-order link.
       const data: unknown = nativeResult.result
       if (!data || typeof data !== "object" || !("id" in data)) {

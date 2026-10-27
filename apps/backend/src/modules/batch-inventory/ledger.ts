@@ -217,9 +217,10 @@ export class InventoryLedger {
     if (owner !== input.ownerId) throw conflict("CART_LOCK_OWNER_MISMATCH")
   }
 
-  private async assertLease(tx: Sql, input: InventoryAuthority, idempotencyKey: string) {
+  private async assertLease(tx: Sql, input: InventoryAuthority, idempotencyKey: string, allowCompletedReplay = false) {
     const result = await tx.raw(`SELECT key FROM idempotency_key WHERE key=? AND lease_owner_id=?
-      AND status='pending' AND deleted_at IS NULL AND last_heartbeat_at>NOW()-INTERVAL '120 seconds'`, [idempotencyKey,input.ownerId])
+      AND deleted_at IS NULL AND ((status='pending' AND last_heartbeat_at>NOW()-INTERVAL '120 seconds')
+        OR (? AND status='completed'))`, [idempotencyKey,input.ownerId,allowCompletedReplay])
     if (result.rowCount !== 1) throw conflict("CHECKOUT_LEASE_NOT_OWNED")
   }
 
@@ -287,8 +288,8 @@ export class InventoryLedger {
         !["in_progress", "completed"].includes(String(session.status))) throw conflict("STALE_CHECKOUT_EPOCH")
       if (!attempt || attempt.cart_id !== input.cartId || Number(attempt.epoch) !== input.epoch || attempt.lease_owner_id !== input.ownerId) throw conflict("CHECKOUT_ATTEMPT_NOT_OWNED")
       if (attempt.order_id !== input.orderId || attempt.order_correlation_status !== "correlated") throw conflict("ORDER_NOT_AUTHORITATIVELY_BOUND")
-      await this.assertLease(tx, input, String(attempt.idempotency_key))
       const replay = session.status === "completed" && attempt.attempt_status === "allocated"
+      await this.assertLease(tx, input, String(attempt.idempotency_key), replay)
       if (!replay && (session.status !== "in_progress" || attempt.attempt_status !== "order_created")) throw conflict("INVALID_CHECKOUT_CONVERSION_STATE")
 
       // Candidate batch IDs and reservation IDs are read without child locks; the session root excludes new reservations.
