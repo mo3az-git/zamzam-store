@@ -50,6 +50,10 @@ export default defineConfig({
       resolve: "./src/modules/system-security"
     },
     {
+      // Durable order/COD/electronic metadata; no provider or payment route activated.
+      resolve: "./src/modules/order-operations"
+    },
+    {
       resolve: "@medusajs/medusa/locking",
       options: {
         providers: [

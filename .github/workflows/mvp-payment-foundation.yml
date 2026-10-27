@@ -1,0 +1,67 @@
+name: MVP Payment Foundation Checks
+
+on:
+  push:
+    branches:
+      - "integration/mvp-payment-foundation-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  foundation:
+    name: Payment schema, read-only quote and backend build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: zamzam_mvp
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: disposable-ci-only-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d zamzam_mvp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7.2
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:disposable-ci-only-password@127.0.0.1:5432/zamzam_mvp
+      REDIS_URL: redis://127.0.0.1:6379
+      LOCKING_REDIS_URL: redis://127.0.0.1:6379
+      STORE_CORS: http://localhost:8000
+      ADMIN_CORS: http://localhost:9000
+      AUTH_CORS: http://localhost:8000,http://localhost:9000
+      JWT_SECRET: local-ci-jwt-secret-only-0123456789abcdef
+      COOKIE_SECRET: local-ci-cookie-secret-only-0123456789abcdef
+      PHASE1_DISABLE_ADMIN: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install pinned dependencies
+        run: npm ci --strict-peer-deps --no-audit --no-fund
+      - name: Focused payment-quote validator tests
+        run: node --experimental-strip-types --test apps/backend/scripts/test-mvp-payment-quote.mjs
+      - name: Backend lint
+        run: npm run lint --workspace @zamzam/backend
+      - name: Migrate disposable database
+        run: npm run db:migrate
+        env:
+          TS_NODE_PROJECT: ${{ github.workspace }}/apps/backend/tsconfig.json
+      - name: Build backend
+        run: npm run build:backend
+        env:
+          NODE_ENV: production
