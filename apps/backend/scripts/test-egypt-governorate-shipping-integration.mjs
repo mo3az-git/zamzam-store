@@ -192,7 +192,8 @@ try {
       currency: afterReadOnlyLookup?.currency_code,
       shippingTotal: afterReadOnlyLookup?.shipping_total ?? null,
       payableTotal: afterReadOnlyLookup?.total ?? null,
-      snapshotUnchanged: JSON.stringify(beforeReadOnlyLookup) === JSON.stringify(afterReadOnlyLookup),\n      protectedCountsUnchanged: JSON.stringify(countsBeforeReadOnlyLookup) === JSON.stringify(countsAfterReadOnlyLookup),
+      snapshotUnchanged: JSON.stringify(beforeReadOnlyLookup) === JSON.stringify(afterReadOnlyLookup),
+  protectedCountsUnchanged: JSON.stringify(countsBeforeReadOnlyLookup) === JSON.stringify(countsAfterReadOnlyLookup),
     })
 
   check("fixture_creates_no_order_payment_or_inventory_reservation",

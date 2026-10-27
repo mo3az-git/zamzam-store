@@ -12,7 +12,8 @@ rootRequire("ts-node").register({
 const {
   EGYPTIAN_GOVERNORATES,
   EGYPT_GOVERNORATE_SHIPPING_CONFIGURATION,
-  getGovernorateShippingBlockers,\n  evaluateGovernorateShippingConfiguration,
+  getGovernorateShippingBlockers,
+  evaluateGovernorateShippingConfiguration,
   resolveEgyptianGovernorateId,
   resolveEgyptianMedusaProvinceCode,
   validateApprovedFlatRate,
