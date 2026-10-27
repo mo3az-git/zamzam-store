@@ -67,6 +67,9 @@ export type CartResult<T> =
  * Always defaults to false.
  */
 export function isCartEnabled(): boolean {
+  // QA preview must never permit mutation even if someone sets the cart flag.
+  if (process.env.VERCEL_ENV === "preview" && process.env.ZAMZAM_SYNTHETIC_PREVIEW === "true")
+    return false
   return process.env[FEATURE_FLAG_ENV_KEY] === "true"
 }
 

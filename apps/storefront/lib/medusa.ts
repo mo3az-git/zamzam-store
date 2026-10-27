@@ -306,6 +306,12 @@ function countOrFallback(value: unknown, fallback: number): number {
 export async function listStoreProducts(
   options: ProductQueryOptions = {}
 ): Promise<StoreListResult> {
+  // Build-independent, read-only QA catalog for a Vercel PREVIEW only.
+  // Never use synthetic values as real Medusa, stock, or payment authority.
+  if (process.env.VERCEL_ENV === "preview" && process.env.ZAMZAM_SYNTHETIC_PREVIEW === "true") {
+    const { syntheticProducts } = await import("./synthetic-preview.ts")
+    return syntheticProducts(options)
+  }
   const base = storeBase()
   if (!base || !storeKey()) return { products: [], count: 0, error: "configuration" }
 
@@ -339,6 +345,10 @@ export async function listStoreProducts(
 export async function listStoreCategories(
   options: CategoryQueryOptions = {}
 ): Promise<StoreCategoryResult> {
+  if (process.env.VERCEL_ENV === "preview" && process.env.ZAMZAM_SYNTHETIC_PREVIEW === "true") {
+    const { syntheticCategories } = await import("./synthetic-preview.ts")
+    return syntheticCategories(options)
+  }
   const base = storeBase()
   if (!base || !storeKey()) return { categories: [], count: 0, error: "configuration" }
 

@@ -31,6 +31,7 @@ export async function generateMetadata({
     title: dict.meta.title,
     description: dict.meta.description,
     applicationName: dict.brand.name,
+    robots: process.env.VERCEL_ENV === "preview" && process.env.ZAMZAM_SYNTHETIC_PREVIEW === "true" ? { index: false, follow: false } : undefined,
     alternates: localeAlternates("/", locale),
     openGraph: {
       type: "website",
@@ -72,6 +73,13 @@ export default async function LocaleLayout({
         <a className="lux-skip-link" href="#main-content">
           {dict.a11y.skip}
         </a>
+        {process.env.VERCEL_ENV === "preview" && process.env.ZAMZAM_SYNTHETIC_PREVIEW === "true" ? (
+          <div role="note" className="lux-qa-banner" dir={locale === "ar" ? "rtl" : "ltr"}>
+            {locale === "ar"
+              ? "نسخة اختبار فقط — منتجات وأسعار افتراضية، لا توجد عمليات شراء أو طلبات."
+              : "QA preview only — synthetic products and prices. No orders or purchases."}
+          </div>
+        ) : null}
         <div className="lux-topbar">
           <div className="shell lux-topbar-content">
             <span>{dict.topbar.welcome}</span>
