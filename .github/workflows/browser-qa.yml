@@ -58,7 +58,7 @@ jobs:
           path: |
             scripts/browser-qa/browser-qa-results/
             scripts/browser-qa/browser-qa-report/
-          retention-days: 7
+          retention-days: 14
           if-no-files-found: warn
 
   checkout-preview-smoke:
@@ -105,5 +105,5 @@ jobs:
           path: |
             scripts/browser-qa/browser-qa-results/
             scripts/browser-qa/browser-qa-report/
-          retention-days: 7
+          retention-days: 14
           if-no-files-found: warn
