@@ -108,7 +108,8 @@ try {
 
   const missingOwner = await request({ operation: "read", requestId: randomUUID() }, "")
   const badOrigin = await fetch(`http://127.0.0.1:${server.address().port}/store/cart-bff`, {
-    method: "POST", headers: { origin: "https://attacker.invalid", "content-type": "application/json", "x-zamzam-cart-csrf": "1" },
+    method: "POST", headers: { origin: "https://attacker.invalid", "content-type": "application/json", "x-zamzam-cart-csrf": "1",
+      "x-publishable-api-key": publishableKey.token },
     body: JSON.stringify({ operation: "read", requestId: randomUUID() }),
   })
   check("missing_guest_proof_and_untrusted_origin_are_denied", missingOwner.status === 404 && badOrigin.status === 404)
