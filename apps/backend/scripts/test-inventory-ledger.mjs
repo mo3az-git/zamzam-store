@@ -8,11 +8,13 @@ import {
 } from "./shared/tp-harness.mjs"
 
 const tpId = process.argv[2]
-if (!["TP-06a", "TP-06b", "TP-07a", "TP-07b", "TP-09", "TP-10", "TP-24c"].includes(tpId)) throw new Error("Unsupported inventory TP: " + tpId)
+if (!["TP-06a", "TP-06b", "TP-07a", "TP-07b", "TP-09", "TP-10", "TP-24c", "TP-08-native-integration"].includes(tpId)) throw new Error("Unsupported inventory TP: " + tpId)
 if (process.env.PHASE1_ALLOW_DISPOSABLE_DB_CREATE_DROP !== "true") throw new Error("Disposable database create/drop opt-in is required")
 const rootRequire = registerTsNode()
 const { Modules, ContainerRegistrationKeys } = await import("@medusajs/framework/utils")
 const { InventoryLedger, movementDedupKey } = rootRequire("./apps/backend/src/modules/batch-inventory/ledger.ts")
+const { completeReservedCartWithInventory } = rootRequire("./apps/backend/src/modules/batch-inventory/native-checkout-coordinator.ts")
+const { findNativeOrdersByCart } = rootRequire("./apps/backend/src/modules/batch-inventory/native-order-lookup.ts")
 const metadata = await getSystemMetadata(), startedAt = new Date().toISOString()
 const assertions = [], events = [], cleanupErrors = [], resources = { databaseCreated: false, rolesCreated: [] }
 let rootPg, adminPg, probePg, runtime, locking, targetDetails, dbBefore, dbAfter, blocker = null, status = "failed", cleanupResult = null
@@ -142,11 +144,12 @@ try {
       quantity, actorId: "fixture:receipt" })
     return receipt.batch
   }
-  const makeCart = async (items, label = "inventory") => {
+  const makeCart = async (items, label = "inventory", nativeUnitPrice = 0) => {
     const cart = await cartService.createCarts({ currency_code: "egp", metadata: { disposable_fixture: tpId, label } })
-    const lineItems = items.map(({ quantity, key = randomUUID() }) => ({ title: "Synthetic batch line", product_title: "Disposable product",
-      variant_title: "Batch tracked test variant", variant_id: variantId, quantity, unit_price: 1000,
-      requires_shipping: true, metadata: { checkout_line_key: key } }))
+    const nativeCheckout = tpId === "TP-08-native-integration"
+    const lineItems = items.map(({ quantity, key = randomUUID() }) => ({ title: "Native checkout batch line", product_title: "Disposable product",
+      variant_title: "Batch tracked test variant", variant_id: variantId, quantity, unit_price: nativeCheckout ? nativeUnitPrice : 1000,
+      requires_shipping: !nativeCheckout, metadata: { checkout_line_key: key } }))
     const lines = await cartService.addLineItems(cart.id, lineItems)
     const attemptId = randomUUID(), key = randomUUID(), ownerId = "worker:inventory:" + randomUUID()
     await inventoryModule.createCartCheckoutSessions({ cart_id: cart.id, current_attempt_id: attemptId, epoch: 1, status: "in_progress" })
@@ -180,6 +183,152 @@ try {
   const conversionInput = (fixture, order, reservationIds) => ({ ...fixture.authority, orderId: order.id, validatedReservationIds: reservationIds })
   const convert = (fixture, order, ids, hooks) => new InventoryLedger(runtime.container, hooks).convertCartReservationsToAllocations(conversionInput(fixture, order, ids))
   const saveSnapshot = async (batchIds) => snapshotTables(adminPg, batchIds)
+
+  if (tpId === "TP-08-native-integration") {
+    const batch = await makeBatch(40, 90, "native-checkout")
+    const fixture = await makeCart([{ quantity: 2 }, { quantity: 3 }], "real-native-complete-cart")
+    const nativeCart = await cartService.retrieveCart(fixture.cart.id, { relations: ["items"] })
+    check("real_medusa_cart_has_two_zero_total_managed_lines", 2,
+      nativeCart.items.map((item) => ({ id: item.id, key: item.metadata?.checkout_line_key, quantity: item.quantity, unit_price: item.unit_price })),
+      nativeCart.items.length === 2 && nativeCart.items.every((item) => Number(item.unit_price) === 0 && item.metadata?.checkout_line_key))
+
+    const reserved = await new InventoryLedger(runtime.container).reserveCart(fixture.authority)
+    const reservationRows = await reservationsFor(fixture.authority.attemptId)
+    check("native_cart_reservations_are_persisted_and_authoritative", 2,
+      reservationRows.map((row) => ({ id: row.id, line: row.cart_line_item_id, key: row.checkout_line_key, quantity: row.quantity, status: row.status })),
+      reserved.length === 2 && reservationRows.length === 2 && reservationRows.every((row) =>
+        row.status === "active" && nativeCart.items.some((item) => item.id === row.cart_line_item_id && item.metadata.checkout_line_key === row.checkout_line_key)))
+
+    dbBefore = await saveSnapshot([batch.id])
+    let afterNativeCompletion = 0
+    let conversionFault = false
+    const failure = await expectCode("post_native_conversion_failure_preserves_real_order_and_fence",
+      "TP08_INJECTED_CONVERSION_FAILURE",
+      () => completeReservedCartWithInventory(runtime.container, fixture.authority, {
+        event(name, data) { events.push({ name, ...data }) },
+        afterNativeCompletion() {
+          afterNativeCompletion++
+          throw new Error("TP08_NATIVE_COMPLETED_BEFORE_CORRELATION")
+        },
+        afterConversionAllocation() {
+          conversionFault = true
+          throw Object.assign(new Error("TP08_INJECTED_CONVERSION_FAILURE"), { code: "TP08_INJECTED_CONVERSION_FAILURE" })
+        },
+      }))
+    const linkedAfterFailure = await findNativeOrdersByCart(knex, fixture.cart.id)
+    const fencedAfterFailure = await adminPg.query(`SELECT attempt_status,order_correlation_status,order_id FROM cart_checkout_attempt
+      WHERE checkout_attempt_id=$1::uuid`, [fixture.authority.attemptId])
+    const reservationsAfterFailure = await reservationsFor(fixture.authority.attemptId)
+    const allocationsAfterFailure = await adminPg.query("SELECT id FROM order_batch_allocation WHERE order_id=$1", [linkedAfterFailure[0]?.id])
+    check("native_workflow_uncertainty_reconciles_from_real_cart_order_link", 1, linkedAfterFailure,
+      afterNativeCompletion === 1 && linkedAfterFailure.length === 1 && linkedAfterFailure[0].cart_id === fixture.cart.id)
+    check("conversion_failure_keeps_order_correlated_and_stock_reserved", true, {
+      error: failure?.message, conversionFault, attempt: fencedAfterFailure.rows[0],
+      reservations: reservationsAfterFailure.map((row) => ({ id: row.id, status: row.status })),
+      allocationCount: allocationsAfterFailure.rowCount,
+    }, conversionFault && fencedAfterFailure.rows[0]?.attempt_status === "order_created" &&
+      fencedAfterFailure.rows[0]?.order_correlation_status === "correlated" &&
+      fencedAfterFailure.rows[0]?.order_id === linkedAfterFailure[0]?.id &&
+      reservationsAfterFailure.length === 2 && reservationsAfterFailure.every((row) => row.status === "active") &&
+      allocationsAfterFailure.rowCount === 0)
+    const lockSequence = events.filter((event) => ["order_advisory_lock_acquired", "conversion_session_locked",
+      "conversion_attempt_locked", "conversion_batches_locked_ascending", "conversion_reservations_locked"].includes(event.name))
+      .map((event) => event.name)
+    check("revision18_order_root_lock_precedes_authority_batches_and_reservations", [
+      "order_advisory_lock_acquired", "conversion_session_locked", "conversion_attempt_locked",
+      "conversion_batches_locked_ascending", "conversion_reservations_locked",
+    ], lockSequence, JSON.stringify(lockSequence) === JSON.stringify([
+      "order_advisory_lock_acquired", "conversion_session_locked", "conversion_attempt_locked",
+      "conversion_batches_locked_ascending", "conversion_reservations_locked",
+    ]))
+
+    let recoveryWorkflowCalls = 0
+    const recovered = await completeReservedCartWithInventory(runtime.container, fixture.authority, {
+      afterNativeCompletion() { recoveryWorkflowCalls++ },
+    })
+    check("correlated_order_recovery_skips_native_creation", 0, recoveryWorkflowCalls, recoveryWorkflowCalls === 0)
+    const order = await runtime.container.resolve(Modules.ORDER).retrieveOrder(recovered.orderId, { relations: ["items", "items.detail"] })
+    const nativeOrders = await findNativeOrdersByCart(knex, fixture.cart.id)
+    dbAfter = await saveSnapshot([batch.id])
+    const orderLines = order.items || []
+    const allocations = dbAfter.allocations.filter((row) => row.order_id === recovered.orderId)
+    const conversionMovements = dbAfter.movements.filter((row) => row.reference_id === recovered.orderId && row.movement_type === "allocation_conversion")
+    const nativeReservations = dbAfter.reservations.filter((row) => row.checkout_attempt_id === fixture.authority.attemptId)
+    check("actual_complete_cart_workflow_created_one_native_order", 1,
+      { cartId: fixture.cart.id, orderId: recovered.orderId, links: nativeOrders },
+      nativeOrders.length === 1 && nativeOrders[0].id === recovered.orderId && nativeOrders[0].cart_id === fixture.cart.id)
+    check("native_order_preserves_line_identity_and_checkout_keys", 2,
+      orderLines.map((line) => ({ id: line.id, quantity: line.detail?.quantity, key: line.metadata?.checkout_line_key })),
+      orderLines.length === 2 && orderLines.every((line) => nativeCart.items.some((item) =>
+        item.metadata.checkout_line_key === line.metadata?.checkout_line_key && Number(item.quantity) === Number(line.detail?.quantity))))
+    check("real_order_allocations_and_movement_ledger_match_reservations", 2,
+      { reservations: nativeReservations.map((row) => ({ id: row.id, status: row.status })),
+        allocations: allocations.map((row) => ({ id: row.id, line: row.line_item_id, key: row.checkout_line_key, quantity: row.quantity_allocated })),
+        movements: conversionMovements.map((row) => ({ id: row.id, batch: row.batch_id, reference: row.reference_id })) },
+      recovered.conversionStatus === "allocated" && allocations.length === 2 && conversionMovements.length === 2 &&
+      nativeReservations.every((row) => row.status === "converted") && allocations.every((row) =>
+        nativeReservations.some((reservation) => reservation.checkout_line_key === row.checkout_line_key &&
+          Number(reservation.quantity) === Number(row.quantity_allocated) && reservation.cart_line_item_id !== null)))
+
+    const beforeReplay = { batch: dbAfter.batches.find((row) => row.id === batch.id), allocations: allocations.length, movements: conversionMovements.length }
+    let replayWorkflowCalls = 0
+    const replay = await completeReservedCartWithInventory(runtime.container, fixture.authority, {
+      afterNativeCompletion() { replayWorkflowCalls++ },
+    })
+    const afterReplay = await saveSnapshot([batch.id])
+    const replayAllocations = afterReplay.allocations.filter((row) => row.order_id === recovered.orderId)
+    const replayMovements = afterReplay.movements.filter((row) => row.reference_id === recovered.orderId && row.movement_type === "allocation_conversion")
+    check("exact_native_checkout_replay_is_read_only", true,
+      { first: recovered, replay, before: beforeReplay, after: { batch: afterReplay.batches.find((row) => row.id === batch.id),
+        allocations: replayAllocations.length, movements: replayMovements.length } },
+      replay.replayed && replay.orderId === recovered.orderId && replayWorkflowCalls === 0 &&
+        replayAllocations.length === beforeReplay.allocations && replayMovements.length === beforeReplay.movements &&
+        JSON.stringify(afterReplay.batches.find((row) => row.id === batch.id)) === JSON.stringify(beforeReplay.batch))
+
+    const concurrentFixture = await makeCart([{ quantity: 1 }], "parallel-native-completions")
+    await new InventoryLedger(runtime.container).reserveCart(concurrentFixture.authority)
+    let nativeCompletionCalls = 0
+    const concurrentResults = await Promise.allSettled([
+      completeReservedCartWithInventory(runtime.container, concurrentFixture.authority, {
+        afterNativeCompletion() { nativeCompletionCalls++ },
+      }),
+      completeReservedCartWithInventory(runtime.container, concurrentFixture.authority, {
+        afterNativeCompletion() { nativeCompletionCalls++ },
+      }),
+    ])
+    const concurrentOrders = await findNativeOrdersByCart(knex, concurrentFixture.cart.id)
+    const concurrentState = await adminPg.query(`SELECT attempt_status,order_id FROM cart_checkout_attempt
+      WHERE checkout_attempt_id=$1::uuid`, [concurrentFixture.authority.attemptId])
+    const concurrentAllocationCount = await adminPg.query("SELECT count(*)::int AS n FROM order_batch_allocation WHERE order_id=$1", [concurrentOrders[0]?.id])
+    const concurrentMovementCount = await adminPg.query("SELECT count(*)::int AS n FROM inventory_movement WHERE reference_id=$1 AND movement_type='allocation_conversion'", [concurrentOrders[0]?.id])
+    check("concurrent_real_native_requests_produce_one_workflow_order_and_allocation_set", true,
+      { nativeCompletionCalls, results: concurrentResults.map((result) => result.status === "fulfilled" ? result.value : { error: result.reason?.message }),
+        orders: concurrentOrders, attempt: concurrentState.rows[0], allocations: concurrentAllocationCount.rows[0]?.n,
+        conversionMovements: concurrentMovementCount.rows[0]?.n },
+      nativeCompletionCalls === 1 && concurrentOrders.length === 1 &&
+        concurrentState.rows[0]?.attempt_status === "allocated" && concurrentState.rows[0]?.order_id === concurrentOrders[0]?.id &&
+        concurrentAllocationCount.rows[0]?.n === 1 && concurrentMovementCount.rows[0]?.n === 1)
+
+    const noOrderFixture = await makeCart([{ quantity: 1 }], "native-workflow-no-payment-session", 1000)
+    await new InventoryLedger(runtime.container).reserveCart(noOrderFixture.authority)
+    let nativeInvocationAttempts = 0
+    const unresolved = await completeReservedCartWithInventory(runtime.container, noOrderFixture.authority, {
+      beforeNativeCompletion() { nativeInvocationAttempts++ },
+    })
+    const unresolvedOrders = await findNativeOrdersByCart(knex, noOrderFixture.cart.id)
+    const unresolvedAttempt = await adminPg.query(`SELECT attempt_status,order_correlation_status,order_id FROM cart_checkout_attempt
+      WHERE checkout_attempt_id=$1::uuid`, [noOrderFixture.authority.attemptId])
+    const unresolvedRetry = await completeReservedCartWithInventory(runtime.container, noOrderFixture.authority, {
+      beforeNativeCompletion() { nativeInvocationAttempts++ },
+    })
+    check("zero_native_orders_keep_fence_without_second_workflow_invocation", true,
+      { unresolved, retry: unresolvedRetry, nativeInvocationAttempts, nativeOrders: unresolvedOrders, attempt: unresolvedAttempt.rows[0] },
+      unresolved.conversionStatus === "pending_reconciliation" && unresolvedRetry.conversionStatus === "pending_reconciliation" &&
+        nativeInvocationAttempts === 1 && unresolvedOrders.length === 0 && unresolvedAttempt.rows[0]?.order_id === null &&
+        unresolvedAttempt.rows[0]?.attempt_status === "needs_reconciliation" &&
+        unresolvedAttempt.rows[0]?.order_correlation_status === "needs_reconciliation")
+    status = "passed"
+  }
 
   if (tpId === "TP-24c") {
     const now = await knex.raw("SELECT current_user, session_user, (SELECT rolsuper FROM pg_roles WHERE rolname=current_user) AS is_superuser")
@@ -644,10 +793,10 @@ await import("node:fs/promises").then(({ mkdir, writeFile }) => mkdir(evidenceDi
   writeFile(path.join(evidenceDir,"inventory-cleanup.json"),JSON.stringify({resources,cleanupResult,cleanupErrors},null,2)+"\n"),
 ])))
 console.log(`${tpId} Assertion Summary: ${assertions.filter((x)=>x.passed).length}/${assertions.length} passed.`)
-await writeTpEvidence({ evidenceDir, tpId, title: ["TP-07b","TP-09","TP-10"].includes(tpId)?"Order-correlated batch inventory conversion":"Batch inventory ledger and reservation invariants", batch: "C", status, startedAt,
+await writeTpEvidence({ evidenceDir, tpId, title: tpId === "TP-08-native-integration" ? "Real Medusa native cart completion and inventory conversion" : ["TP-07b","TP-09","TP-10"].includes(tpId)?"Order-correlated batch inventory conversion":"Batch inventory ledger and reservation invariants", batch: "C", status, startedAt,
   ...metadata, blocker, exitCode: status==="passed"?0:1, assertions, dbBefore, dbAfter,
   containerDetails: { medusaRuntime: true, isolatedDatabase: dbName, runtimeUser: tpId==="TP-24c"?"medusa_app":"migration owner", disposableServices: targetDetails },
   testCommand: `node apps/backend/scripts/test-inventory-ledger.mjs ${tpId}`,
-  assessmentType: tpId==="TP-24c"?"real PostgreSQL privilege and immutability-trigger enforcement; no production role changes": ["TP-07b","TP-09","TP-10"].includes(tpId)?"authoritatively-correlated native Medusa order, real PostgreSQL conversion and concurrency behavior": "real Medusa modules and PostgreSQL transaction behavior; pre-order inventory scope only",
+  assessmentType: tpId==="TP-24c"?"real PostgreSQL privilege and immutability-trigger enforcement; no production role changes": tpId==="TP-08-native-integration"?"real Medusa CartService cart, completeCartWorkflow native order and order_cart link, PostgreSQL correlation and allocation; no Store API cart creation or TP-01 execution; component evidence, not formal TP acceptance": ["TP-07b","TP-09","TP-10"].includes(tpId)?"authoritatively-correlated native Medusa order, real PostgreSQL conversion and concurrency behavior": "real Medusa modules and PostgreSQL transaction behavior; pre-order inventory scope only",
 })
 process.exit(status==="passed"?0:1)
