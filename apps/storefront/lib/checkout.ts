@@ -64,9 +64,16 @@ export const EGYPTIAN_GOVERNORATES: readonly GovernorateOption[] = [
   { code: "matrouh", nameAr: "مطروح", nameEn: "Matrouh" },
 ] as const
 
-export function resolveGovernorateProvince(govCode: string): string {
-  const gov = EGYPTIAN_GOVERNORATES.find((g) => g.code === govCode)
-  return gov ? gov.nameEn : govCode
+export function isValidGovernorate(govCode: unknown): govCode is string {
+  if (typeof govCode !== "string") return false
+  const trimmed = govCode.trim().toLowerCase()
+  return EGYPTIAN_GOVERNORATES.some((g) => g.code === trimmed)
+}
+
+export function resolveGovernorateProvince(govCode: string): string | null {
+  const trimmed = typeof govCode === "string" ? govCode.trim().toLowerCase() : ""
+  const gov = EGYPTIAN_GOVERNORATES.find((g) => g.code === trimmed)
+  return gov ? gov.nameEn : null
 }
 
 /**
@@ -228,6 +235,12 @@ export function mapGuestCheckoutToBackend(
   const address1 = (input.address ?? "").trim()
   const city = (input.city ?? "").trim()
   const province = resolveGovernorateProvince(input.governorate ?? "")
+  if (!province) {
+    return {
+      success: false,
+      errors: { ...validation.errors, governorate: dict.checkout.governorateRequired },
+    }
+  }
 
   const payload: BackendGuestDeliveryPayload = {
     email,
