@@ -46,6 +46,15 @@ export type CartBffBlocker =
   | "SHIPPING_PROVIDER_UNDECIDED" | "SHIPPING_QUOTE_UNAVAILABLE"
   | "PAYMENT_METHOD_UNAVAILABLE" | "CHECKOUT_IN_PROGRESS" | "CHECKOUT_ALREADY_COMPLETED"
   | "ORDER_COMPLETION_DISABLED" | "UPSTREAM_UNAVAILABLE"
+  | "GUEST_CART_NOT_OWNED" | "CART_VERSION_STALE" | "CART_REGION_NOT_EGYPT_EGP" | "CART_CURRENCY_NOT_EGP"
+  | "CART_TOTAL_INVALID" | "CART_TOTAL_MISMATCH" | "CHECKOUT_ATTEMPT_STALE" | "PAYMENT_OUTCOME_UNCERTAIN"
+  | "PREFLIGHT_REPLAY_CONFLICT" | "PREFLIGHT_STATE_UNAVAILABLE" | "INVENTORY_RESPONSE_INVALID"
+  | "SHIPPING_READINESS_UNAVAILABLE" | "SHIPPING_GOVERNORATE_MISMATCH" | "SHIPPING_OPTION_UNSELECTED"
+  | "SHIPPING_OPTION_MISMATCH" | "SHIPPING_CURRENCY_MISMATCH" | "SHIPPING_PAYABLE_TOTAL_MISMATCH"
+  | "PAYMENT_READINESS_INVALID" | "COD_COLLECTION_AUTHORITY_REQUIRED" | "GATEWAY_NOT_SELECTED"
+  | "AUTHENTICATED_ADAPTER_NOT_CONFIGURED" | "NATIVE_MEDUSA_PAYMENT_SYNC_REQUIRED"
+  | "SHIPPING_GOVERNORATE_UNKNOWN" | "SHIPPING_COVERAGE_UNCONFIGURED" | "SHIPPING_RATE_UNCONFIGURED"
+  | "SHIPPING_PROVIDER_UNDECIDED" | "SHIPPING_RATE_INVALID" | "SHIPPING_OPTION_UNSUPPORTED" | "SHIPPING_RATE_UNAVAILABLE"
 
 export type CartBffSnapshot = Readonly<{
   version: string
@@ -62,7 +71,11 @@ export type CartBffResponse = Readonly<{
   operation: CartBffOperation["operation"]
   cart: CartBffSnapshot | null
   blockers: readonly CartBffBlocker[]
-  checkout: Readonly<{ status: "blocked" | "ready_for_review"; paymentMethod: "cod" | "electronic" | null }> | null
+  checkout: Readonly<{
+    status: "blocked" | "ready_for_review"
+    paymentMethod: "cod" | "electronic" | null
+    blockers: readonly Readonly<{ code: CartBffBlocker; presentationKey: string }>[]
+  }> | null
 }>
 
 export type ContractValidation<T> = { valid: true; value: T } | { valid: false; reason: string }
@@ -170,7 +183,17 @@ export function validateCartBffResponse(value: unknown): ContractValidation<Cart
         "CART_IDEMPOTENCY_CONFLICT", "CART_IDEMPOTENCY_UNAVAILABLE", "CART_REGION_NOT_EGYPT_EGP", "GUEST_DELIVERY_INVALID",
         "INVENTORY_UNKNOWN", "INVENTORY_UNAVAILABLE", "SHIPPING_COVERAGE_UNCONFIGURED", "SHIPPING_RATE_UNCONFIGURED",
         "SHIPPING_PROVIDER_UNDECIDED", "SHIPPING_QUOTE_UNAVAILABLE", "PAYMENT_METHOD_UNAVAILABLE", "CHECKOUT_IN_PROGRESS",
-        "CHECKOUT_ALREADY_COMPLETED", "ORDER_COMPLETION_DISABLED", "UPSTREAM_UNAVAILABLE"].includes(String(item))) ||
+        "CHECKOUT_ALREADY_COMPLETED", "ORDER_COMPLETION_DISABLED", "UPSTREAM_UNAVAILABLE",
+        "GUEST_CART_NOT_OWNED", "CART_VERSION_STALE", "CART_REGION_NOT_EGYPT_EGP", "CART_CURRENCY_NOT_EGP",
+        "CART_TOTAL_INVALID", "CART_TOTAL_MISMATCH", "CHECKOUT_ATTEMPT_STALE", "PAYMENT_OUTCOME_UNCERTAIN",
+        "PREFLIGHT_REPLAY_CONFLICT", "PREFLIGHT_STATE_UNAVAILABLE", "INVENTORY_RESPONSE_INVALID",
+        "SHIPPING_READINESS_UNAVAILABLE", "SHIPPING_GOVERNORATE_MISMATCH", "SHIPPING_OPTION_UNSELECTED",
+        "SHIPPING_OPTION_MISMATCH", "SHIPPING_CURRENCY_MISMATCH", "SHIPPING_PAYABLE_TOTAL_MISMATCH",
+        "PAYMENT_READINESS_INVALID", "COD_COLLECTION_AUTHORITY_REQUIRED", "GATEWAY_NOT_SELECTED",
+        "AUTHENTICATED_ADAPTER_NOT_CONFIGURED", "NATIVE_MEDUSA_PAYMENT_SYNC_REQUIRED",
+        "SHIPPING_GOVERNORATE_UNKNOWN", "SHIPPING_COVERAGE_UNCONFIGURED", "SHIPPING_RATE_UNCONFIGURED",
+        "SHIPPING_PROVIDER_UNDECIDED", "SHIPPING_RATE_INVALID", "SHIPPING_OPTION_UNSUPPORTED",
+        "SHIPPING_RATE_UNAVAILABLE"].includes(String(item))) ||
       !["create", "read", "add_item", "update_item", "remove_item", "set_delivery", "checkout_preflight"].includes(value.operation)) {
     return { valid: false, reason: "invalid_response_shape" }
   }
@@ -194,7 +217,11 @@ export function validateCartBffResponse(value: unknown): ContractValidation<Cart
   }
   if (value.checkout !== null && (!isRecord(value.checkout) || !allowedKeys(value.checkout, ["status", "paymentMethod"]) ||
       !["blocked", "ready_for_review"].includes(String(value.checkout.status)) ||
-      !(value.checkout.paymentMethod === "cod" || value.checkout.paymentMethod === "electronic" || value.checkout.paymentMethod === null))) {
+      !(value.checkout.paymentMethod === "cod" || value.checkout.paymentMethod === "electronic" || value.checkout.paymentMethod === null) ||
+      !Array.isArray(value.checkout.blockers) || value.checkout.blockers.some((item) => !isRecord(item) ||
+        !allowedKeys(item, ["code", "presentationKey"]) || typeof item.code !== "string" ||
+        !value.blockers.includes(item.code) || typeof item.presentationKey !== "string" ||
+        !/^checkout\\.readiness\\.blockers\\.[a-z_]+$/.test(item.presentationKey)))) {
     return { valid: false, reason: "invalid_checkout_status" }
   }
   return { valid: true, value: value as unknown as CartBffResponse }
