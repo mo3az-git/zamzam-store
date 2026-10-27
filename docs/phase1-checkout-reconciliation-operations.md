@@ -26,11 +26,12 @@ order-root-first locks and validates the complete reservation set.
 | ready | ALLOCATION_COMMITTED_RESPONSE_PENDING | Validate the allocation replay and persist the original response with a current lease. |
 | completed | EXACT_REPLAY_AVAILABLE / EXACT_REPLAY | Validate and return the existing result without another allocation or response write. |
 | unresolved | NO_NATIVE_ORDER_AFTER_FENCE | Keep the fence and reservations; investigate the native workflow outcome. |
+| unresolved | RECONCILIATION_STATE_CHANGED_RETRY | Reinspect after concurrent state changes; retry only with current authority. |
 | ambiguous | MULTIPLE_NATIVE_ORDERS | Preserve state and investigate all native links; no automatic selection. |
 | blocked | LEASE_EXPIRED_OR_INVALID, LEASE_OWNER_MISMATCH, CART_LOCK_NOT_OWNED or STALE_CHECKOUT_AUTHORITY | Restore lawful authority using the owning checkout policy before retrying. This service cannot acquire or transfer a lease. |
 | blocked | CORRELATION_STATE_DIVERGENCE, BOUND_ORDER_LINK_DIVERGENCE, RESERVATION_* or ALLOCATION_SET_DIVERGENCE | Investigate the reported invariant; no force resolution is offered. |
 | blocked | AMBIGUOUS_LINE_MAPPING, UNMAPPED_OR_AMBIGUOUS_LINE_ITEM, ORDER_LINE_VARIANT_MISMATCH or ORDER_LINE_QUANTITY_MISMATCH | Investigate native lines and reservations before recovery. |
-| blocked | RECONCILIATION_FENCE_REQUIRED or RECOVERY_FAILED | Do not use this path for a fresh checkout; investigate an unclassified failure through protected server logs. |
+| blocked | RECONCILIATION_FENCE_REQUIRED, INSPECTION_UNAVAILABLE or RECOVERY_FAILED | Do not use this path for a fresh checkout; investigate an unavailable lookup or unclassified failure through protected server logs. |
 
 The payment coordinator must keep the same lawful owner, Redis cart lock and
 fresh durable lease through correlation and response persistence. It must treat

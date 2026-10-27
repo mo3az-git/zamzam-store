@@ -47,7 +47,8 @@ export class CheckoutReconciliationOperations {
 
   async inspect(identity: Identity) {
     await this.authorized("inspect", identity)
-    return this.inspectAuthorized(identity)
+    try { return await this.inspectAuthorized(identity) }
+    catch { return { decision: "blocked" as const, reason: "INSPECTION_UNAVAILABLE", identity } }
   }
 
   private async inspectAuthorized(identity: Identity) {
@@ -176,7 +177,9 @@ export class CheckoutReconciliationOperations {
   async recover(authority: InventoryAuthority) {
     const identity = { cartId: authority.cartId, attemptId: authority.attemptId }
     await this.authorized("recover", identity)
-    const inspection = await this.inspectAuthorized(identity)
+    let inspection
+    try { inspection = await this.inspectAuthorized(identity) }
+    catch { return { decision: "blocked" as const, reason: "INSPECTION_UNAVAILABLE" } }
     if (inspection.decision !== "ready" && inspection.decision !== "completed") {
       return { decision: inspection.decision, reason: inspection.reason }
     }
@@ -187,7 +190,15 @@ export class CheckoutReconciliationOperations {
       // This flag is enforced inside the durable fence transaction itself.
       const result = await completeReservedCartWithInventory(this.container, authority,
         { reconciliationOnly: true, event: this.onLockEvent })
-      if (result.conversionStatus !== "allocated") return { decision: "unresolved" as const, reason: "NO_NATIVE_ORDER_AFTER_FENCE" }
+      if (result.conversionStatus !== "allocated") {
+        let latest
+        try { latest = await this.inspectAuthorized(identity) }
+        catch { return { decision: "blocked" as const, reason: "INSPECTION_UNAVAILABLE" } }
+        if (["blocked", "ambiguous", "unresolved"].includes(latest.decision)) {
+          return { decision: latest.decision, reason: latest.reason }
+        }
+        return { decision: "unresolved" as const, reason: "RECONCILIATION_STATE_CHANGED_RETRY" }
+      }
       return { decision: result.replayed ? "completed" as const : "recovered" as const,
         reason: result.replayed ? "EXACT_REPLAY" : "ORDER_RECOVERED", result }
     } catch (error) {
