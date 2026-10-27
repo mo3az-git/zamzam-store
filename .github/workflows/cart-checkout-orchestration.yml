@@ -1,0 +1,46 @@
+name: Cart and Checkout Orchestration Contract
+
+on:
+  pull_request:
+    branches:
+      - main
+      - "integration/**"
+    paths:
+      - ".github/workflows/cart-checkout-orchestration.yml"
+      - "apps/backend/src/modules/batch-inventory/cart-bff-*.ts"
+      - "apps/backend/scripts/test-cart-bff-orchestrator.mjs"
+      - "docs/cart-checkout-orchestration-contract.md"
+      - "package-lock.json"
+  push:
+    branches:
+      - "codex/cart-checkout-orchestration-*"
+    paths:
+      - ".github/workflows/cart-checkout-orchestration.yml"
+      - "apps/backend/src/modules/batch-inventory/cart-bff-*.ts"
+      - "apps/backend/scripts/test-cart-bff-orchestrator.mjs"
+      - "docs/cart-checkout-orchestration-contract.md"
+      - "package-lock.json"
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Synthetic cart lifecycle and preflight contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install pinned dependencies
+        run: npm ci --strict-peer-deps --no-audit --no-fund
+      - name: Run synthetic contract and lifecycle checks (not formal TP)
+        run: node apps/backend/scripts/test-cart-bff-orchestrator.mjs
+      - name: Lint the orchestration contract
+        run: npx eslint apps/backend/src/modules/batch-inventory/cart-bff-contract.ts apps/backend/src/modules/batch-inventory/cart-bff-orchestrator.ts apps/backend/scripts/test-cart-bff-orchestrator.mjs
+      - name: Build backend types and routes
+        run: npm run build:backend
+
