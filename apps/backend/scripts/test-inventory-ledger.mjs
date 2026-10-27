@@ -144,8 +144,8 @@ try {
       quantity, actorId: "fixture:receipt" })
     return receipt.batch
   }
-  const makeCart = async (items, label = "inventory", nativeUnitPrice = 0, paymentMethod = "cod") => {
-    const cart = await cartService.createCarts({ currency_code: "egp", metadata: { disposable_fixture: tpId, label } })
+  const makeCart = async (items, label = "inventory", nativeUnitPrice = 0, regionId = undefined, paymentMethod = "cod") => {
+    const cart = await cartService.createCarts({ currency_code: "egp", region_id: regionId, metadata: { disposable_fixture: tpId, label } })
     const nativeCheckout = ["TP-08-native-integration", "TP-08-recovery", "TP-08-operations", "TP-08-payable"].includes(tpId)
     const lineItems = items.map(({ quantity, key = randomUUID() }) => ({ title: "Native checkout batch line", product_title: "Disposable product",
       variant_title: "Batch tracked test variant", variant_id: variantId, quantity, unit_price: nativeCheckout ? nativeUnitPrice : 1000,
@@ -206,7 +206,7 @@ try {
       return match[1]+"."+fraction.slice(0,2).padEnd(2,"0")
     }
     for (const method of ["cod","electronic"]) {
-      const fixture = await makeCart([{ quantity: 2 }], "real-payable-"+method, 0, method)
+      const fixture = await makeCart([{ quantity: 2 }], "real-payable-"+method, 0, undefined, method)
       await new InventoryLedger(runtime.container).reserveCart(fixture.authority)
       const order = await makeNativeOrder(fixture)
       const reservationIds = (await reservationsFor(fixture.authority.attemptId)).map(x=>x.id)
