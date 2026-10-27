@@ -112,7 +112,8 @@ export function getGovernorateShippingBlockers(value: unknown): ShippingConfigur
 /** Evaluate a future server-owned persisted configuration; caller data is never authoritative. */
 export function evaluateGovernorateShippingConfiguration(
   governorateId: unknown,
-  configuration: GovernorateShippingConfiguration | null | undefined
+  configuration: GovernorateShippingConfiguration | null | undefined,
+  availableProviderIds: readonly string[] = []
 ): ShippingConfigurationBlocker[] {
   const governorate = resolveEgyptianGovernorateId(governorateId)
   if (!governorate) return ["SHIPPING_GOVERNORATE_UNKNOWN"]
@@ -125,7 +126,8 @@ export function evaluateGovernorateShippingConfiguration(
   else if (!isApprovedRate(configuration.rate)) blockers.push("SHIPPING_RATE_INVALID")
   const provider = configuration.fulfillmentProvider
   if (provider.status !== "selected" || typeof provider.providerId !== "string" || !provider.providerId.trim() ||
-      typeof provider.approvalReference !== "string" || !provider.approvalReference.trim()) {
+      typeof provider.approvalReference !== "string" || !provider.approvalReference.trim() ||
+      !availableProviderIds.includes(provider.providerId)) {
     blockers.push("SHIPPING_PROVIDER_UNDECIDED")
   }
   return blockers

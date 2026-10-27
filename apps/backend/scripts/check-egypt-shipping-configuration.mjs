@@ -58,13 +58,18 @@ const approvedFutureConfig = {
   rate: { status: "approved", kind: "flat", currencyCode: "egp", amount: "125.50", approvalReference: "owner-decision-123", approvedAt: "2026-10-27T00:00:00.000Z" },
   fulfillmentProvider: { status: "selected", providerId: "future-approved-provider", approvalReference: "owner-decision-123" },
 }
-check("future_approved_configuration_shape_is_evaluable_without_activating_it", evaluateGovernorateShippingConfiguration("cairo", approvedFutureConfig).length === 0)
+check("future_approved_configuration_requires_an_installed_provider_registry_match", evaluateGovernorateShippingConfiguration("cairo", approvedFutureConfig, ["future-approved-provider"]).length === 0 &&
+  evaluateGovernorateShippingConfiguration("cairo", approvedFutureConfig).includes("SHIPPING_PROVIDER_UNDECIDED"))
 check("malformed_future_rate_and_unsupported_provider_never_clear_readiness_blockers", [
   { ...approvedFutureConfig, rate: { ...approvedFutureConfig.rate, amount: "NaN" } },
   { ...approvedFutureConfig, rate: { ...approvedFutureConfig.rate, currencyCode: "usd" } },
   { ...approvedFutureConfig, fulfillmentProvider: { status: "selected", providerId: " ", approvalReference: "owner-decision-123" } },
   { ...approvedFutureConfig, fulfillmentProvider: { status: "undecided" } },
-].every((configuration) => evaluateGovernorateShippingConfiguration("cairo", configuration).length > 0))
+].every((configuration) => evaluateGovernorateShippingConfiguration("cairo", configuration, ["future-approved-provider"]).length > 0) &&
+  evaluateGovernorateShippingConfiguration("cairo", {
+    ...approvedFutureConfig,
+    fulfillmentProvider: { status: "selected", providerId: "unsupported-provider", approvalReference: "owner-decision-123" },
+  }, ["future-approved-provider"]).includes("SHIPPING_PROVIDER_UNDECIDED"))
 check("configuration_cannot_be_replayed_for_another_governorate", evaluateGovernorateShippingConfiguration("giza", approvedFutureConfig).includes("SHIPPING_COVERAGE_UNCONFIGURED"))
-check("missing_coverage_and_missing_rate_remain_distinct", JSON.stringify(evaluateGovernorateShippingConfiguration("cairo", { ...approvedFutureConfig, coverage: "unconfigured", rate: { status: "unconfigured" } })) === JSON.stringify(["SHIPPING_COVERAGE_UNCONFIGURED","SHIPPING_RATE_UNCONFIGURED"]))
+check("missing_coverage_rate_and_installed_provider_remain_distinct", JSON.stringify(evaluateGovernorateShippingConfiguration("cairo", { ...approvedFutureConfig, coverage: "unconfigured", rate: { status: "unconfigured" } })) === JSON.stringify(["SHIPPING_COVERAGE_UNCONFIGURED","SHIPPING_RATE_UNCONFIGURED","SHIPPING_PROVIDER_UNDECIDED"]))
 console.log("Egypt governorate shipping foundation: " + passed + " checks passed.")

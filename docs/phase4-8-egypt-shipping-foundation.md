@@ -10,7 +10,7 @@ All 27 backend rows remain:
 - `rate: { status: "unconfigured" }`
 - `fulfillmentProvider: { status: "undecided" }`
 
-A known governorate therefore has three distinct blockers: `SHIPPING_COVERAGE_UNCONFIGURED`, `SHIPPING_RATE_UNCONFIGURED`, and `SHIPPING_PROVIDER_UNDECIDED`. An unknown ID returns only `SHIPPING_GOVERNORATE_UNKNOWN`. No amount defaults to zero.
+A known governorate therefore has three distinct blockers: `SHIPPING_COVERAGE_UNCONFIGURED`, `SHIPPING_RATE_UNCONFIGURED`, and `SHIPPING_PROVIDER_UNDECIDED`. An unknown ID returns only `SHIPPING_GOVERNORATE_UNKNOWN`. A selected provider must also match the explicitly supplied installed-provider registry; a non-empty but unsupported provider ID remains blocked. No amount defaults to zero.
 
 ## Canonical mapping contract for Flash
 
@@ -118,7 +118,7 @@ Until these are resolved and the native configuration is installed, checkout rea
 ## Exact configuration steps after approval
 
 1. Record the owner's explicit approval for the fulfillment operator, per-governorate coverage constraints, each of the 27 EGP amounts, effective dates, and approval reference. Keep all rows blocked until every required field is present and validated.
-2. Implement or install the selected Medusa fulfillment provider and its credentials/secrets in the server environment. Do not reuse the integration-only `manual_manual` fixture as a production decision.
+2. Implement or install the selected Medusa fulfillment provider and its credentials/secrets in the server environment. Confirm its provider ID is in the installed-provider registry passed to the configuration evaluator. Do not reuse the integration-only `manual_manual` fixture as a production decision.
 3. Create the production shipping Fulfillment Set and 27 Service Zones. Each zone must contain exactly the canonical `{ type: "province", country_code: "eg", province_code }` GeoZone for its stable governorate ID; then attach the set to the intended stock location and sales channel.
 4. Create or select the Shipping Profile for shippable catalog items and ensure those items use that profile.
 5. Create one native flat-price Shipping Option per governorate, tied to its zone, profile, and approved provider. Store only the owner-approved EGP price through Medusa's Pricing Module; do not create a zero/default option for missing approvals.
