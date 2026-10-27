@@ -10,6 +10,7 @@ export type StorePrice = {
 export type StoreVariant = {
   id: string
   title?: string | null
+  sku?: string | null
   calculated_price?: StorePrice | null
 }
 
@@ -47,7 +48,7 @@ export async function listStoreProducts(options: {
     const endpoint = new URL("/store/products", configuredBase)
     endpoint.searchParams.set("limit", String(Math.min(Math.max(options.limit ?? 12, 1), 100)))
     endpoint.searchParams.set("offset", String(Math.max(options.offset ?? 0, 0)))
-    endpoint.searchParams.set("fields", "+variants.calculated_price,+images")
+    endpoint.searchParams.set("fields", "+variants.calculated_price,+variants.sku,+images")
     if (options.q?.trim()) endpoint.searchParams.set("q", options.q.trim().slice(0, 100))
     if (options.handle) endpoint.searchParams.set("handle", options.handle)
 
@@ -74,27 +75,40 @@ export async function listStoreProducts(options: {
   }
 }
 
+/**
+ * Prices returned by the Medusa Store API are in major currency units.
+ * Never silently round a fractional piastre or present a non-EGP amount.
+ */
+function egpAmount(variant: StoreVariant): number | null {
+  const price = variant.calculated_price
+  const amount = price?.calculated_amount
+  if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0 ||
+      price?.currency_code?.toLowerCase() !== "egp") return null
+  const piastres = amount * 100
+  return Math.abs(piastres - Math.round(piastres)) < 1e-7 ? amount : null
+}
+
+export function formatVariantPrice(variant: StoreVariant): string | null {
+  const amount = egpAmount(variant)
+  if (amount === null) return null
+  return new Intl.NumberFormat("ar-EG", {
+    style: "currency",
+    currency: "EGP",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount)
+}
+
 export function displayPrice(product: StoreProduct): string | null {
-  const prices = (product.variants ?? [])
-    .map((variant) => variant.calculated_price)
-    .filter((price): price is StorePrice => price != null &&
-      typeof price.calculated_amount === "number" &&
-      Number.isFinite(price.calculated_amount) &&
-      typeof price.currency_code === "string")
-
-  if (!prices.length) return null
-  const currency = prices[0].currency_code!
-  // Do not combine prices from different currencies or assume a missing regional price.
-  if (prices.some((price) => price.currency_code !== currency)) return null
-  const lowest = Math.min(...prices.map((price) => price.calculated_amount!))
-
-  try {
-    return new Intl.NumberFormat("ar-EG", {
-      style: "currency", currency: currency.toUpperCase(), maximumFractionDigits: 2,
-    }).format(lowest)
-  } catch {
-    return null
-  }
+  const variants = product.variants ?? []
+  // Never mix or conceal prices explicitly quoted in other currencies.
+  if (variants.some((variant) => variant.calculated_price?.currency_code &&
+      variant.calculated_price.currency_code.toLowerCase() !== "egp")) return null
+  const priced = variants.map((variant) => ({ variant, amount: egpAmount(variant) }))
+    .filter((entry): entry is { variant: StoreVariant; amount: number } => entry.amount !== null)
+  if (!priced.length) return null
+  return formatVariantPrice(priced.reduce((lowest, current) =>
+    current.amount < lowest.amount ? current : lowest).variant)
 }
 
 export function storeErrorMessage(error: StoreListResult["error"]): string {
