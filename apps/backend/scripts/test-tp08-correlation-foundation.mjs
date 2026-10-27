@@ -71,11 +71,37 @@ try {
   result=await reconcileOrderCreation(db,a,async()=>[single])
   check("exact_reconciliation_replay",result.replay===true&&result.orderId===single.id,result)
   await assertConflict("different_bound_order_rejected",()=>reconcileOrderCreation(db,a,async()=>[candidate(a)]),"BOUND_ORDER_LOOKUP_DIVERGENCE")
+  let correlatedNativeCalls=0
+  const correlatedReplay=await runOrderCreationWithFence(db,a,async()=>{
+    correlatedNativeCalls++
+    throw new Error("correlated order must not be created twice")
+  },async()=>[single])
+  check("correlated_attempt_replay_never_recreates_native_order",
+    correlatedReplay.status==="correlated"&&correlatedReplay.replay===true&&
+    correlatedReplay.orderId===single.id&&correlatedNativeCalls===0,
+    {correlatedReplay,correlatedNativeCalls})
+  await assertConflict("correlated_replay_with_wrong_native_order_rejected",
+    ()=>runOrderCreationWithFence(db,a,async()=>{correlatedNativeCalls++},async()=>[candidate(a)]),
+    "BOUND_ORDER_LOOKUP_DIVERGENCE")
+  check("invalid_correlated_replay_does_not_reinvoke_workflow",correlatedNativeCalls===0,correlatedNativeCalls)
+
   const b=await register()
   await markOrderCreationStarted(db,b)
-  result=await reconcileOrderCreation(db,b,async()=>[candidate(b),candidate(b)])
+  const ambiguousOrders=[candidate(b),candidate(b)]
+  result=await reconcileOrderCreation(db,b,async()=>ambiguousOrders
   s=await state(b.attemptId)
   check("multiple_distinct_orders_fenced",result.status==="ambiguous"&&s.order_id===null&&s.attempt_status==="needs_reconciliation",{result,s})
+  let lookupFailure
+  try {
+    await reconcileOrderCreation(db,b,async()=>{throw new Error("native-order-query-unavailable")})
+  } catch(error) { lookupFailure=error }
+  check("native_order_query_failure_propagated",
+    lookupFailure?.message==="native-order-query-unavailable",lookupFailure?.message)
+  const pendingAfterLookupFailure=await state(b.attemptId)
+  check("native_order_query_failure_keeps_fence",
+    pendingAfterLookupFailure.attempt_status==="needs_reconciliation"&&
+    pendingAfterLookupFailure.order_id===null,pendingAfterLookupFailure)
+
   const c=await register()
   let workflowCalls=0
   const one=candidate(c)
