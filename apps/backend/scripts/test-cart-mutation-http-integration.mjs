@@ -227,12 +227,20 @@ try {
   const pgConnection = container.resolve(ContainerRegistrationKeys.PG_CONNECTION)
   const knexClient = pgConnection.client
   const originalQuery = knexClient.query
-  const privateDatabaseDetail = "private-db-integration-detail-" + fixtureId
+  const privateDatabaseDetail = "private_db_integration_detail_" + fixtureId.replaceAll("-", "_")
   let interceptedSessionQuery = 0
+  let postgresErrorCode
   knexClient.query = function(connection, query) {
     if (typeof query?.sql === "string" && query.sql.toLowerCase().includes("select status from cart_checkout_session")) {
       interceptedSessionQuery++
-      return Promise.reject(new Error("database host " + privateDatabaseDetail))
+      const failingQuery = {
+        ...query,
+        sql: query.sql.replace(/select\s+status/i, `select "${privateDatabaseDetail}"`),
+      }
+      return originalQuery.call(this, connection, failingQuery).catch((error) => {
+        postgresErrorCode = error.code
+        throw error
+      })
     }
     return originalQuery.call(this, connection, query)
   }
@@ -240,10 +248,12 @@ try {
     before = await cartSnapshot()
     const failedDbRead = await responseFor("", { metadata: { unauthorized: "db-error" } })
     assertSafeUnknownError(failedDbRead, privateDatabaseDetail)
-    check("failed_checkout_session_database_query_fails_closed_and_is_redacted", interceptedSessionQuery > 0, {
+    check("real_postgres_query_error_fails_closed_and_is_redacted",
+      interceptedSessionQuery > 0 && postgresErrorCode === "42703", {
       status: failedDbRead.status,
       code: failedDbRead.body.code,
       type: failedDbRead.body.type,
+      postgresErrorCode,
     })
     assert.deepEqual(await cartSnapshot(), before)
   } finally {

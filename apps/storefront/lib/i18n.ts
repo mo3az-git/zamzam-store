@@ -179,6 +179,36 @@ export type Dictionary = {
     unknown: { label: string; description: string }
     disclaimer: string
   }
+  cart: {
+    title: string
+    emptyTitle: string
+    emptyMessage: string
+    continueShopping: string
+    itemHeader: string
+    quantityHeader: string
+    priceHeader: string
+    subtotalHeader: string
+    totalHeader: string
+    itemsCount: (count: number) => string
+    authoritativeNotice: string
+    nonProductionNotice: string
+    variantLabel: string
+    unitPriceLabel: string
+    subtotalLabel: string
+    totalLabel: string
+    currency: string
+    errorTitle: string
+    lockedError: string
+    completedError: string
+    timeoutError: string
+    genericError: string
+    previewBadge: string
+    addToCartButton: string
+    addingToCart: string
+    addedSuccess: string
+    disabledNotice: string
+    checkoutDisabledNotice: string
+  }
 }
 
 const ar: Dictionary = {
@@ -328,6 +358,38 @@ const ar: Dictionary = {
     disclaimer:
       "لا نقدّم وعودًا مسبقة بالتوفر؛ يتم فحص الدُفعات وتاريخ الصلاحية الفعلي عبر نظام المتجر.",
   },
+  cart: {
+    title: "سلة المشتريات",
+    emptyTitle: "سلتك فارغة حاليًا",
+    emptyMessage: "لم تُضف أي منتجات بعد. تصفح تشكيلتنا من ماء زمزم والتمور الفاخرة.",
+    continueShopping: "متابعة التسوق",
+    itemHeader: "المنتج",
+    quantityHeader: "الكمية",
+    priceHeader: "السعر",
+    subtotalHeader: "المجموع الفرعي",
+    totalHeader: "الإجمالي المعتمد",
+    itemsCount: (count: number) => `${count} أصناف`,
+    authoritativeNotice:
+      "يتم احتساب الإجمالي والأسعار حصرًا عبر نظام المتجر المركزي ولا يتم احتسابها من الواجهة.",
+    nonProductionNotice:
+      "هذه الواجهة مخصصة للعرض والمعاينة الفنية ولا تُمثل طلبًا تجاريًا حقيقيًا.",
+    variantLabel: "الخيار",
+    unitPriceLabel: "سعر الوحدة",
+    subtotalLabel: "المجموع",
+    totalLabel: "الإجمالي النهائي",
+    currency: "ج.م",
+    errorTitle: "تعذر تحديث السلة",
+    lockedError: "عملية الدفع قيد المعالجة حاليًا؛ لا يمكن تعديل السلة.",
+    completedError: "تم تحويل هذه السلة إلى طلب مسبقًا.",
+    timeoutError: "انتهت مهلة قفل السلة. يرجى المحاولة لاحقًا.",
+    genericError: "حدث خطأ أثناء معالجة السلة.",
+    previewBadge: "معاينة تجريبية",
+    addToCartButton: "إضافة إلى السلة (معاينة)",
+    addingToCart: "جاري الإضافة...",
+    addedSuccess: "تمت الإضافة إلى السلة بنجاح",
+    disabledNotice: "خاصية الشراء غير مفعّلة في الإصدار الحالي.",
+    checkoutDisabledNotice: "إتمام الطلب والدفع غير مفعلين في هذه المرحلة.",
+  },
 }
 
 const en: Dictionary = {
@@ -476,6 +538,38 @@ const en: Dictionary = {
     },
     disclaimer:
       "We do not make advance stock guarantees; actual batch eligibility and shelf life are verified via the store system.",
+  },
+  cart: {
+    title: "Shopping Cart",
+    emptyTitle: "Your cart is currently empty",
+    emptyMessage: "You haven't added any products yet. Explore our curated Zamzam water and fine dates.",
+    continueShopping: "Continue Shopping",
+    itemHeader: "Product",
+    quantityHeader: "Quantity",
+    priceHeader: "Unit Price",
+    subtotalHeader: "Subtotal",
+    totalHeader: "Authoritative Total",
+    itemsCount: (count: number) => `${count} item(s)`,
+    authoritativeNotice:
+      "Totals and line amounts are calculated exclusively by the store system, never by the browser.",
+    nonProductionNotice:
+      "This cart interface is a technical nonproduction preview and does not constitute a real commercial order.",
+    variantLabel: "Variant",
+    unitPriceLabel: "Unit price",
+    subtotalLabel: "Subtotal",
+    totalLabel: "Grand total",
+    currency: "EGP",
+    errorTitle: "Cart update error",
+    lockedError: "Cart checkout currently in progress; mutations locked.",
+    completedError: "This cart has already been converted to an order.",
+    timeoutError: "Cart lock timed out. Please try again later.",
+    genericError: "An error occurred while processing the cart.",
+    previewBadge: "Nonproduction Preview",
+    addToCartButton: "Add to Cart (Preview)",
+    addingToCart: "Adding...",
+    addedSuccess: "Successfully added to cart",
+    disabledNotice: "Purchasing actions are disabled in this release.",
+    checkoutDisabledNotice: "Checkout and payment are not active in this stage.",
   },
 }
 
