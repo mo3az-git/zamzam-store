@@ -247,6 +247,21 @@ try {
           electronic[0]?.amount===native.total && electronic[0]?.provider_key==="phase1-simulator"))
       check("verified_payment_order_replay_idempotent_"+method,true,{first,replay},
         replay.orderId===order.id && replay.method===method && replay.amountCurrency==="EGP")
+      // A previously bound order does not authorize another payment write
+      // when the underlying idempotency lease has become stale.
+      await adminPg.query(
+        "UPDATE idempotency_key SET last_heartbeat_at=NOW()-INTERVAL '10 minutes' WHERE key=$1",
+        [attempt.idempotency_key])
+      let expiredLeaseError
+      try { await recordPaymentForCorrelatedOrder(adminPg,binding,nativeReader) }
+      catch (error) { expiredLeaseError=error }
+      check("expired_checkout_lease_blocks_payment_replay_"+method,
+        "PAYMENT_CHECKOUT_LEASE_NOT_OWNED",expiredLeaseError?.message,
+        expiredLeaseError?.message==="PAYMENT_CHECKOUT_LEASE_NOT_OWNED")
+      await adminPg.query(
+        "UPDATE idempotency_key SET last_heartbeat_at=NOW() WHERE key=$1",
+        [attempt.idempotency_key])
+
     }
     dbAfter = await saveSnapshot([batch.id])
     status = "passed"
